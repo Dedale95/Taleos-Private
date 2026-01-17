@@ -2784,8 +2784,11 @@
                             
                             let buttonHTML = '';
                             
+                            let jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
+                            
                             if (isPending) {
-                                // Candidature en attente avec timer
+                                // Candidature en attente avec timer - layout vertical
+                                actionsDiv.classList.add('pending-layout');
                                 const remainingSeconds = pendingApplications[jobId].remainingSeconds;
                                 const minutes = Math.floor(remainingSeconds / 60);
                                 const seconds = remainingSeconds % 60;
@@ -2794,22 +2797,27 @@
                                 buttonHTML = `
                                     <button class="job-apply-btn applied" disabled>⏳ Candidature en cours (${timeStr})</button>
                                     <button class="job-cancel-btn" onclick="cancelApplication('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">✕ Annuler</button>
+                                    ${jobLinkHTML}
                                 `;
-                            } else if (isSubmitted || (isApplied && !isPending)) {
-                                // Candidature déjà envoyée (ou ancienne candidature sans timer)
-                                buttonHTML = `<button class="job-apply-btn applied sent" disabled>✅ Candidature envoyée</button>`;
-                            } else if (isApplied) {
-                                // Candidature en cours avec statut explicite "En cours"
-                                buttonHTML = `<button class="job-apply-btn applied" disabled>⏳ Candidature en cours</button>`;
                             } else {
-                                // Pas encore candidaté
-                                buttonHTML = `<button class="job-apply-btn" onclick="applyToJob('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">📝 Candidater</button>`;
+                                // Retirer le layout vertical si ce n'est plus en cours
+                                actionsDiv.classList.remove('pending-layout');
+                                
+                                if (isSubmitted || (isApplied && !isPending)) {
+                                    // Candidature déjà envoyée (ou ancienne candidature sans timer)
+                                    buttonHTML = `<button class="job-apply-btn applied sent" disabled>✅ Candidature envoyée</button>`;
+                                } else if (isApplied) {
+                                    // Candidature en cours avec statut explicite "En cours"
+                                    buttonHTML = `<button class="job-apply-btn applied" disabled>⏳ Candidature en cours</button>`;
+                                } else {
+                                    // Pas encore candidaté
+                                    buttonHTML = `<button class="job-apply-btn" onclick="applyToJob('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">📝 Candidater</button>`;
+                                }
+                                
+                                buttonHTML += jobLinkHTML;
                             }
                             
-                            actionsDiv.innerHTML = `
-                                ${buttonHTML}
-                                <a href="${job.job_url}" target="_blank" class="job-link">Voir l'offre →</a>
-                            `;
+                            actionsDiv.innerHTML = buttonHTML;
                         }
                     }
                 }
