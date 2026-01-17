@@ -1003,9 +1003,9 @@
             }
         }
 
-        async function saveAccordion(accordion) {
+        async function saveAccordion(accordion, showErrorAlert = false) {
             if (!currentUserId) {
-                console.warn('⚠️ Impossible de sauvegarder: utilisateur non connecté');
+                console.warn('⚠️ [saveAccordion] Impossible de sauvegarder: utilisateur non connecté');
                 // Retourner une Promise résolue pour ne pas casser la chaîne Promise
                 return Promise.resolve();
             }
@@ -1025,7 +1025,7 @@
                         .collection('advanced_searches')
                         .doc(accordion.id)
                         .set(dataToSave, { merge: true });
-                    console.log('✅ Accordéon sauvegardé:', accordion.id, dataToSave);
+                    console.log('✅ [saveAccordion] Accordéon sauvegardé:', accordion.id);
                 } else {
                     // Pas d'ID ou ID temporaire : créer un nouveau document
                     // Exclure l'ID temporaire des données à sauvegarder
@@ -1038,29 +1038,40 @@
                     // Mettre à jour l'ID dans l'objet accordéon
                     accordion.id = docRef.id;
                     console.log('✅ [saveAccordion] Nouvel accordéon créé avec ID:', docRef.id);
-                    console.log('📋 [saveAccordion] Données sauvegardées:', JSON.stringify(dataToSave, null, 2));
                 }
             } catch (error) {
                 console.error('❌ [saveAccordion] Erreur lors de la sauvegarde:', error);
-                console.error('📋 [saveAccordion] Accordéon qui a échoué:', JSON.stringify(accordion, null, 2));
                 console.error('🔍 [saveAccordion] Détails erreur:', {
                     code: error.code,
                     message: error.message,
-                    stack: error.stack
+                    userId: currentUserId,
+                    accordionId: accordion.id
                 });
                 
-                // Afficher l'erreur à l'utilisateur si possible
-                if (error.code === 'permission-denied') {
-                    console.error('⚠️ [saveAccordion] Erreur de permissions Firestore');
-                    alert('Erreur de permissions. Vérifiez que vous êtes connecté et que les règles Firestore permettent l\'écriture.');
-                } else if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
-                    console.error('⚠️ [saveAccordion] Firestore indisponible ou timeout');
-                    alert('Firestore indisponible ou timeout. Vérifiez votre connexion internet.');
-                } else if (error.code === 'failed-precondition') {
-                    console.error('⚠️ [saveAccordion] Erreur failed-precondition (index manquant?)');
-                    alert('Erreur lors de la sauvegarde. Un index Firestore pourrait manquer pour "order".');
+                // N'afficher une alert que si explicitement demandé (création d'un nouvel accordéon)
+                // Pour les mises à jour silencieuses (filtres, renommage), ne pas perturber l'utilisateur
+                if (showErrorAlert) {
+                    if (error.code === 'permission-denied') {
+                        console.error('⚠️ [saveAccordion] Erreur de permissions Firestore');
+                        alert('Erreur de permissions. Vérifiez que vous êtes connecté et que les règles Firestore permettent l\'écriture.');
+                    } else if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
+                        console.error('⚠️ [saveAccordion] Firestore indisponible ou timeout');
+                        alert('Firestore indisponible ou timeout. Vérifiez votre connexion internet.');
+                    } else if (error.code === 'failed-precondition') {
+                        console.error('⚠️ [saveAccordion] Erreur failed-precondition (index manquant?)');
+                        alert('Erreur lors de la sauvegarde. Un index Firestore pourrait manquer pour "order".');
+                    } else {
+                        // Erreur générique uniquement si showErrorAlert est true
+                        console.error('⚠️ [saveAccordion] Erreur inconnue lors de la sauvegarde');
+                        alert('Erreur lors de la sauvegarde de l\'accordéon. Vérifiez la console (F12) pour plus de détails.');
+                    }
+                    throw error; // Re-lancer uniquement si on a montré une alert
+                } else {
+                    // Pour les sauvegardes silencieuses, ne pas re-lancer l'erreur
+                    // L'accordéon reste en mémoire localement, même si la sauvegarde échoue
+                    console.warn('⚠️ [saveAccordion] Sauvegarde silencieuse échouée, accordéon conservé en mémoire locale');
+                    // Ne pas re-lancer l'erreur pour les mises à jour non-critiques
                 }
-                throw error; // Re-lancer pour permettre la gestion d'erreur en amont
             }
         }
 
@@ -1137,7 +1148,7 @@
             (async () => {
                 try {
                     console.log('💾 [createNewAccordion] Sauvegarde accordéon avec ID temporaire:', tempId);
-                    await saveAccordion(newAccordion);
+                    await saveAccordion(newAccordion, true); // true = afficher les erreurs pour la création
                     console.log('✅ [createNewAccordion] Accordéon sauvegardé avec ID:', newAccordion.id);
                     
                     // Re-rendre avec le vrai ID après sauvegarde (seulement si l'ID a changé)
@@ -1163,7 +1174,7 @@
                     console.error('❌ [createNewAccordion] Erreur lors de la création:', error);
                     console.error('Détails:', error.code, error.message);
                     // Ne pas retirer l'accordéon en cas d'erreur (il restera visible mais non sauvegardé)
-                    alert('Erreur lors de la sauvegarde de l\'accordéon. Vérifiez la console (F12) pour plus de détails.');
+                    // L'alert a déjà été affichée par saveAccordion avec showErrorAlert=true
                 } finally {
                     // Réactiver le chargement des accordéons après un délai pour laisser le temps à la sauvegarde
                     setTimeout(() => {
