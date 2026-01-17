@@ -731,6 +731,8 @@
         let currentUserId = null;
         let accordionCounter = 0;
         let isCreatingAccordion = false; // Flag pour éviter les rechargements pendant la création
+        let accordionsLoaded = false; // Flag pour éviter les rechargements multiples
+        let isLoadingAccordions = false; // Flag pour éviter les chargements simultanés
 
         // Mapping ville -> région (depuis offres.html)
         const cityToRegion = {
@@ -872,29 +874,63 @@
         async function checkAuthAndInit() {
             const auth = firebase.auth();
             auth.onAuthStateChanged(async (user) => {
+                console.log('🔄 onAuthStateChanged déclenché, user:', user ? user.uid : 'null');
+                
                 if (user) {
-                    currentUserId = user.uid;
-                    await loadAccordions();
+                    const newUserId = user.uid;
+                    
+                    // Ne recharger que si l'utilisateur a changé ou si pas encore chargé
+                    if (newUserId !== currentUserId || !accordionsLoaded) {
+                        console.log('👤 Changement d\'utilisateur ou premier chargement:', {
+                            oldUserId: currentUserId,
+                            newUserId: newUserId,
+                            accordionsLoaded: accordionsLoaded
+                        });
+                        
+                        currentUserId = newUserId;
+                        await loadAccordions();
+                    } else {
+                        console.log('⏭️ Utilisateur identique et accordéons déjà chargés, skip');
+                    }
                 } else {
+                    console.log('👋 Utilisateur déconnecté, réinitialisation');
                     currentUserId = null;
                     accordions = [];
+                    accordionsLoaded = false;
                     renderAccordions();
                 }
             });
         }
 
         async function loadAccordions() {
-            if (!currentUserId) return;
+            if (!currentUserId) {
+                console.log('⚠️ loadAccordions: pas de currentUserId');
+                return;
+            }
+            
+            // Ne pas recharger si déjà en train de charger (évite les chargements simultanés)
+            if (isLoadingAccordions) {
+                console.log('⏸️ loadAccordions déjà en cours, skip');
+                return;
+            }
             
             // Ne pas recharger si on est en train de créer un accordéon (pour éviter qu'il disparaisse)
             if (isCreatingAccordion) {
                 console.log('⏸️ Rechargement des accordéons différé: création en cours');
+                // Programmer un rechargement différé après la création
+                setTimeout(() => {
+                    if (!isCreatingAccordion && currentUserId) {
+                        console.log('🔄 Rechargement différé après création');
+                        loadAccordions();
+                    }
+                }, 2000);
                 return;
             }
 
             try {
+                isLoadingAccordions = true;
                 const db = firebase.firestore();
-                console.log('🔄 Chargement des accordéons depuis Firestore pour user:', currentUserId);
+                console.log('🔄 [loadAccordions] Chargement depuis Firestore pour user:', currentUserId);
                 
                 const snapshot = await db.collection('profiles')
                     .doc(currentUserId)
@@ -902,7 +938,7 @@
                     .orderBy('order', 'asc')
                     .get();
 
-                accordions = [];
+                const loadedAccordions = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
                     const accordion = { 
@@ -921,17 +957,28 @@
                         order: data.order !== undefined ? data.order : 0,
                         expanded: data.expanded !== undefined ? data.expanded : false
                     };
-                    accordions.push(accordion);
-                    console.log('📦 Accordéon chargé:', accordion.id, accordion.name, accordion.filters);
+                    loadedAccordions.push(accordion);
+                    console.log('📦 [loadAccordions] Accordéon chargé:', accordion.id, accordion.name);
                 });
 
-                console.log(`✅ ${accordions.length} accordéon(s) chargé(s) depuis Firestore`);
-                if (accordions.length === 0) {
-                    console.warn('⚠️ Aucun accordéon trouvé dans Firestore');
+                console.log(`✅ [loadAccordions] ${loadedAccordions.length} accordéon(s) trouvé(s) dans Firestore`);
+                
+                // Ne remplacer accordions que si on a réellement des données ou si c'est le premier chargement
+                // Cela préserve les accordéons en cours de création
+                if (loadedAccordions.length > 0 || !accordionsLoaded) {
+                    accordions = loadedAccordions;
+                    accordionsLoaded = true;
+                    renderAccordions();
+                } else {
+                    console.log('ℹ️ [loadAccordions] Aucun accordéon dans Firestore, conservation des accordéons existants');
+                    renderAccordions(); // Re-rendre quand même au cas où
                 }
-                renderAccordions();
             } catch (error) {
-                console.error('Erreur lors du chargement des accordéons:', error);
+                console.error('❌ [loadAccordions] Erreur lors du chargement:', error);
+                console.error('Détails:', error.code, error.message, error.stack);
+                // Ne pas réinitialiser accordions en cas d'erreur
+            } finally {
+                isLoadingAccordions = false;
             }
         }
 
@@ -969,18 +1016,28 @@
                     
                     // Mettre à jour l'ID dans l'objet accordéon
                     accordion.id = docRef.id;
-                    console.log('✅ Nouvel accordéon créé avec ID:', docRef.id, dataToSave);
+                    console.log('✅ [saveAccordion] Nouvel accordéon créé avec ID:', docRef.id);
+                    console.log('📋 [saveAccordion] Données sauvegardées:', JSON.stringify(dataToSave, null, 2));
                 }
             } catch (error) {
-                console.error('❌ Erreur lors de la sauvegarde:', error);
-                console.error('Détails de l\'erreur:', error.code, error.message);
+                console.error('❌ [saveAccordion] Erreur lors de la sauvegarde:', error);
+                console.error('📋 [saveAccordion] Accordéon qui a échoué:', JSON.stringify(accordion, null, 2));
+                console.error('🔍 [saveAccordion] Détails erreur:', {
+                    code: error.code,
+                    message: error.message,
+                    stack: error.stack
+                });
+                
                 // Afficher l'erreur à l'utilisateur si possible
                 if (error.code === 'permission-denied') {
-                    console.error('⚠️ Erreur de permissions Firestore. Vérifiez les règles de sécurité.');
+                    console.error('⚠️ [saveAccordion] Erreur de permissions Firestore');
                     alert('Erreur de permissions. Vérifiez que vous êtes connecté et que les règles Firestore permettent l\'écriture.');
-                } else if (error.code === 'unavailable') {
-                    console.error('⚠️ Firestore indisponible. Vérifiez votre connexion internet.');
-                    alert('Firestore indisponible. Vérifiez votre connexion internet.');
+                } else if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
+                    console.error('⚠️ [saveAccordion] Firestore indisponible ou timeout');
+                    alert('Firestore indisponible ou timeout. Vérifiez votre connexion internet.');
+                } else if (error.code === 'failed-precondition') {
+                    console.error('⚠️ [saveAccordion] Erreur failed-precondition (index manquant?)');
+                    alert('Erreur lors de la sauvegarde. Un index Firestore pourrait manquer pour "order".');
                 }
                 throw error; // Re-lancer pour permettre la gestion d'erreur en amont
             }
@@ -1058,11 +1115,16 @@
             // Sauvegarder et mettre à jour l'ID (attendre que ce soit fait avant de continuer)
             (async () => {
                 try {
+                    console.log('💾 [createNewAccordion] Sauvegarde accordéon avec ID temporaire:', tempId);
                     await saveAccordion(newAccordion);
+                    console.log('✅ [createNewAccordion] Accordéon sauvegardé avec ID:', newAccordion.id);
+                    
                     // Re-rendre avec le vrai ID après sauvegarde (seulement si l'ID a changé)
                     if (newAccordion.id !== tempId) {
+                        console.log('🔄 [createNewAccordion] ID changé, re-render');
                         renderAccordions();
                     }
+                    
                     // Scroll vers le nouvel accordéon
                     setTimeout(() => {
                         const accordionEl = document.querySelector(`[data-accordion-id="${newAccordion.id}"]`);
@@ -1077,12 +1139,21 @@
                         }
                     }, 150);
                 } catch (error) {
-                    console.error('❌ Erreur lors de la création de l\'accordéon:', error);
+                    console.error('❌ [createNewAccordion] Erreur lors de la création:', error);
+                    console.error('Détails:', error.code, error.message);
                     // Ne pas retirer l'accordéon en cas d'erreur (il restera visible mais non sauvegardé)
-                    // Juste afficher un message dans la console
+                    alert('Erreur lors de la sauvegarde de l\'accordéon. Vérifiez la console (F12) pour plus de détails.');
                 } finally {
-                    // Réactiver le chargement des accordéons après la création
-                    isCreatingAccordion = false;
+                    // Réactiver le chargement des accordéons après un délai pour laisser le temps à la sauvegarde
+                    setTimeout(() => {
+                        isCreatingAccordion = false;
+                        console.log('✅ [createNewAccordion] Flag isCreatingAccordion réinitialisé');
+                        
+                        // Vérifier que l'accordéon est bien sauvegardé en rechargement une seule fois
+                        if (newAccordion.id && !newAccordion.id.startsWith('temp_')) {
+                            console.log('✅ [createNewAccordion] Accordéon a un ID réel, persistance confirmée');
+                        }
+                    }, 500);
                 }
             })();
         }
