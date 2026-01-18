@@ -337,6 +337,59 @@
             transform: none;
         }
 
+        /* Styles pour les langues */
+        .btn-add-item {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-add-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .language-item {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            padding: 12px;
+            background: #f9fafb;
+            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+        }
+
+        .language-item select {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .language-item .remove-language-btn {
+            padding: 8px 12px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .language-item .remove-language-btn:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+        }
+
         /* Styles pour champs/sections incomplets */
         .accordion-section.incomplete .accordion-header {
             background: #fee2e2;
@@ -1522,6 +1575,14 @@
                         <input type="number" id="graduationYear" name="graduationYear" placeholder="AAAA" min="1900" max="2099" pattern="[0-9]{4}">
                         <small style="display: block; margin-top: 6px; color: #666; font-size: 0.85rem;">Format : AAAA (exemple : 2024)</small>
                     </div>
+
+                    <div class="form-group">
+                        <label>Langues parlées</label>
+                        <div id="languagesContainer">
+                            <!-- Les langues seront ajoutées dynamiquement ici -->
+                        </div>
+                        <button type="button" id="addLanguageBtn" class="btn-add-item" style="margin-top: 12px;">+ Ajouter une langue</button>
+                    </div>
                     </div>
                 </div>
 
@@ -2101,6 +2162,20 @@
                     graduationYearInput.value = profile.graduation_year;
                 }
             }
+            
+            // Charger les langues
+            if (profile.languages && Array.isArray(profile.languages) && profile.languages.length > 0) {
+                const languagesContainer = document.getElementById('languagesContainer');
+                if (languagesContainer) {
+                    languagesContainer.innerHTML = '';
+                    profile.languages.forEach((langObj, index) => {
+                        if (langObj && langObj.language && langObj.level) {
+                            addLanguageItem(langObj.language, langObj.level);
+                        }
+                    });
+                    updateLanguageOptions();
+                }
+            }
         }
 
         // Fonction pour charger et afficher les informations d'un fichier existant
@@ -2581,6 +2656,7 @@
                 institution_type: document.getElementById('institutionType').value,
                 diploma_status: document.getElementById('diplomaStatus').value,
                 graduation_year: document.getElementById('graduationYear').value ? parseInt(document.getElementById('graduationYear').value) : null,
+                languages: getLanguagesData(), // Array des langues avec leur niveau
                 email: userEmail || '',
                 updated_at: new Date().toISOString(),
                 created_at: null // Sera défini lors de la première création
@@ -2815,6 +2891,145 @@
             if (availableFromInput.value) {
                 availableFromInput.dispatchEvent(new Event('change'));
             }
+        })();
+
+        // Gestion des langues parlées
+        (function() {
+            const languagesList = [
+                'Albanais', 'Allemand', 'Anglais', 'Arabe', 'Autre', 'Biélorusse', 'Bosnien', 'Bulgare',
+                'Cambodgien', 'Cantonais', 'Chinois', 'Coréen', 'Créole', 'Croate', 'Danois', 'Espagnol',
+                'Estonien', 'Finnois', 'Français', 'Georgien', 'Grec', 'Hébreu', 'Hindi', 'Hongrois',
+                'Indonesien', 'Irlandais', 'Islandais', 'Italien', 'Japonais', 'Kazakh', 'Kirghiz', 'Kurde',
+                'Lao', 'Letton', 'Lituanien', 'Macédonien', 'Mandarin', 'Néerlandais', 'Népalais',
+                'Norvégien', 'Polonais', 'Portugais', 'Roumain', 'Russe', 'Serbe', 'Slovaque', 'Slovène',
+                'Suédois', 'Suisse-Allemand', 'Tchèque', 'Thai', 'Turc', 'Turkmene', 'Ukrainien', 'Vietnamien'
+            ];
+
+            const languageLevels = ['Débutant', 'Intermédiaire', 'Opérationnel', 'Bilingue', 'Langue maternelle'];
+
+            let languageCounter = 0;
+            const languagesContainer = document.getElementById('languagesContainer');
+            const addLanguageBtn = document.getElementById('addLanguageBtn');
+
+            if (!languagesContainer || !addLanguageBtn) {
+                return;
+            }
+
+            // Fonction pour obtenir les langues déjà sélectionnées
+            function getSelectedLanguages() {
+                const selected = [];
+                const languageSelects = languagesContainer.querySelectorAll('select.language-select');
+                languageSelects.forEach(select => {
+                    if (select.value) {
+                        selected.push(select.value);
+                    }
+                });
+                return selected;
+            }
+
+            // Fonction pour mettre à jour les options disponibles dans chaque select
+            function updateLanguageOptions() {
+                const selectedLanguages = getSelectedLanguages();
+                const languageSelects = languagesContainer.querySelectorAll('select.language-select');
+                
+                languageSelects.forEach((select, index) => {
+                    const currentValue = select.value;
+                    select.innerHTML = '<option value="">Sélectionnez une langue...</option>';
+                    
+                    languagesList.forEach(lang => {
+                        const isSelectedInAnother = selectedLanguages.some((selected, idx) => 
+                            selected === lang && idx !== index
+                        );
+                        
+                        if (!isSelectedInAnother || lang === currentValue) {
+                            const option = document.createElement('option');
+                            option.value = lang;
+                            option.textContent = lang;
+                            if (lang === currentValue) {
+                                option.selected = true;
+                            }
+                            select.appendChild(option);
+                        }
+                    });
+                });
+            }
+
+            // Fonction pour créer un élément de langue
+            function addLanguageItem(language = '', level = '') {
+                const itemId = `language-${languageCounter++}`;
+                const languageItem = document.createElement('div');
+                languageItem.className = 'language-item';
+                languageItem.setAttribute('data-language-id', itemId);
+                
+                languageItem.innerHTML = `
+                    <select class="language-select" name="language_${itemId}" required>
+                        <option value="">Sélectionnez une langue...</option>
+                    </select>
+                    <select class="language-level-select" name="language_level_${itemId}" required>
+                        <option value="">Niveau...</option>
+                        ${languageLevels.map(lev => 
+                            `<option value="${lev}" ${lev === level ? 'selected' : ''}>${lev}</option>`
+                        ).join('')}
+                    </select>
+                    <button type="button" class="remove-language-btn" onclick="removeLanguageItem('${itemId}')">✕ Supprimer</button>
+                `;
+                
+                languagesContainer.appendChild(languageItem);
+                
+                // Remplir les options de langue
+                const languageSelect = languageItem.querySelector('.language-select');
+                languagesList.forEach(lang => {
+                    const option = document.createElement('option');
+                    option.value = lang;
+                    option.textContent = lang;
+                    if (lang === language) {
+                        option.selected = true;
+                    }
+                    languageSelect.appendChild(option);
+                });
+                
+                // Écouter les changements pour mettre à jour les options disponibles
+                languageSelect.addEventListener('change', function() {
+                    updateLanguageOptions();
+                });
+                
+                // Mettre à jour les options disponibles
+                updateLanguageOptions();
+            }
+
+            // Fonction pour supprimer un élément de langue (globale pour onclick)
+            window.removeLanguageItem = function(itemId) {
+                const item = document.querySelector(`[data-language-id="${itemId}"]`);
+                if (item) {
+                    item.remove();
+                    updateLanguageOptions();
+                }
+            };
+
+            // Écouter le clic sur le bouton "Ajouter une langue"
+            addLanguageBtn.addEventListener('click', function() {
+                addLanguageItem();
+            });
+
+            // Fonction pour obtenir les données des langues (pour la sauvegarde)
+            window.getLanguagesData = function() {
+                const languagesData = [];
+                const languageItems = languagesContainer.querySelectorAll('.language-item');
+                
+                languageItems.forEach(item => {
+                    const languageSelect = item.querySelector('.language-select');
+                    const levelSelect = item.querySelector('.language-level-select');
+                    
+                    if (languageSelect && levelSelect && languageSelect.value && levelSelect.value) {
+                        languagesData.push({
+                            language: languageSelect.value,
+                            level: levelSelect.value
+                        });
+                    }
+                });
+                
+                return languagesData;
+            };
         })();
     </script>
 
