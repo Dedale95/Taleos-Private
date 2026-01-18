@@ -82,6 +82,12 @@
             display: flex;
             gap: 20px;
             align-items: center;
+            opacity: 0;
+            transition: opacity 0.2s ease-in;
+        }
+
+        .nav-links.nav-ready {
+            opacity: 1;
         }
 
         .nav-link {
@@ -666,6 +672,7 @@
 
         // Fonction pour mettre à jour la navigation selon l'état d'authentification
         function updateNavigation(user) {
+            const navLinks = document.getElementById('navLinks');
             const logoutBtn = document.getElementById('logoutBtn');
             const authLink = document.getElementById('authLink');
             const applicationsLink = document.getElementById('applicationsLink');
@@ -684,6 +691,13 @@
                 if (applicationsLink) applicationsLink.style.display = 'none';
                 if (connexionsLink) connexionsLink.style.display = 'none';
                 if (profileLink) profileLink.style.display = 'none';
+            }
+
+            // Révéler la navigation une fois l'état mis à jour
+            if (navLinks) {
+                requestAnimationFrame(() => {
+                    navLinks.classList.add('nav-ready');
+                });
             }
         }
 

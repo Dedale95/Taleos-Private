@@ -82,6 +82,12 @@
             display: flex;
             gap: 20px;
             align-items: center;
+            opacity: 0;
+            transition: opacity 0.2s ease-in;
+        }
+
+        .nav-links.nav-ready {
+            opacity: 1;
         }
 
         .nav-link {
@@ -2874,6 +2880,7 @@
 
 
         function initNav() {
+            const navLinks = document.querySelector('.nav-links');
             const auth = firebase.auth();
             auth.onAuthStateChanged((user) => {
                 const profileLink = document.getElementById('profileLink');
@@ -2894,6 +2901,13 @@
                     if (logoutBtn) logoutBtn.style.display = 'none';
                     if (applicationsLink) applicationsLink.style.display = 'none';
                     if (connexionsLink) connexionsLink.style.display = 'none';
+                }
+
+                // Révéler la navigation une fois l'état mis à jour
+                if (navLinks) {
+                    requestAnimationFrame(() => {
+                        navLinks.classList.add('nav-ready');
+                    });
                 }
             });
         }
