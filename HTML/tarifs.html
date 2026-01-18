@@ -663,8 +663,8 @@
             firebase.initializeApp(firebaseConfig);
         }
 
-        // Gérer l'affichage des liens selon l'authentification
-        firebase.auth().onAuthStateChanged((user) => {
+        // Fonction pour mettre à jour la navigation selon l'état d'authentification
+        function updateNavigation(user) {
             const logoutBtn = document.getElementById('logoutBtn');
             const authLink = document.getElementById('authLink');
             const applicationsLink = document.getElementById('applicationsLink');
@@ -672,18 +672,30 @@
             const profileLink = document.getElementById('profileLink');
             
             if (user) {
-                logoutBtn.style.display = 'block';
+                if (logoutBtn) logoutBtn.style.display = 'block';
                 if (authLink) authLink.style.display = 'none';
                 if (applicationsLink) applicationsLink.style.display = 'block';
                 if (connexionsLink) connexionsLink.style.display = 'block';
                 if (profileLink) profileLink.style.display = 'block';
             } else {
-                logoutBtn.style.display = 'none';
+                if (logoutBtn) logoutBtn.style.display = 'none';
                 if (authLink) authLink.style.display = 'block';
                 if (applicationsLink) applicationsLink.style.display = 'none';
                 if (connexionsLink) connexionsLink.style.display = 'none';
                 if (profileLink) profileLink.style.display = 'none';
             }
+        }
+
+        // Vérifier l'état d'authentification au chargement de la page
+        const auth = firebase.auth();
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+            updateNavigation(currentUser);
+        }
+
+        // Gérer l'affichage des liens selon l'authentification (changements futurs)
+        auth.onAuthStateChanged((user) => {
+            updateNavigation(user);
         });
 
         function handleLogout() {

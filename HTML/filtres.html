@@ -1643,10 +1643,15 @@
             if (accordions.length === 0) {
                 container.innerHTML = '';
                 emptyState.style.display = 'block';
+                container.style.opacity = '1';
                 return;
             }
 
             emptyState.style.display = 'none';
+            
+            // Masquer temporairement pendant le rendu pour éviter le glitch visuel
+            container.style.opacity = '0';
+            container.style.transition = 'opacity 0.1s';
             
             // Utiliser requestAnimationFrame pour éviter les problèmes de rendu
             requestAnimationFrame(() => {
@@ -1657,6 +1662,11 @@
                     accordions.forEach((accordion) => {
                         const accordionId = accordion.id || 'temp_' + accordions.indexOf(accordion);
                         updateFiltersDisplay(accordionId, accordion.filters);
+                    });
+                    
+                    // Réafficher après que tout soit rendu
+                    requestAnimationFrame(() => {
+                        container.style.opacity = '1';
                     });
                 });
             });
