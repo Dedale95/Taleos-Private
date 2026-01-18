@@ -744,15 +744,18 @@
             color: #065f46;
         }
 
+        .job-bottom-block {
+            margin-top: auto;
+        }
+
         .job-company {
             display: flex;
             align-items: center;
             gap: 12px;
             color: #666;
             font-weight: 500;
-            margin-bottom: 12px;
-            padding: 8px 0;
-            min-height: 66px; /* Hauteur minimale pour harmoniser (logo 50px + padding) */
+            padding: 0 0 10px 0;
+            min-height: 58px;
         }
 
         .company-logo {
@@ -777,8 +780,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-top: 16px;
-            margin-top: auto;
+            padding-top: 14px;
             border-top: 2px solid #f3f4f6;
         }
 
@@ -3016,20 +3018,20 @@
                 ${job.experience_level ? `<span class="tag tag-experience">💼 ${job.experience_level}</span>` : ''}
                 ${job.job_family ? `<span class="tag tag-family">🎯 ${job.job_family}</span>` : ''}
             </div>
-            ${job.company_name ? (() => {
-                const logoPath = getCompanyLogo(job.company_name);
-                return `
+            <div class="job-bottom-block">
+                ${job.company_name ? (() => {
+                    const logoPath = getCompanyLogo(job.company_name);
+                    return `
                 <div class="job-company">
                     ${logoPath ? `<img src="${logoPath}" alt="${job.company_name}" class="company-logo" onerror="this.style.display='none'">` : ''}
                     <div class="company-name-wrapper">
                         <span>${job.company_name}</span>
                     </div>
-                </div>
-            `;
-            })() : ''}
-            <div class="job-footer">
-                <div class="job-date">Publiée le ${job.publication_date || 'date inconnue'}</div>
-                <div class="job-actions">
+                </div>`;
+                })() : ''}
+                <div class="job-footer">
+                    <div class="job-date">Publiée le ${job.publication_date || 'date inconnue'}</div>
+                    <div class="job-actions">
                     ${isAuthenticated ? (() => {
                         const isPending = pendingApplications[job.job_id];
                         const status = applicationStatuses.get(job.job_id);
@@ -3051,6 +3053,7 @@
                                     <a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                         }
                     })() : `<a href="${job.job_url}" target="_blank" class="job-link">Voir l'offre →</a>`}
+                    </div>
                 </div>
             </div>
         </div>
