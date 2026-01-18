@@ -645,7 +645,7 @@
             align-items: center;
             gap: 6px;
             z-index: 1;
-            max-width: 180px;
+            max-width: 220px;
             text-align: center;
         }
 
@@ -787,13 +787,22 @@
             font-size: 0.9rem;
         }
 
+        /* Harmoniser Candidater et Voir l'offre : même taille */
+        .job-apply-btn,
         .job-link {
+            padding: 10px 18px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border-radius: 10px;
+        }
+
+        .job-link {
+            display: inline-flex;
+            align-items: center;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 10px 20px;
-            border-radius: 10px;
+            border: 2px solid transparent;
             text-decoration: none;
-            font-weight: 600;
             transition: all 0.3s;
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
@@ -817,7 +826,6 @@
             gap: 10px;
         }
 
-        .job-actions.pending-layout .job-apply-btn,
         .job-actions.pending-layout .job-cancel-btn {
             width: 100%;
         }
@@ -2776,14 +2784,17 @@
                     let existingBadge = card.querySelector('.job-card-badge');
                     
                     if (isPending) {
-                        // Candidature en cours (jaune)
+                        // Candidature en cours (orange) : badge avec timer
                         card.classList.add('application-pending');
                         if (!existingBadge) {
                             existingBadge = document.createElement('div');
                             existingBadge.className = 'job-card-badge';
                             card.insertBefore(existingBadge, card.firstChild);
                         }
-                        existingBadge.textContent = '⏳ En attente';
+                        const rem = pendingApplications[cardJobId]?.remainingSeconds;
+                        const mm = rem != null ? Math.floor(rem / 60) : 0;
+                        const ss = rem != null ? rem % 60 : 0;
+                        existingBadge.textContent = '⏳ Candidature en cours (' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0') + ')';
                     } else if (isSubmitted) {
                         // Candidature envoyée (vert)
                         card.classList.add('application-submitted');
@@ -2825,34 +2836,32 @@
                             let jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                             
                             if (isPending) {
-                                // Candidature en attente avec timer - layout vertical
+                                // Candidature en cours : badge en haut (avec timer), en bas seulement Annuler + Voir l'offre
                                 actionsDiv.classList.add('pending-layout');
-                                const remainingSeconds = pendingApplications[jobId].remainingSeconds;
-                                const minutes = Math.floor(remainingSeconds / 60);
-                                const seconds = remainingSeconds % 60;
-                                const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                                
                                 buttonHTML = `
-                                    <button class="job-apply-btn applied" disabled>⏳ Candidature en cours (${timeStr})</button>
                                     <button class="job-cancel-btn" onclick="cancelApplication('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">✕ Annuler</button>
                                     ${jobLinkHTML}
                                 `;
+                                // Mettre à jour le badge avec le timer (MM:SS)
+                                const badge = card.querySelector('.job-card-badge');
+                                if (badge) {
+                                    const rs = pendingApplications[jobId]?.remainingSeconds ?? 0;
+                                    const m = Math.floor(rs / 60), s = rs % 60;
+                                    badge.textContent = '⏳ Candidature en cours (' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + ')';
+                                }
                             } else {
-                                // Retirer le layout vertical si ce n'est plus en cours
                                 actionsDiv.classList.remove('pending-layout');
-                                
                                 if (isSubmitted || (isApplied && !isPending)) {
-                                    // Candidature déjà envoyée (ou ancienne candidature sans timer)
-                                    buttonHTML = `<button class="job-apply-btn applied sent" disabled>✅ Candidature envoyée</button>`;
+                                    // Candidature envoyée : pas de bouton vert (déjà en badge), seulement Voir l'offre
+                                    buttonHTML = jobLinkHTML;
                                 } else if (isApplied) {
-                                    // Candidature en cours avec statut explicite "En cours"
-                                    buttonHTML = `<button class="job-apply-btn applied" disabled>⏳ Candidature en cours</button>`;
+                                    // Candidature en cours sans timer (legacy) : seulement Voir l'offre
+                                    buttonHTML = jobLinkHTML;
                                 } else {
                                     // Pas encore candidaté
                                     buttonHTML = `<button class="job-apply-btn" onclick="applyToJob('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">📝 Candidater</button>`;
+                                    buttonHTML += jobLinkHTML;
                                 }
-                                
-                                buttonHTML += jobLinkHTML;
                             }
                             
                             actionsDiv.innerHTML = buttonHTML;
@@ -2999,17 +3008,20 @@
                 let badgeHTML = '';
                 
                 if (isPending) {
-                    // Candidature en attente avec timer (jaune)
+                    // Candidature en cours avec timer (orange) : badge avec MM:SS
                     cardClass += ' application-pending';
-                    badgeHTML = '<div class="job-card-badge">⏳ En attente</div>';
+                    const rs = pendingApplications[job.job_id]?.remainingSeconds ?? 300;
+                    const m = Math.floor(rs / 60), s = rs % 60;
+                    const t = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+                    badgeHTML = '<div class="job-card-badge">⏳ Candidature en cours (' + t + ')</div>';
                 } else if (isSubmitted || (hasApplied && !isPending)) {
-                    // Candidature envoyée (vert) - inclut les anciennes candidatures sans timer
+                    // Candidature envoyée (vert)
                     cardClass += ' application-submitted';
                     badgeHTML = '<div class="job-card-badge">✓ Candidature envoyée</div>';
                 } else if (hasApplied) {
-                    // Candidature en cours mais pas encore envoyée (jaune)
+                    // Candidature en cours sans timer (legacy)
                     cardClass += ' application-pending';
-                    badgeHTML = '<div class="job-card-badge">⏳ En attente</div>';
+                    badgeHTML = '<div class="job-card-badge">⏳ Candidature en cours</div>';
                 }
                 
                 return `
@@ -3043,22 +3055,15 @@
                         const isSubmitted = status === 'envoyée';
                         
                         if (isPending) {
-                            const remainingSeconds = pendingApplications[job.job_id].remainingSeconds;
-                            const minutes = Math.floor(remainingSeconds / 60);
-                            const seconds = remainingSeconds % 60;
-                            const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                            // Layout vertical pour avoir plus d'espace
-                            return `<button class="job-apply-btn applied" disabled>⏳ Candidature en cours (${timeStr})</button>
-                                    <button class="job-cancel-btn" onclick="cancelApplication('${job.job_id}', '${cleanJobTitle(job.job_title).replace(/'/g, "\\'")}', this)">✕ Annuler</button>
+                            // Badge en haut avec timer ; en bas : Annuler + Voir l'offre uniquement
+                            return `<button class="job-cancel-btn" onclick="cancelApplication('${job.job_id}', '${cleanJobTitle(job.job_title).replace(/'/g, "\\'")}', this)">✕ Annuler</button>
                                     <a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                         } else if (isSubmitted || (hasApplied && !isPending)) {
-                            // Candidature envoyée (ou ancienne candidature sans timer)
-                            return `<button class="job-apply-btn applied sent" disabled>✅ Candidature envoyée</button>
-                                    <a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
+                            // Candidature envoyée : pas de bouton vert (déjà en badge), seulement Voir l'offre
+                            return `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                         } else if (hasApplied) {
-                            // Candidature en cours avec statut explicite "En cours"
-                            return `<button class="job-apply-btn applied" disabled>⏳ Candidature en cours</button>
-                                    <a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
+                            // Candidature en cours sans timer : seulement Voir l'offre
+                            return `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                         } else {
                             // Pas encore candidaté : Candidater + Voir l'offre
                             return `<button class="job-apply-btn" onclick="applyToJob('${job.job_id}', '${cleanJobTitle(job.job_title).replace(/'/g, "\\'")}', this)">📝 Candidater</button>
