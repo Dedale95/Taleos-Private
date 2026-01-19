@@ -1337,6 +1337,50 @@
             return city; // Pour l'international pas mappé, on garde la ville (ex: "A Coruña")
         }
 
+        // Fonction pour formater une date au format français dd/mm/yyyy
+        function formatDateToFrench(dateString) {
+            if (!dateString || dateString === 'date inconnue' || dateString === 'Date non spécifiée') {
+                return dateString || 'date inconnue';
+            }
+            
+            try {
+                // Essayer de parser différents formats de dates
+                let date;
+                
+                // Format YYYY-MM-DD
+                if (dateString.match(/^\d{4}-\d{2}-\d{2}/)) {
+                    date = new Date(dateString + 'T00:00:00');
+                } 
+                // Format DD/MM/YYYY (déjà français)
+                else if (dateString.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+                    return dateString;
+                }
+                // Format DD-MM-YYYY
+                else if (dateString.match(/^\d{2}-\d{2}-\d{4}/)) {
+                    const parts = dateString.split('-');
+                    return `${parts[0]}/${parts[1]}/${parts[2]}`;
+                }
+                // Essayer de parser comme date ISO
+                else {
+                    date = new Date(dateString);
+                }
+                
+                if (isNaN(date.getTime())) {
+                    return dateString; // Retourner la date originale si le parsing échoue
+                }
+                
+                // Formater en dd/mm/yyyy
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                
+                return `${day}/${month}/${year}`;
+            } catch (error) {
+                console.warn('Erreur lors du formatage de la date:', dateString, error);
+                return dateString; // Retourner la date originale en cas d'erreur
+            }
+        }
+
         function cleanJobTitle(title) {
             if (!title) return title;
             return title
@@ -3016,7 +3060,7 @@
             ${badgeHTML}
             <div class="job-title">${cleanJobTitle(job.job_title)}</div>
             <div class="job-id">${job.job_id}</div>
-            <div class="job-date">Publiée le ${job.publication_date || 'date inconnue'}</div>
+            <div class="job-date">Publiée le ${formatDateToFrench(job.publication_date)}</div>
             <div class="job-tags">
                 ${job.location ? `<span class="tag tag-location">📍 ${job.location}</span>` : ''}
                 ${job.contract_type ? `<span class="tag tag-contract">📄 ${job.contract_type}</span>` : ''}
