@@ -2665,7 +2665,7 @@
                 institution_type: document.getElementById('institutionType').value,
                 diploma_status: document.getElementById('diplomaStatus').value,
                 graduation_year: document.getElementById('graduationYear').value ? parseInt(document.getElementById('graduationYear').value) : null,
-                languages: getLanguagesData(), // Array des langues avec leur niveau
+                languages: window.getLanguagesData ? window.getLanguagesData() : [], // Array des langues avec leur niveau
                 email: userEmail || '',
                 updated_at: new Date().toISOString(),
                 created_at: null // Sera défini lors de la première création
@@ -3017,7 +3017,7 @@
 
             // Écouter le clic sur le bouton "Ajouter une langue"
             addLanguageBtn.addEventListener('click', function() {
-                addLanguageItem();
+                window.addLanguageItem();
             });
 
             // Fonction pour obtenir les données des langues (pour la sauvegarde)
