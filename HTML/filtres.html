@@ -184,6 +184,18 @@
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
 
+        .filter-row-reset {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #f3f4f6;
+        }
+
+        .filter-row-reset .reset-btn {
+            margin: 0;
+        }
+
         .advanced-search-header-actions {
             display: flex;
             align-items: center;
@@ -1266,7 +1278,6 @@
             <div class="advanced-search-header">
                 <h1>Plusieurs recherches, des filtres sur mesure pour chacune</h1>
                 <div class="advanced-search-header-actions">
-                    <button type="button" class="reset-btn" onclick="resetAllFiltersRecherche()">🔄 Réinitialiser tous les filtres</button>
                     <button class="btn-add-accordion" onclick="createNewAccordion()">+ Nouvelle recherche</button>
                 </div>
             </div>
@@ -1800,18 +1811,22 @@
             educations: []
         };
 
-        async function resetAllFiltersRecherche() {
-            if (accordions.length === 0) return;
-            if (!confirm('Réinitialiser tous les filtres de toutes vos recherches ?')) return;
-            for (const accordion of accordions) {
-                accordion.filters = JSON.parse(JSON.stringify(DEFAULT_FILTERS));
-                try {
-                    await saveAccordion(accordion);
-                } catch (e) {
-                    console.warn('Erreur sauvegarde après reset:', e);
-                }
+        async function resetAccordionFilters(accordionId) {
+            const accordion = accordions.find(a => a.id === accordionId);
+            if (!accordion) return;
+            if (!confirm('Réinitialiser les filtres de cette recherche ?')) return;
+            accordion.filters = JSON.parse(JSON.stringify(DEFAULT_FILTERS));
+            try {
+                await saveAccordion(accordion);
+            } catch (e) {
+                console.warn('Erreur sauvegarde après reset:', e);
             }
-            renderAccordions();
+            const tagsEl = document.getElementById(`tags-${accordionId}`);
+            if (tagsEl) tagsEl.innerHTML = '';
+            const searchInput = document.getElementById(`search-${accordionId}`);
+            if (searchInput) searchInput.value = '';
+            updateFiltersDisplay(accordionId, accordion.filters);
+            updateAccordionDisplay(accordionId);
         }
 
         function createNewAccordion() {
@@ -2070,6 +2085,9 @@
                             <label>🎓 Niveau d'étude</label>
                             <div class="filter-checkbox-container" id="educationFilter-${accordionId}"></div>
                         </div>
+                    </div>
+                    <div class="filter-row-reset">
+                        <button type="button" class="reset-btn" onclick="resetAccordionFilters('${accordionId}')">🔄 Réinitialiser les filtres</button>
                     </div>
                 </div>
             `;
