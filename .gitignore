@@ -26,3 +26,12 @@ Thumbs.db
 # Fichiers temporaires
 *.tmp
 *.bak
+
+# Identifiants de test (ne jamais commiter)
+TEST_CREDENTIALS.txt
+.env.local
+.env.*.local
+
+# Clé de compte de service Firebase (ne jamais commiter)
+**/serviceAccountKey.json
+**/service-account*.json

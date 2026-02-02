@@ -1325,7 +1325,6 @@
                 if (rechercheLink) rechercheLink.style.display = user ? 'inline-block' : 'none';
                 if (user) {
                     console.log('Utilisateur connecté:', user.email);
-                    // Si l'utilisateur est connecté et vérifié, rediriger vers les offres
                     if (user.emailVerified) {
                         localStorage.setItem('authToken', user.uid);
                         localStorage.setItem('userEmail', user.email);
@@ -1772,12 +1771,10 @@
                 const userCredential = await auth.signInWithEmailAndPassword(email, password);
                 const user = userCredential.user;
 
-                // Vérifier si l'email est vérifié
+                // Bloquer la connexion tant que l'email n'est pas vérifié
                 if (!user.emailVerified) {
                     await auth.signOut();
                     showError('loginError', 'Veuillez vérifier votre email avant de vous connecter. Un email de vérification a été envoyé lors de l\'inscription.');
-                    
-                    // Optionnel : renvoyer l'email de vérification
                     try {
                         await user.sendEmailVerification();
                         showError('loginError', 'Veuillez vérifier votre email. Un nouvel email de vérification vient d\'être envoyé.');

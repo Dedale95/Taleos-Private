@@ -792,8 +792,18 @@
             box-sizing: border-box;
         }
 
-        footer .container {
-            background: transparent;
+        footer .container,
+        footer .container * {
+            background: transparent !important;
+        }
+
+        /* Le nav du header a background: white ; on l’annule dans le footer */
+        footer nav,
+        footer .footer-nav {
+            background: transparent !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            position: static !important;
         }
 
         footer p {
