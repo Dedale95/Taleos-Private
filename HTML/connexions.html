@@ -1024,19 +1024,21 @@
                     throw new Error('Veuillez entrer une adresse email valide (format: nom@domaine.com)');
                 }
 
-                // Appel du backend AWS (endpoint /validate, format: bank_name, email, password)
+                // Appel du backend AWS (endpoint /validate).
+                // bank_name doit correspondre à la clé dans ValidatorFactory (ex: "deloitte", "credit_agricole", "societe_generale").
                 console.log("🚀 Envoi de la requête au backend AWS...");
+                const payload = {
+                    bank_name: bank.id,
+                    email: email,
+                    password: password
+                };
                 const response = await fetch(`${API_BASE_URL}/validate`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-API-Key': API_KEY
                     },
-                    body: JSON.stringify({
-                        bank_name: bank.id,
-                        email: email,
-                        password: password
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 const data = await response.json().catch(() => ({}));
