@@ -2909,11 +2909,11 @@
                    companyName.includes('idia');
         }
 
-        // Fonction pour envoyer la candidature vers le backend AWS
-        async function sendApplicationToBackend(userId, offerUrl, bankName = 'credit_agricole') {
+        // Envoi candidature vers l'API /apply (vignettes Crédit Agricole).
+        // Payload attendu : bank_id, user_id, offer_url.
+        async function sendApplicationToBackend(userId, offerUrl, bankId = 'credit_agricole') {
             try {
-                console.log('[API] Envoi candidature vers backend:', { userId, offerUrl, bankName });
-                
+                console.log('[API] Envoi candidature vers backend:', { bank_id: bankId, user_id: userId, offer_url: offerUrl });
                 const response = await fetch('https://api.taleos.co/apply', {
                     method: 'POST',
                     headers: {
@@ -2921,10 +2921,9 @@
                         'X-API-Key': 'Thibault_Secure_987654321_Validator'
                     },
                     body: JSON.stringify({
+                        bank_id: bankId,
                         user_id: userId,
-                        offer_url: offerUrl,
-                        bank_name: bankName,
-                        submit: true
+                        offer_url: offerUrl
                     })
                 });
 
