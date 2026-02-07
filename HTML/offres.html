@@ -2934,12 +2934,15 @@
                 const result = await response.json();
                 console.log('[API] Réponse:', result);
 
-                // Backend peut renvoyer success: true ou status: 'success'
-                const isSuccess = result.success === true || result.status === 'success';
+                // Succès : top-level ou dans result.data (bool ou string "true")
+                const raw = result.data != null ? result.data : result;
+                const successVal = raw.success;
+                const isSuccess = successVal === true || successVal === 'true' || result.status === 'success' || raw.status === 'success';
+                const message = raw.message ?? result.message;
                 if (isSuccess) {
-                    return { success: true, data: result, message: result.message };
+                    return { success: true, data: result, message: message };
                 } else {
-                    return { success: false, error: result.message || 'Erreur inconnue', data: result };
+                    return { success: false, error: message || 'Erreur inconnue', data: result };
                 }
 
             } catch (error) {
