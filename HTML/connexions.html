@@ -925,9 +925,15 @@
             }
         }
 
+        // Callbacks actuels de la modale (pour éviter que "Confirmer" exécute l'ancien callback d'une autre banque)
+        let _confirmModalOnConfirm = null;
+        let _confirmModalOnCancel = null;
+
         // Fonction pour afficher une modale de confirmation personnalisée
         function showConfirmModal(message, onConfirm, onCancel) {
-            // Créer l'overlay si il n'existe pas
+            _confirmModalOnConfirm = onConfirm;
+            _confirmModalOnCancel = onCancel;
+
             let overlay = document.getElementById('confirmModalOverlay');
             if (!overlay) {
                 overlay = document.createElement('div');
@@ -949,30 +955,25 @@
                 `;
                 document.body.appendChild(overlay);
 
-                // Gérer les clics
                 document.getElementById('confirmModalCancel').addEventListener('click', () => {
                     overlay.classList.remove('show');
-                    if (onCancel) onCancel();
+                    if (_confirmModalOnCancel) _confirmModalOnCancel();
                 });
 
                 document.getElementById('confirmModalConfirm').addEventListener('click', () => {
                     overlay.classList.remove('show');
-                    if (onConfirm) onConfirm();
+                    if (_confirmModalOnConfirm) _confirmModalOnConfirm();
                 });
 
-                // Fermer en cliquant sur l'overlay
                 overlay.addEventListener('click', (e) => {
                     if (e.target === overlay) {
                         overlay.classList.remove('show');
-                        if (onCancel) onCancel();
+                        if (_confirmModalOnCancel) _confirmModalOnCancel();
                     }
                 });
             }
 
-            // Mettre à jour le message
             document.getElementById('confirmModalMessage').textContent = message;
-
-            // Afficher la modale
             overlay.classList.add('show');
         }
 
