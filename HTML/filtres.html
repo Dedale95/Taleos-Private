@@ -2748,8 +2748,10 @@
                 const result = await response.json();
                 console.log('[API] Réponse:', result);
 
-                if (result.status === 'success') {
-                    return { success: true, data: result };
+                // Backend peut renvoyer success: true ou status: 'success'
+                const isSuccess = result.success === true || result.status === 'success';
+                if (isSuccess) {
+                    return { success: true, data: result, message: result.message };
                 } else {
                     return { success: false, error: result.message || 'Erreur inconnue', data: result };
                 }
@@ -2821,31 +2823,43 @@
                     status: 'envoyée'
                 };
 
-                // Ajouter les données de l'API si disponible
+                // Ajouter les données de l'API si disponible (objet sérialisable pour Firestore, pas d'undefined)
                 if (apiResult && apiResult.data) {
-                    applicationData.apiResponse = apiResult.data;
-                    applicationData.offerId = apiResult.data.offer_id;
-                    applicationData.executionTime = apiResult.data.execution_time;
+                    const d = apiResult.data;
+                    const apiResp = {};
+                    if (d.message != null) apiResp.message = String(d.message);
+                    if (d.offer_id != null) apiResp.offer_id = String(d.offer_id);
+                    if (d.execution_time != null) apiResp.execution_time = Number(d.execution_time);
+                    if (Object.keys(apiResp).length) applicationData.apiResponse = apiResp;
+                    if (d.offer_id != null) applicationData.offerId = String(d.offer_id);
+                    if (d.execution_time != null) applicationData.executionTime = Number(d.execution_time);
                 }
 
                 const applicationsRef = db.collection('profiles').doc(userId).collection('job_applications');
-                await applicationsRef.add(applicationData);
-                
-                console.log('✅ Candidature enregistrée dans Firestore:', applicationData);
-                
+                try {
+                    await applicationsRef.add(applicationData);
+                    console.log('✅ Candidature enregistrée dans Firestore:', applicationData);
+                } catch (firestoreError) {
+                    console.error('❌ Erreur Firestore (candidature tout de même envoyée):', firestoreError);
+                    showToast('Attention', 'Candidature envoyée mais l\'enregistrement dans Mes candidatures a échoué.', 'warning', 5000);
+                }
+
+                const normalizedId = String(jobId || '').trim();
                 delete pendingApplications[jobId];
-                userApplications.add(jobId);
-                applicationStatuses.set(jobId, 'envoyée');
-                
-                // Message de confirmation
-                const successMessage = apiResult && apiResult.data 
-                    ? `Candidature envoyée avec succès${apiResult.data.offer_id ? ` (Réf: ${apiResult.data.offer_id})` : ''}`
-                    : 'Candidature envoyée !';
-                
+                delete pendingApplications[normalizedId];
+                userApplications.add(normalizedId);
+                applicationStatuses.set(normalizedId, 'envoyée');
+
+                const successMessage = (apiResult && apiResult.message)
+                    ? apiResult.message
+                    : (apiResult && apiResult.data)
+                        ? `Candidature envoyée avec succès${apiResult.data.offer_id ? ` (Réf: ${apiResult.data.offer_id})` : ''}`
+                        : 'Candidature envoyée !';
+
                 showToast('Candidature envoyée !', successMessage, 'success', 5000);
-                
-                updateJobCardButtons(jobId);
-                updateJobCardStyles(jobId);
+
+                updateJobCardButtons(normalizedId);
+                updateJobCardStyles(normalizedId);
                 
             } catch (error) {
                 console.error('❌ Erreur lors de l\'envoi de la candidature:', error);
@@ -2859,9 +2873,10 @@
         // Fonction pour afficher l'état "Envoi en cours"
         function showApplicationSendingState(jobId) {
             const cards = document.querySelectorAll('.job-card');
+            const jobIdStr = String(jobId || '').trim();
             cards.forEach(card => {
-                const cardJobId = card.querySelector('.job-id')?.textContent;
-                if (cardJobId === jobId) {
+                const cardJobId = (card.querySelector('.job-id')?.textContent || '').trim();
+                if (cardJobId === jobIdStr) {
                     const badge = card.querySelector('.job-card-badge');
                     if (badge) {
                         badge.innerHTML = `
@@ -2965,9 +2980,10 @@
         // Fonction pour mettre à jour les styles CSS de la carte
         function updateJobCardStyles(jobId) {
             const cards = document.querySelectorAll('.job-card');
+            const jobIdStr = String(jobId || '').trim();
             cards.forEach(card => {
-                const cardJobId = card.querySelector('.job-id')?.textContent;
-                if (cardJobId === jobId) {
+                const cardJobId = (card.querySelector('.job-id')?.textContent || '').trim();
+                if (cardJobId === jobIdStr) {
                     const isApplied = userApplications.has(jobId);
                     const isPending = pendingApplications[jobId];
                     const status = applicationStatuses.get(jobId);
@@ -3008,16 +3024,17 @@
         // Fonction pour mettre à jour les boutons d'une carte spécifique
         function updateJobCardButtons(jobId) {
             const cards = document.querySelectorAll('.job-card');
+            const jobIdStr = String(jobId || '').trim();
             cards.forEach(card => {
-                const cardJobId = card.querySelector('.job-id')?.textContent;
-                if (cardJobId === jobId) {
+                const cardJobId = (card.querySelector('.job-id')?.textContent || '').trim();
+                if (cardJobId === jobIdStr) {
                     const actionsDiv = card.querySelector('.job-actions');
                     if (actionsDiv) {
                         const isApplied = userApplications.has(jobId);
                         const isPending = pendingApplications[jobId];
                         const status = applicationStatuses.get(jobId);
                         const isSubmitted = status === 'envoyée' || (isApplied && !isPending);
-                        const job = allJobs.find(j => j.job_id === jobId);
+                        const job = allJobs.find(j => String(j.job_id || '').trim() === jobIdStr);
                         if (job) {
                             const jobTitle = cleanJobTitle(job.job_title);
                             
