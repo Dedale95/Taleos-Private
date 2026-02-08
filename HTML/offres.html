@@ -1535,6 +1535,18 @@
                 .trim();
         }
 
+        /** ID du document Firestore job_applications : basé sur le titre du poste + jobId pour unicité (pas d'ID aléatoire). */
+        function getJobApplicationDocId(jobTitle, jobId) {
+            const base = (jobTitle || 'sans-titre').trim()
+                .replace(/[/\\.]/g, '_')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 200);
+            const safe = (base || 'sans-titre').replace(/\s/g, '_');
+            const suffix = (jobId || '').trim() || 'unknown';
+            return (safe + '_' + suffix).slice(0, 1500);
+        }
+
 
         /**
          * Charge les données depuis le fichier JSON (exporté depuis SQLite)
@@ -2276,7 +2288,7 @@
                 // Vérifier que TOUS les mots-clés sont présents dans le titre OU la description
                 const matchSearch = window.searchKeywords.size === 0 || Array.from(window.searchKeywords).every(keyword => {
                     const titleMatch = job.job_title.toLowerCase().includes(keyword);
-                    const descMatch = job.job_description.toLowerCase().includes(keyword);
+                    const descMatch = (job.job_description || '').toLowerCase().includes(keyword);
                     return titleMatch || descMatch;
                 });
                 const matchCountry = !selectedCountries.length ||
@@ -2305,7 +2317,7 @@
                 return allJobs.filter(job => {
                     const matchSearch = window.searchKeywords.size === 0 || Array.from(window.searchKeywords).every(keyword => {
                         const titleMatch = job.job_title.toLowerCase().includes(keyword);
-                        const descMatch = job.job_description.toLowerCase().includes(keyword);
+                        const descMatch = (job.job_description || '').toLowerCase().includes(keyword);
                         return titleMatch || descMatch;
                     });
 
@@ -2818,11 +2830,12 @@
                     return;
                 }
 
-                // Vérifier si l'utilisateur a déjà candidaté à cette offre
+                // Vérifier si l'utilisateur a déjà candidaté à cette offre (doc ID = titre + jobId)
                 const applicationsRef = db.collection('profiles').doc(userId).collection('job_applications');
-                const existingApp = await applicationsRef.where('jobId', '==', jobId).get();
+                const docId = getJobApplicationDocId(cleanJobTitle(job.job_title), jobId);
+                const existingDoc = await applicationsRef.doc(docId).get();
                 
-                if (!existingApp.empty) {
+                if (existingDoc.exists) {
                     showToast('Déjà candidaté', 'Vous avez déjà postulé à cette offre.', 'info', 3000);
                     userApplications.add(jobId);
                     updateJobCardButtons(jobId);
@@ -3034,9 +3047,10 @@
                 }
 
                 const applicationsRef = db.collection('profiles').doc(userId).collection('job_applications');
+                const docId = getJobApplicationDocId(applicationData.jobTitle, jobId);
                 try {
-                    await applicationsRef.add(applicationData);
-                    console.log('✅ Candidature enregistrée dans Firestore:', applicationData);
+                    await applicationsRef.doc(docId).set(applicationData);
+                    console.log('✅ Candidature enregistrée dans Firestore (doc:', docId + '):', applicationData);
                 } catch (firestoreError) {
                     console.error('❌ Erreur Firestore (candidature tout de même envoyée):', firestoreError);
                     showToast('Attention', 'Candidature envoyée mais l\'enregistrement dans Mes candidatures a échoué.', 'warning', 5000);
@@ -3147,11 +3161,12 @@
                             return;
                         }
 
-                        // Si pas dans pendingApplications, chercher dans Firestore (candidature déjà envoyée)
+                        // Si pas dans pendingApplications, chercher dans Firestore par doc ID (titre + jobId)
                         const applicationsRef = db.collection('profiles').doc(userId).collection('job_applications');
-                        const existingApp = await applicationsRef.where('jobId', '==', jobId).get();
+                        const docId = getJobApplicationDocId(jobTitle, jobId);
+                        const existingDoc = await applicationsRef.doc(docId).get();
                         
-                        if (existingApp.empty) {
+                        if (!existingDoc.exists) {
                             console.warn('⚠️ Candidature introuvable dans pendingApplications et Firestore');
                             // Nettoyer les données locales si elles existent
                             userApplications.delete(jobId);
@@ -3163,7 +3178,6 @@
                         }
 
                         // Supprimer le document de Firestore
-                        const docId = existingApp.docs[0].id;
                         await applicationsRef.doc(docId).delete();
                         
                         console.log('✅ Candidature annulée dans Firestore:', docId);
