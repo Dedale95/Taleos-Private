@@ -45,9 +45,12 @@ BANK_CONFIGS = {
 }
 
 
-def test_credit_agricole_connection(email: str, password: str, timeout: int = 30):
-    """Teste la connexion à Crédit Agricole avec Playwright"""
-    logger.info(f"🔍 Test de connexion pour Crédit Agricole avec {email}")
+def test_credit_agricole_connection(email: str, password: str, timeout: int = 30, user_id: str = None):
+    """Teste la connexion à Crédit Agricole avec Playwright.
+    user_id: ID Firebase (pour les logs), optionnel."""
+    user_label = (user_id or "").strip() or "Inconnu"
+    logger.info(f"--- 🏦 TEST CONNEXION : Crédit Agricole ---")
+    logger.info(f"👤 [USER: {user_label}] Tentative pour : {email}")
     
     try:
         with sync_playwright() as p:
@@ -494,7 +497,54 @@ def health():
 def root():
     """Endpoint racine pour tester"""
     logger.info("🏠 Root endpoint appelé")
-    return jsonify({'status': 'ok', 'message': 'Taleos Connection Tester API', 'endpoints': ['/health', '/api/test-bank-connection']}), 200
+    return jsonify({'status': 'ok', 'message': 'Taleos Connection Tester API', 'endpoints': ['/health', '/validate', '/api/test-bank-connection']}), 200
+
+
+def _do_validate_connection(data):
+    """Logique commune : lit user_id, email, password, bank_id du body et lance le test.
+    Retourne (result_dict, status_code) ou (jsonify_response, status_code)."""
+    if not data:
+        return jsonify({'success': False, 'message': 'Données JSON requises'}), 400
+    bank_id = data.get('bank_id', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '')
+    user_id = (data.get('user_id') or '').strip() or None
+    if not bank_id or not email or not password:
+        return jsonify({'success': False, 'message': 'bank_id, email et password requis'}), 400
+    if '@' not in email:
+        return jsonify({'success': False, 'message': 'Format email invalide'}), 400
+    if bank_id != 'credit_agricole':
+        return jsonify({'success': False, 'message': f'Banque {bank_id} non encore implémentée'}), 400
+    _start = time.time()
+    result = test_credit_agricole_connection(email, password, timeout=30, user_id=user_id)
+    _elapsed = round(time.time() - _start, 1)
+    if result.get('success'):
+        logger.info(f"✨ [USER: {user_id or 'Inconnu'}] SUCCÈS : Connexion établie sur Crédit Agricole en {_elapsed}s.")
+    logger.info(f"🔌 Navigateur fermé. Fin de session pour {user_id or 'Inconnu'}.")
+    return jsonify(result), 200
+
+
+@app.route('/validate', methods=['POST', 'OPTIONS'])
+def validate():
+    """Endpoint appelé par le frontend (connexions.html) : user_id, email, password, bank_id."""
+    if request.method == 'OPTIONS':
+        return '', 200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '3600'
+        }
+    try:
+        logger.info("🚀 REQUÊTE REÇUE sur /validate")
+        data = request.get_json()
+        logger.info(f"📦 Body (sans password): user_id={data.get('user_id') if data else None}, email={data.get('email', '')[:10] if data else ''}..., bank_id={data.get('bank_id') if data else None}")
+        result, status = _do_validate_connection(data)
+        return result, status
+    except Exception as e:
+        logger.error(f"❌ Erreur /validate: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Erreur serveur: {str(e)}'}), 500
 
 
 @app.route('/api/test-bank-connection', methods=['POST', 'OPTIONS'])
@@ -522,48 +572,9 @@ def test_bank_connection():
         logger.info("📥 Récupération des données JSON...")
         data = request.get_json()
         logger.info(f"📦 Données reçues: {data}")
-        
-        if not data:
-            return jsonify({
-                'success': False,
-                'message': 'Données JSON requises'
-            }), 400
-        
-        bank_id = data.get('bank_id', '').strip()
-        email = data.get('email', '').strip()
-        password = data.get('password', '')
-        
-        # Validation
-        logger.info(f"🔍 Validation des données: bank_id={bank_id}, email={email[:10]}...")
-        if not bank_id or not email or not password:
-            logger.warning("❌ Données manquantes")
-            return jsonify({
-                'success': False,
-                'message': 'bank_id, email et password requis'
-            }), 400
-        
-        if '@' not in email:
-            logger.warning(f"❌ Format email invalide: {email}")
-            return jsonify({
-                'success': False,
-                'message': 'Format email invalide'
-            }), 400
-        
-        # Tester la connexion
-        logger.info(f"🚀 Démarrage du test de connexion pour {bank_id}")
-        if bank_id == 'credit_agricole':
-            result = test_credit_agricole_connection(email, password, timeout=30)
-            logger.info(f"✅ Test terminé: success={result.get('success')}")
-        else:
-            logger.warning(f"❌ Banque non implémentée: {bank_id}")
-            return jsonify({
-                'success': False,
-                'message': f'Banque {bank_id} non encore implémentée'
-            }), 400
-        
+        result, status = _do_validate_connection(data)
         logger.info("📤 Envoi de la réponse au client")
-        return jsonify(result), 200
-    
+        return result, status
     except Exception as e:
         logger.error(f"❌ Erreur dans l'endpoint: {e}")
         import traceback
