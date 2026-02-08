@@ -1031,31 +1031,26 @@
                     throw new Error('Veuillez entrer une adresse email valide (format: nom@domaine.com)');
                 }
 
-                // 1. Récupérer l'ID utilisateur Firebase (obligatoire pour /validate)
+                // 1. Auth : récupérer l'UID Firebase (auth.currentUser.uid)
                 const auth = firebase.auth();
-                const currentUser = auth.currentUser;
-                if (!currentUser) {
-                    throw new Error('Vous devez être connecté pour lier un compte.');
+                // 2. État de connexion : si auth.currentUser est nul au clic, fallback sur l'état global (currentUser)
+                const firebaseUserId = (auth.currentUser && auth.currentUser.uid) || (currentUser && currentUser.uid) || null;
+                if (!firebaseUserId || typeof firebaseUserId !== 'string' || firebaseUserId.trim() === '') {
+                    throw new Error('Vous devez être connecté pour lier un compte. Rechargez la page si le problème persiste.');
                 }
-                const userId = currentUser.uid;
-                if (!userId || typeof userId !== 'string' || userId.trim() === '') {
-                    throw new Error('Session invalide. Reconnectez-vous puis réessayez.');
-                }
+                console.log("Envoi de l'ID Firebase au backend:", firebaseUserId);
 
-                // 2. Payload strict pour https://api.taleos.co/validate : user_id, email, password, bank_id
+                // 3. Clé attendue par app.py : user_id (avec underscore)
                 const payload = {
-                    user_id: userId,
+                    user_id: firebaseUserId,
                     email: emailValue,
                     password: passwordValue,
                     bank_id: bank.id
                 };
-                console.log("🚀 Envoi /validate vers api.taleos.co :", { user_id: payload.user_id, email: payload.email ? payload.email.substring(0, 8) + '...' : '', bank_id: payload.bank_id });
 
                 const response = await fetch('https://api.taleos.co/validate', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
@@ -1068,9 +1063,7 @@
                 // Réponse AWS : success (booléen) et message (string)
                 const isSuccess = data.success === true;
                 if (isSuccess) {
-                    // RÉCUPÉRER l'ID de l'utilisateur actuel
-                    const uid = firebase.auth().currentUser.uid;
-                    
+                    const uid = firebaseUserId;
                     if (uid) {
                         try {
                             // Arborescence : profiles/{uid}/career_connections/{bankId}
