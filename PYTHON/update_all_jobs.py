@@ -44,7 +44,7 @@ def run_script(script_name, cwd=PYTHON_DIR, timeout=900):
         return False
 
 def merge_from_databases():
-    """Fusionne les données depuis les bases SQLite"""
+    """Fusionne les données depuis les bases SQLite (dont job_description = texte complet pour recherche par mots-clés)."""
     print(f"🔄 Fusion des données depuis les bases SQLite vers {OUTPUT_CSV}...")
     all_jobs = []
     headers = None

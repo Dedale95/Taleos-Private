@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 Script pour exporter les données SQLite vers JSON
-Utilisé par les fichiers HTML pour charger les données
+Utilisé par les fichiers HTML pour charger les données.
+
+Recherche par mots-clés :
+- La colonne job_description contient le TEXTE COMPLET de l'offre (jusqu'à ~25k caractères).
+- Ce texte est exporté dans le JSON et utilisé UNIQUEMENT pour la recherche par mots-clés
+  dans offres.html et filtres.html (filtre "Recherche par mots-clés").
+- Il n'est PAS affiché sur les vignettes / cartes d'offres (titre, lieu, contrat, famille, etc. uniquement).
 """
 
 import sqlite3
@@ -28,6 +34,7 @@ def read_from_db(db_path, company_name):
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row  # Permet d'accéder aux colonnes par nom
+        # job_description = texte complet de l'offre pour la recherche par mots-clés (non affiché sur les vignettes)
         cursor = conn.execute("""
             SELECT 
                 job_id, job_title, contract_type, publication_date, location,
