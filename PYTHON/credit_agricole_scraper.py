@@ -203,6 +203,7 @@ class JobDatabase:
                     job_family = excluded.job_family,
                     duration = excluded.duration,
                     management_position = excluded.management_position,
+                    status = excluded.status,
                     education_level = excluded.education_level,
                     experience_level = excluded.experience_level,
                     training_specialization = excluded.training_specialization,
@@ -644,10 +645,16 @@ class JobDetailScraper:
                 except Exception as e:
                     continue
 
-            # Description du poste
-            desc = soup.find("section", class_="offer-content")
-            if desc:
-                job["job_description"] = self.clean_text(desc.get_text())
+            # Texte complet de l'offre pour la recherche par mots-clés (non affiché sur les vignettes)
+            main_content = soup.find("main") or soup.find("div", class_=lambda c: c and "offer" in (c or ""))
+            if main_content:
+                full_text = self.clean_text(main_content.get_text())
+                # Limiter à 25k caractères pour stockage raisonnable tout en gardant le maximum pour la recherche
+                job["job_description"] = full_text[:25000] if full_text else ""
+            if not job.get("job_description") or not job["job_description"].strip():
+                desc = soup.find("section", class_="offer-content")
+                if desc:
+                    job["job_description"] = self.clean_text(desc.get_text())
 
             # Nom de l'entreprise
             company = soup.find("h1", class_="entity-name")
