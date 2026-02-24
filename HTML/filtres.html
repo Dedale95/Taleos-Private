@@ -2617,6 +2617,16 @@
             }
         }
 
+        window.addEventListener('taleos-extension-candidature-success', (e) => {
+            const jobId = (e.detail?.jobId || '').trim();
+            if (!jobId) return;
+            userApplications.add(jobId);
+            applicationStatuses.set(jobId, 'envoyée');
+            if (typeof updateJobCardButtons === 'function') updateJobCardButtons(jobId);
+            if (typeof updateJobCardStyles === 'function') updateJobCardStyles(jobId);
+            if (typeof showToast === 'function') showToast('Candidature envoyée !', 'Votre candidature a été enregistrée.', 'success', 4000);
+        });
+
         // Vérifier si l'utilisateur est connecté
         function checkIsAuthenticated() {
             if (typeof firebase !== 'undefined' && firebase.auth) {

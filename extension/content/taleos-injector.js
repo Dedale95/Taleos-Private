@@ -37,8 +37,10 @@
     const found = findJobCard(btn);
     if (!found) return;
 
-    const { jobUrl } = found;
-    const jobId = extractJobIdFromOnClick(btn) || '';
+    const { card, jobUrl } = found;
+    const jobId = extractJobIdFromOnClick(btn) || (card.querySelector('.job-id')?.textContent || '').trim();
+    const jobTitle = (card.querySelector('.job-title')?.textContent || '').trim();
+    const companyName = (card.querySelector('.company-name-wrapper span, .job-company span')?.textContent || '').trim();
 
     e.preventDefault();
     e.stopPropagation();
@@ -49,7 +51,9 @@
       action: 'taleos_apply',
       offerUrl: jobUrl,
       bankId,
-      jobId
+      jobId,
+      jobTitle,
+      companyName
     }).catch(() => {
       console.warn('[Taleos] Extension non disponible, ouverture normale');
       window.open(jobUrl, '_blank');
@@ -57,4 +61,12 @@
   }
 
   document.addEventListener('click', onApplyClick, true);
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'taleos_candidature_success') {
+      window.dispatchEvent(new CustomEvent('taleos-extension-candidature-success', {
+        detail: { jobId: msg.jobId, status: msg.status }
+      }));
+    }
+  });
 })();

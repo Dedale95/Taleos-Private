@@ -1656,8 +1656,14 @@
                                     console.log(`✅ JSON parsé avec succès : ${Array.isArray(data) ? 'tableau' : 'objet'}`);
                                     
                                     if (data && Array.isArray(data) && data.length > 0) {
+                                        // Ne garder que les offres Live (scraped_jobs.json inclut les Expired en fallback)
+                                        const beforeCount = data.length;
+                                        data = data.filter(job => job && job.status === 'Live');
+                                        if (beforeCount > data.length) {
+                                            console.log(`📋 Filtrage : ${beforeCount - data.length} offres expirées exclues → ${data.length} Live`);
+                                        }
                                         loadedPath = path;
-                                        console.log(`✅ Fichier JSON chargé depuis : ${path} (${data.length} offres)`);
+                                        console.log(`✅ Fichier JSON chargé depuis : ${path} (${data.length} offres Live)`);
                                         break;
                                     } else {
                                         console.warn(`⚠️ Fichier JSON vide ou invalide pour : ${path}`, {
@@ -2777,6 +2783,17 @@
                 console.error('❌ Erreur lors du chargement des candidatures:', error);
             }
         }
+
+        // Écouter les succès de candidature venant de l'extension (tuile → vert)
+        window.addEventListener('taleos-extension-candidature-success', (e) => {
+            const jobId = (e.detail?.jobId || '').trim();
+            if (!jobId) return;
+            userApplications.add(jobId);
+            applicationStatuses.set(jobId, 'envoyée');
+            if (typeof updateJobCardButtons === 'function') updateJobCardButtons(jobId);
+            if (typeof updateJobCardStyles === 'function') updateJobCardStyles(jobId);
+            if (typeof showToast === 'function') showToast('Candidature envoyée !', 'Votre candidature a été enregistrée.', 'success', 4000);
+        });
 
         // Vérifier si l'utilisateur est connecté
         function checkIsAuthenticated() {

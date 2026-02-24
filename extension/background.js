@@ -13,13 +13,13 @@ const PROJECT_ID = 'project-taleos';
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'after_login_submit') {
-    const { offerUrl, bankId, profile } = msg;
+      const { offerUrl, bankId, profile } = msg;
     chrome.storage.local.remove('taleos_pending_offer');
     const tabId = sender.tab?.id;
     if (tabId) {
       const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
       const injectAndRun = (phase) => {
-        const p = { ...profile, __phase: phase };
+        const p = { ...profile, __phase: phase, __jobId: profile.__jobId, __jobTitle: profile.__jobTitle, __companyName: profile.__companyName, __offerUrl: offerUrl };
         chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] }).then(() =>
           chrome.scripting.executeScript({
             target: { tabId },
@@ -71,9 +71,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === 'taleos_apply') {
-    handleApply(msg.offerUrl, msg.bankId, msg.jobId)
+    const taleosTabId = sender.tab?.id;
+    handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId)
       .then(() => sendResponse({ ok: true }))
       .catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
+  if (msg.action === 'candidature_success') {
+    saveCandidatureAndNotifyTaleos(msg).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (msg.action === 'reload_and_continue') {
@@ -105,9 +110,10 @@ async function reloadAndContinue(tabId, offerUrl, bankId, profile) {
   chrome.tabs.onUpdated.addListener(listener);
 }
 
-async function handleApply(offerUrl, bankId, jobId) {
+async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId) {
   const tab = await chrome.tabs.create({ url: offerUrl, active: false });
   const tabId = tab.id;
+  chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
 
   const listener = async (id, info) => {
     if (id !== tabId || info.status !== 'complete') return;
@@ -126,6 +132,10 @@ async function handleApply(offerUrl, bankId, jobId) {
       console.error('[Taleos] Profil:', e);
       return;
     }
+    profile.__jobId = jobId;
+    profile.__jobTitle = jobTitle || '';
+    profile.__companyName = companyName || 'Crédit Agricole';
+    profile.__offerUrl = offerUrl;
 
     const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
 
@@ -142,6 +152,60 @@ async function handleApply(offerUrl, bankId, jobId) {
   };
 
   chrome.tabs.onUpdated.addListener(listener);
+}
+
+async function saveCandidatureAndNotifyTaleos(msg) {
+  const { jobId, jobTitle, companyName, offerUrl } = msg;
+  const { taleosUserId, taleosIdToken, taleos_pending_tab } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab']);
+  chrome.storage.local.remove('taleos_pending_tab');
+  if (!taleosUserId || !taleosIdToken) return;
+
+  const safe = (s) => (s || '').trim().replace(/[/\\.]/g, '_').replace(/\s+/g, '_').slice(0, 150) || 'inconnu';
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  const datePart = dd + '\uFF0F' + mm + '\uFF0F' + yyyy;
+  const docId = (datePart + ' \u203A ' + safe(companyName) + ' \u203A ' + safe(jobTitle) + ' \u203A ' + (jobId || 'unknown')).slice(0, 1500);
+
+  const doc = {
+    jobId: String(jobId || '').trim(),
+    jobTitle: (jobTitle || '').trim(),
+    jobUrl: offerUrl || '',
+    companyName: companyName || 'Non spécifié',
+    location: 'Non spécifié',
+    contractType: 'Non spécifié',
+    experienceLevel: 'Non spécifié',
+    jobFamily: 'Non spécifié',
+    publicationDate: 'Non spécifié',
+    appliedDate: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
+    status: 'envoyée'
+  };
+
+  const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const docPath = `profiles/${taleosUserId}/job_applications/${encodeURIComponent(docId)}`;
+  const fields = {};
+  for (const [k, v] of Object.entries(doc)) {
+    if (typeof v === 'string') fields[k] = { stringValue: v };
+    else if (typeof v === 'number') fields[k] = { integerValue: String(v) };
+    else if (v && typeof v === 'object' && 'seconds' in v) fields[k] = { timestampValue: new Date(v.seconds * 1000).toISOString() };
+  }
+  const res = await fetch(`${base}/${docPath}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${taleosIdToken}`
+    },
+    body: JSON.stringify({ fields })
+  });
+  if (!res.ok) console.error('[Taleos] Firestore save:', await res.text());
+
+  const taleosTab = taleos_pending_tab || (await chrome.tabs.query({ url: '*://*.taleos.co/*' }))[0]?.id;
+  if (taleosTab) {
+    try {
+      await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_success', jobId, status: 'envoyée' });
+    } catch (_) {}
+  }
 }
 
 async function testCredentials(bankId) {

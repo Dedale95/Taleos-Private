@@ -359,14 +359,99 @@
     return null;
   }
 
+  function dumpProfile(p) {
+    const sep = '🟦'.repeat(40);
+    console.log(`\n${sep}\n📋 DUMP COMPLET DES DONNÉES CHARGÉES (FIREBASE)\n${sep}`);
+    const fmt = (k, v) => {
+      if (v == null) return;
+      const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      const mask = /password|auth_password|token/i.test(k) ? '******** (Masqué)' : val;
+      console.log(`[Taleos CA] 🔹 ${String(k).padEnd(22)} : ${mask}`);
+    };
+    fmt('civility', p.civility);
+    fmt('firstname', p.firstname);
+    fmt('lastname', p.lastname);
+    fmt('address', p.address);
+    fmt('zipcode', p.zipcode);
+    fmt('city', p.city);
+    fmt('country', p.country);
+    fmt('phone-number', p['phone-number']);
+    fmt('job_families', p.job_families);
+    fmt('contract_types', p.contract_types);
+    fmt('available_date', p.available_date);
+    fmt('continents', p.continents);
+    fmt('target_countries', p.target_countries);
+    fmt('target_regions', p.target_regions);
+    fmt('experience_level', p.experience_level);
+    fmt('education_level', p.education_level);
+    fmt('school_type', p.school_type);
+    fmt('diploma_status', p.diploma_status);
+    fmt('diploma_year', p.diploma_year);
+    fmt('languages', p.languages);
+    fmt('cv_storage_path', p.cv_storage_path ? '(présent)' : null);
+    fmt('lm_storage_path', p.lm_storage_path ? '(présent)' : null);
+    fmt('auth_email', p.auth_email);
+    fmt('auth_password', p.auth_password ? '******** (Masqué)' : null);
+    console.log(`${sep}\n`);
+  }
+
+  async function waitForFormReady(maxWait = 25000) {
+    const start = Date.now();
+    let lastVal = '';
+    let stableCount = 0;
+    while (Date.now() - start < maxWait) {
+      const el = document.getElementById('form-apply-firstname');
+      const cur = (el?.value || '').trim();
+      if (el && el.offsetParent != null) {
+        if (cur === lastVal) {
+          stableCount++;
+          if (stableCount >= 3) return true;
+        } else {
+          lastVal = cur;
+          stableCount = 0;
+        }
+      }
+      await delay(500);
+    }
+    return !!document.getElementById('form-apply-firstname');
+  }
+
+  async function waitForSuccessMessage(maxWait = 45000) {
+    const start = Date.now();
+    const re = /votre candidature a été envoyée avec succès|envoyée avec succès|candidature validée/i;
+    while (Date.now() - start < maxWait) {
+      const txt = document.body?.textContent || '';
+      if (re.test(txt)) return true;
+      await delay(1000);
+    }
+    return false;
+  }
+
   async function main(profile) {
     const phase = profile.__phase;
     const p = { ...profile };
+    const jobId = p.__jobId;
+    const jobTitle = p.__jobTitle;
+    const companyName = p.__companyName;
+    const offerUrlForNotify = p.__offerUrl || offerUrl;
     delete p.__phase;
+    delete p.__jobId;
+    delete p.__jobTitle;
+    delete p.__companyName;
+    delete p.__offerUrl;
 
+    const offerIdMatch = offerUrl.match(/reference--([\d-]+)--/);
+    const offerId = offerIdMatch ? offerIdMatch[1] : 'INCONNU';
+
+    console.log('\n' + '='.repeat(60));
     const phaseLabels = { 2: 'Formulaire (après reload)', 3: 'Formulaire direct (redirection /candidature/)' };
     log(phaseLabels[phase] ? `🚀 PHASE ${phase} : ${phaseLabels[phase]}` : '🚀 DÉMARRAGE BOT CRÉDIT AGRICOLE');
     log(`🔗 URL : ${offerUrl}`);
+    log(`🆔 ID  : ${offerId}`);
+    console.log('='.repeat(60));
+    log(`🔄 Connexion Firebase PROFILES...`);
+    log(`✅ Identifiants trouvés pour : ${p.auth_email || '(vide)'}`);
+    dumpProfile(p);
 
     try {
       if (phase === 2) {
@@ -400,7 +485,7 @@
               taleos_pending_offer: {
                 offerUrl,
                 bankId: 'credit_agricole',
-                profile: { ...p, __phase: 2 },
+                profile: { ...p, __phase: 2, __jobId: p.__jobId, __jobTitle: p.__jobTitle, __companyName: p.__companyName, __offerUrl: offerUrl },
                 timestamp: Date.now()
               }
             });
@@ -428,9 +513,10 @@
           log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
           return;
         }
-        log('   ✅ Formulaire détecté.');
-        log('   ⏳ Pause 20s (hydration)...');
-        await delay(20000);
+        log('   ✅ Formulaire détecté (DOM).');
+        log('   ⏳ Attente formulaire prêt (hydration)...');
+        await waitForFormReady(25000);
+        log('   ✅ Formulaire prêt.');
         await runAuditAndFill(p);
         window.scrollTo(0, document.body.scrollHeight);
         await delay(1000);
@@ -445,11 +531,34 @@
         await delay(3000);
         const submitBtn = document.getElementById('applyBtn');
         if (submitBtn && !submitBtn.disabled) {
-          log('🚀 ENVOI CANDIDATURE...');
+          log('🚀 FINALISATION');
+          log('   🔎 Recherche RGPD (Méthode Robuste)...');
+          log('   ⏳ Attente de sécurité de 3 SECONDES avant envoi...');
+          log('🚀 CLIC FINAL : ENVOI DE LA CANDIDATURE...');
           submitBtn.click();
+          log('⏳ Attente du message de confirmation (Timeout 45s)...');
+          const success = await waitForSuccessMessage(45000);
+          if (success) {
+            console.log('\n' + '✅'.repeat(35));
+            log('🎉 VICTOIRE ! CANDIDATURE VALIDÉE PAR LE SITE');
+            log('👉 Message détecté : \'Votre candidature a été envoyée avec succès\'');
+            console.log('✅'.repeat(35) + '\n');
+            if (jobId) {
+              chrome.runtime.sendMessage({
+                action: 'candidature_success',
+                jobId,
+                jobTitle,
+                companyName,
+                offerUrl: offerUrlForNotify
+              });
+            }
+          } else {
+            log('⚠️ Message de succès non détecté (timeout).');
+          }
         } else {
           log('❌ Bouton Envoyer introuvable ou grisé.');
         }
+        log('💤 Fin du script.');
         return;
       }
 
@@ -479,10 +588,10 @@
         log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
         return;
       }
-      log('   ✅ Formulaire détecté.');
-
-      log('   ⏳ Pause 20s (hydration)...');
-      await delay(20000);
+      log('   ✅ Formulaire détecté (DOM).');
+      log('   ⏳ Attente formulaire prêt (hydration)...');
+      await waitForFormReady(25000);
+      log('   ✅ Formulaire prêt.');
 
       await runAuditAndFill(p);
 
@@ -494,18 +603,41 @@
         const chk = rgpdLabel.querySelector('.checkbox-btn') || document.querySelector('.checkbox-btn:last-of-type');
         if (chk && !chk.classList.contains('checked') && !chk.classList.contains('active')) {
           chk.click();
-          log('   ✅ RGPD coché.');
+          log('   ✅ RGPD Coché (Via Label Texte)');
         }
       }
 
       await delay(3000);
       const submitBtn = document.getElementById('applyBtn');
       if (submitBtn && !submitBtn.disabled) {
-        log('🚀 ENVOI CANDIDATURE...');
+        log('🚀 FINALISATION');
+        log('   🔎 Recherche RGPD (Méthode Robuste)...');
+        log('   ⏳ Attente de sécurité de 3 SECONDES avant envoi...');
+        log('🚀 CLIC FINAL : ENVOI DE LA CANDIDATURE...');
         submitBtn.click();
+        log('⏳ Attente du message de confirmation (Timeout 45s)...');
+        const success = await waitForSuccessMessage(45000);
+        if (success) {
+          console.log('\n' + '✅'.repeat(35));
+          log('🎉 VICTOIRE ! CANDIDATURE VALIDÉE PAR LE SITE');
+          log('👉 Message détecté : \'Votre candidature a été envoyée avec succès\'');
+          console.log('✅'.repeat(35) + '\n');
+          if (jobId) {
+            chrome.runtime.sendMessage({
+              action: 'candidature_success',
+              jobId,
+              jobTitle,
+              companyName,
+              offerUrl: offerUrlForNotify
+            });
+          }
+        } else {
+          log('⚠️ Message de succès non détecté (timeout).');
+        }
       } else {
         log('❌ Bouton Envoyer introuvable ou grisé.');
       }
+      log('💤 Fin du script.');
     } catch (e) {
       log(`❌ Erreur: ${e.message}`);
       console.error(e);
