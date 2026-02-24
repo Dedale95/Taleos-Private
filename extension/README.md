@@ -67,8 +67,8 @@ Le CV/LM sont récupérés depuis Firebase Storage (URL) puis convertis en `File
 
 ## Versioning
 
-- Incrémenter `version` dans manifest.json à chaque modification (1.0.03, 1.0.04, …)
-- Mettre à jour `version_date` (dd/mm/yyyy HH:mm) lors du commit
+- Incrémenter `version` dans manifest.json à chaque modification (1.0.04, 1.0.05, …)
+- La date de mise à jour est enregistrée automatiquement au chargement de l’extension (bouton « Mettre à jour »)
 
 ## Permissions
 

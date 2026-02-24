@@ -3,6 +3,16 @@
  * Orchestre : ouverture onglet, récupération profil Firestore, injection du script banque
  */
 
+(function setLastUpdate() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  chrome.storage.local.set({ taleosLastUpdate: `${dd}/${mm}/${yyyy} ${hh}:${min}` });
+})();
+
 const BANK_SCRIPT_MAP = {
   credit_agricole: 'scripts/credit_agricole.js',
   societe_generale: 'scripts/societe_generale.js',

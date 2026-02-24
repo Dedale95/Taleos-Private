@@ -68,22 +68,24 @@ function setLoading(loading) {
   }
 }
 
-function setVersion() {
+async function setVersion() {
   try {
     const manifest = chrome?.runtime?.getManifest?.() || {};
     const v = manifest.version || '?';
-    const dateStr = manifest.version_date || '';
     const badge = document.getElementById('version-badge');
     const badgeLogged = document.getElementById('version-badge-logged');
     const dateEl = document.getElementById('version-date');
     if (badge) badge.textContent = `v${v}`;
     if (badgeLogged) badgeLogged.textContent = `Version ${v}`;
-    if (dateEl) dateEl.textContent = dateStr ? `Mise à jour : ${dateStr}` : '';
+    if (dateEl) {
+      const { taleosLastUpdate } = await chrome.storage.local.get('taleosLastUpdate');
+      dateEl.textContent = taleosLastUpdate ? `Mise à jour : ${taleosLastUpdate}` : '';
+    }
   } catch (_) {}
 }
 
-function init() {
-  setVersion();
+async function init() {
+  await setVersion();
   if (typeof firebase === 'undefined') {
     showError('Firebase non chargé. Rechargez l\'extension.');
     return;
@@ -146,28 +148,6 @@ function init() {
   const doReload = () => { if (chrome?.runtime?.reload) chrome.runtime.reload(); };
   document.getElementById('reload-btn')?.addEventListener('click', doReload);
   document.getElementById('reload-btn-login')?.addEventListener('click', doReload);
-
-  document.getElementById('test-creds-btn')?.addEventListener('click', async () => {
-    const status = document.getElementById('creds-status');
-    if (!status) return;
-    status.textContent = 'Vérification...';
-    status.className = 'loading-text';
-    try {
-      const r = await chrome.runtime.sendMessage({ action: 'test_credentials', bankId: 'credit_agricole' });
-      if (r?.ok) {
-        status.textContent = `✅ Identifiants CA trouvés pour ${r.email}`;
-        status.className = '';
-        status.style.color = '#059669';
-      } else {
-        status.textContent = `❌ ${r?.error || 'Erreur inconnue'}`;
-        status.className = 'error-text';
-      }
-    } catch (e) {
-      status.textContent = `❌ ${e.message || 'Erreur'}`;
-      status.className = 'error-text';
-      status.style.color = '';
-    }
-  });
 }
 
 if (document.readyState === 'loading') {

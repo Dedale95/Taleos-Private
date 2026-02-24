@@ -1,8 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.0.03",
-  "version_date": "08/02/2025 22:45",
+  "version": "1.0.04",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
