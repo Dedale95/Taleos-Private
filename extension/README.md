@@ -2,6 +2,8 @@
 
 Extension Manifest V3 pour l'automatisation de candidatures bancaires.
 
+**Version** : visible dans la popup (en bas). Incrémenter `version` dans `manifest.json` à chaque release.
+
 ## Structure
 
 ```

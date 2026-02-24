@@ -56,7 +56,18 @@ function setLoading(loading) {
   }
 }
 
+function setVersion() {
+  try {
+    const v = chrome?.runtime?.getManifest?.()?.version || '?';
+    const badge = document.getElementById('version-badge');
+    const badgeLogged = document.getElementById('version-badge-logged');
+    if (badge) badge.textContent = `v${v}`;
+    if (badgeLogged) badgeLogged.textContent = `Version ${v}`;
+  } catch (_) {}
+}
+
 function init() {
+  setVersion();
   if (typeof firebase === 'undefined') {
     showError('Firebase non chargé. Rechargez l\'extension.');
     return;
