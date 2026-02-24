@@ -76,6 +76,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  if (msg.action === 'sync_auth_from_site') {
+    const { taleosUserId, taleosIdToken, taleosUserEmail } = msg;
+    if (taleosUserId && taleosIdToken) {
+      chrome.storage.local.set({
+        taleosUserId,
+        taleosIdToken,
+        taleosUserEmail: taleosUserEmail || ''
+      });
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
   if (msg.action === 'test_credentials') {
     testCredentials(msg.bankId).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
     return true;

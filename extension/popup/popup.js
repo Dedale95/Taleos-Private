@@ -84,8 +84,28 @@ async function setVersion() {
   } catch (_) {}
 }
 
+function setupLogout() {
+  logoutBtn?.addEventListener('click', () => {
+    chrome.storage.local.remove(['taleosUserId', 'taleosIdToken', 'taleosUserEmail']);
+    if (typeof firebase !== 'undefined' && firebase.auth) {
+      firebase.auth().signOut();
+    }
+    showLogin();
+  });
+}
+
 async function init() {
   await setVersion();
+  const doReload = () => { if (chrome?.runtime?.reload) chrome.runtime.reload(); };
+  document.getElementById('reload-btn')?.addEventListener('click', doReload);
+  document.getElementById('reload-btn-login')?.addEventListener('click', doReload);
+  setupLogout();
+
+  const { taleosUserId, taleosIdToken, taleosUserEmail } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleosUserEmail']);
+  if (taleosUserId && taleosIdToken) {
+    showLogged({ email: taleosUserEmail || '(connecté)', uid: taleosUserId });
+    return;
+  }
   if (typeof firebase === 'undefined') {
     showError('Firebase non chargé. Rechargez l\'extension.');
     return;
@@ -103,7 +123,8 @@ async function init() {
         if (chrome?.storage?.local) {
           await chrome.storage.local.set({
             taleosUserId: user.uid,
-            taleosIdToken: token
+            taleosIdToken: token,
+            taleosUserEmail: user.email || ''
           });
         }
       } catch (e) {
@@ -115,7 +136,7 @@ async function init() {
         pendingLoginTimeout = null;
         showLogin();
         if (chrome?.storage?.local) {
-          chrome.storage.local.remove(['taleosUserId', 'taleosIdToken']);
+          chrome.storage.local.remove(['taleosUserId', 'taleosIdToken', 'taleosUserEmail']);
         }
       }, 450);
     }
@@ -142,12 +163,6 @@ async function init() {
       setLoading(false);
     }
   });
-
-  logoutBtn?.addEventListener('click', () => auth.signOut());
-
-  const doReload = () => { if (chrome?.runtime?.reload) chrome.runtime.reload(); };
-  document.getElementById('reload-btn')?.addEventListener('click', doReload);
-  document.getElementById('reload-btn-login')?.addEventListener('click', doReload);
 }
 
 if (document.readyState === 'loading') {

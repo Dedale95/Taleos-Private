@@ -65,6 +65,14 @@ document.querySelector('input[id*="personal_info_LastName"]')
 
 Le CV/LM sont récupérés depuis Firebase Storage (URL) puis convertis en `File` pour l'`input[type=file]` via `DataTransfer`.
 
+## Connexion automatique
+
+Si vous êtes connecté sur **taleos.co** ou **dedale95.github.io**, l’extension récupère automatiquement votre session. Vous n’avez pas besoin de vous reconnecter dans la popup.
+
+## Touch ID / empreinte digitale
+
+La connexion par empreinte (Touch ID sur Mac, Windows Hello) nécessiterait l’extension Firebase « Authenticate with WebAuthn » et une configuration serveur. Non implémenté pour l’instant.
+
 ## Versioning
 
 - Incrémenter `version` dans manifest.json à chaque modification (1.0.04, 1.0.05, …)

@@ -1,10 +1,62 @@
 /**
  * Taleos - Content Script (site Taleos)
  * Intercepte le clic sur "Candidater" et envoie à l'extension pour ouverture + automatisation
+ * Synchronise aussi l'auth depuis le site vers l'extension (connexion automatique)
  */
 
 (function() {
   'use strict';
+
+  function syncAuthFromPage() {
+    const script = document.createElement('script');
+    script.textContent = `
+      (function() {
+        function sendToken(u) {
+          if (!u) return;
+          u.getIdToken().then(function(t) {
+            window.dispatchEvent(new CustomEvent('__TALEOS_AUTH_SYNC__', {
+              detail: { token: t, uid: u.uid, email: u.email || '' }
+            }));
+          });
+        }
+        if (typeof firebase !== 'undefined' && firebase.auth) {
+          var u = firebase.auth().currentUser;
+          if (u) {
+            sendToken(u);
+          } else {
+            firebase.auth().onAuthStateChanged(function(user) {
+              if (user) sendToken(user);
+            });
+          }
+        }
+      })();
+    `;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
+  window.addEventListener('__TALEOS_AUTH_SYNC__', function(e) {
+    const { token, uid, email } = e.detail || {};
+    if (token && uid) {
+      chrome.runtime.sendMessage({
+        action: 'sync_auth_from_site',
+        taleosUserId: uid,
+        taleosIdToken: token,
+        taleosUserEmail: email || ''
+      }).catch(function() {});
+    }
+  });
+
+  function scheduleSync() {
+    syncAuthFromPage();
+    setTimeout(syncAuthFromPage, 2500);
+    setTimeout(syncAuthFromPage, 6000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scheduleSync);
+  } else {
+    scheduleSync();
+  }
 
   function getBankIdFromUrl(url) {
     if (!url) return null;
