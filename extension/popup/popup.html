@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taleos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <style>
+    body { width: 380px; min-height: 420px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .taleos-gradient { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .taleos-btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3); }
+    .taleos-btn:hover { box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+    .taleos-input:focus { border-color: #667eea; outline: none; }
+    .taleos-card { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
+  </style>
+</head>
+<body class="bg-[#f0f2f5] p-0 m-0">
+  <div id="auth-container">
+    <!-- État non connecté -->
+    <div id="login-view">
+      <div class="taleos-gradient px-6 py-8 text-white text-center rounded-t-xl">
+        <div class="w-14 h-14 taleos-gradient rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg" style="box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+          <span class="text-2xl font-bold">T</span>
+        </div>
+        <h1 class="text-xl font-bold">Taleos</h1>
+        <p class="text-sm opacity-90 mt-1">Extension d'automatisation</p>
+      </div>
+      <div class="px-6 py-6">
+        <form id="login-form" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input type="email" id="email" placeholder="votre@email.com" required autocomplete="email"
+              class="taleos-input w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 transition">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
+            <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"
+              class="taleos-input w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 transition">
+          </div>
+          <button type="submit" id="login-btn" class="taleos-btn w-full py-3.5 text-white rounded-lg font-semibold transition">
+            Se connecter
+          </button>
+          <p id="login-error" class="text-sm text-red-500 text-center hidden"></p>
+          <p id="login-loading" class="text-sm text-gray-500 text-center hidden">Connexion en cours...</p>
+          <button type="button" id="reload-btn-login" class="mt-3 w-full py-2 text-xs text-gray-500 hover:text-gray-700">
+            🔄 Mettre à jour l'extension
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- État connecté -->
+    <div id="logged-view" class="hidden">
+      <div class="taleos-gradient px-6 py-6 text-white text-center">
+        <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2">
+          <span id="user-initial" class="text-xl font-bold"></span>
+        </div>
+        <p id="user-email" class="text-sm opacity-90 truncate px-2"></p>
+      </div>
+      <div class="px-6 py-5">
+        <div class="taleos-card bg-white rounded-xl p-4 mb-4 border border-gray-100">
+          <p class="text-sm text-gray-600">
+            Sur <strong>taleos.co</strong> ou <strong>dedale95.github.io</strong>, cliquez sur <strong>Candidater</strong> pour lancer l'automatisation.
+          </p>
+        </div>
+        <button id="reload-btn" class="w-full py-2.5 mb-2 text-sm border border-indigo-200 text-indigo-600 rounded-lg font-medium hover:bg-indigo-50 transition">
+          🔄 Mettre à jour l'extension
+        </button>
+        <button id="logout-btn" class="w-full py-3 border-2 border-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition">
+          Se déconnecter
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
