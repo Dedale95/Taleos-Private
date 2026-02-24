@@ -136,7 +136,7 @@ function init() {
       const r = await chrome.runtime.sendMessage({ action: 'test_credentials', bankId: 'credit_agricole' });
       if (r?.ok) {
         status.textContent = `✅ Identifiants CA trouvés pour ${r.email}`;
-        status.className = 'error-text';
+        status.className = '';
         status.style.color = '#059669';
       } else {
         status.textContent = `❌ ${r?.error || 'Erreur inconnue'}`;
@@ -145,6 +145,7 @@ function init() {
     } catch (e) {
       status.textContent = `❌ ${e.message || 'Erreur'}`;
       status.className = 'error-text';
+      status.style.color = '';
     }
   });
 }
