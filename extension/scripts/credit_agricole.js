@@ -1,16 +1,22 @@
 /**
  * Taleos - Automatisation Crédit Agricole (groupecreditagricole.jobs)
- * Conversion Python Playwright → JavaScript (Content Script)
+ * Logique conforme au notebook Python : Je postule → Connexion → Identifiants → Reload → Je postule → Formulaire
  */
 
 (function() {
   'use strict';
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
+  const offerUrl = window.location.href;
 
   function log(msg) {
     const t = new Date().toLocaleTimeString('fr-FR');
     console.log(`[${t}] [Taleos CA] ${msg}`);
+  }
+
+  function findText(selector, text) {
+    const els = document.querySelectorAll(selector || '*');
+    return Array.from(els).find(el => (el.textContent || '').includes(text));
   }
 
   function safeFill(id, value, label) {
@@ -36,7 +42,7 @@
 
   async function auditCombobox(ariaId, expectedVal, label) {
     if (!expectedVal) return;
-    let trigger = document.querySelector(`div[aria-controls="${ariaId}"], button[aria-controls="${ariaId}"]`);
+    const trigger = document.querySelector(`div[aria-controls="${ariaId}"], button[aria-controls="${ariaId}"]`);
     if (!trigger) return;
     const current = (trigger.textContent || '').trim();
     if (expectedVal.toLowerCase().includes(current.toLowerCase()) && !current.includes('Sélectionnez')) {
@@ -130,7 +136,8 @@
     await safeFill('form-apply-phone-number', p['phone-number'], 'Téléphone');
     await auditCombobox('customSelect-civility', p.civility, 'Civilité');
     await auditCombobox('customSelect-country', p.country, 'Pays');
-    if (nextBtn()) { nextBtn().click(); await delay(2000); }
+    const nb = nextBtn();
+    if (nb) { nb.click(); await delay(2000); }
 
     log('📂 [2/4] Documents');
     const acc1 = document.querySelector("button[aria-controls='accordion-item-1']");
@@ -153,7 +160,8 @@
       await setFileInput('form-apply-lm', p.lm_url);
       await delay(2000);
     } else log('   ✅ LM : Présente -> Skip');
-    if (nextBtn()) { nextBtn().click(); await delay(2000); }
+    const nb2 = nextBtn();
+    if (nb2) { nb2.click(); await delay(2000); }
 
     log('📂 [3/4] Critères');
     const acc2 = document.querySelector("button[aria-controls='accordion-item-2']");
@@ -170,7 +178,8 @@
     await delay(500);
     await syncMultiselectSmart('form-apply-input-regions', 'Régions', p.target_regions);
     await auditCombobox('customSelect-experience-level', p.experience_level, 'Expérience');
-    if (nextBtn()) { nextBtn().click(); await delay(2000); }
+    const nb3 = nextBtn();
+    if (nb3) { nb3.click(); await delay(2000); }
 
     log('📂 [4/4] Formation');
     const acc3 = document.querySelector("button[aria-controls='accordion-item-3']");
@@ -211,46 +220,81 @@
           levelTrigger.click();
           await delay(500);
           const panel = document.getElementById(`customSelect-language-level-${i + 1}`);
-          const opts = panel?.querySelectorAll('label');
-          for (const o of opts || []) {
+          const opts = panel?.querySelectorAll('label') || [];
+          for (const o of opts) {
             if ((o.textContent || '').includes(lang.level)) { o.click(); break; }
           }
         }
       }
     }
-    if (nextBtn()) { nextBtn().click(); await delay(2000); }
+    const nb4 = nextBtn();
+    if (nb4) { nb4.click(); await delay(2000); }
+  }
+
+  async function waitForForm(maxWait = 35000) {
+    const start = Date.now();
+    while (Date.now() - start < maxWait) {
+      const el = document.getElementById('form-apply-firstname');
+      if (el && el.offsetParent !== null) return true;
+      await delay(500);
+    }
+    return false;
   }
 
   async function main(profile) {
-    log('🚀 DÉMARRAGE BOT CRÉDIT AGRICOLE');
-    const url = window.location.href;
+    const phase = profile.__phase;
+    const p = { ...profile };
+    delete p.__phase;
+
+    log(phase === 2 ? '🚀 PHASE 2 : Formulaire (après reload)' : '🚀 DÉMARRAGE BOT CRÉDIT AGRICOLE');
+    log(`🔗 URL : ${offerUrl}`);
 
     try {
-      await delay(3000);
-      const rgpd = document.querySelector('button.rgpd-btn-refuse');
-      if (rgpd) { rgpd.click(); await delay(500); }
+      if (phase === 2) {
+        await delay(3000);
+      } else {
+        await delay(3000);
 
-      const loginBtn = document.querySelector('a.cta.secondary.arrow[href*="connexion"]');
-      if (loginBtn) {
-        log('🔑 Connexion...');
-        loginBtn.click();
-        await delay(2000);
-        const emailInput = document.querySelector('#form-login-email');
-        const passInput = document.querySelector('#form-login-password');
-        const submitBtn = document.querySelector('#form-login-submit');
-        if (emailInput && passInput && submitBtn) {
-          emailInput.value = profile.auth_email;
-          passInput.value = profile.auth_password;
-          emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-          passInput.dispatchEvent(new Event('input', { bubbles: true }));
-          submitBtn.click();
-          log('   ✅ Login envoyé. Attente 20s...');
-          await delay(20000);
+        const rgpd = document.querySelector('button.rgpd-btn-refuse');
+        if (rgpd) { rgpd.click(); await delay(500); }
+
+        const btnPostule1 = findText('*', 'Je postule');
+        if (btnPostule1) {
+          log('🖱️ Clic "Je postule" (1ère fois)');
+          btnPostule1.click();
+          await delay(2000);
         }
-      }
 
-      window.location.reload();
-      await delay(5000);
+        const loginBtn = document.querySelector('a.cta.secondary.arrow[href*="connexion"]');
+        if (loginBtn) {
+          log('🔑 Connexion de l\'utilisateur...');
+          loginBtn.click();
+          await delay(2000);
+          const emailInput = document.querySelector('#form-login-email');
+          const passInput = document.querySelector('#form-login-password');
+          const submitBtn = document.querySelector('#form-login-submit');
+          if (emailInput && passInput && submitBtn) {
+            emailInput.value = profile.auth_email;
+            passInput.value = profile.auth_password;
+            emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+            passInput.dispatchEvent(new Event('input', { bubbles: true }));
+            submitBtn.click();
+            log('   ✅ Login envoyé. Attente 20s...');
+            await delay(20000);
+          }
+        } else {
+          log('   ℹ️  Déjà connecté ou bouton connexion absent.');
+        }
+
+        log('🔄 Demande de rechargement au background...');
+        chrome.runtime.sendMessage({
+          action: 'reload_and_continue',
+          offerUrl,
+          bankId: 'credit_agricole',
+          profile: { ...p, __phase: 2 }
+        });
+        return;
+      }
 
       const dejaCandidat = document.body.textContent.includes('Suivre ma candidature');
       if (dejaCandidat) {
@@ -258,37 +302,51 @@
         return;
       }
 
-      const applyBtn = Array.from(document.querySelectorAll('*')).find(el => el.textContent?.includes('Je postule'));
-      if (applyBtn) {
-        applyBtn.click();
-        await delay(2000);
-      }
-
-      const formFirstname = document.getElementById('form-apply-firstname');
-      if (!formFirstname) {
-        log('❌ Formulaire non détecté.');
+      const btnPostule2 = findText('*', 'Je postule');
+      if (btnPostule2) {
+        log('🖱️ Clic "Je postule" (2ème fois - après login)');
+        btnPostule2.click();
+      } else {
+        log('❌ Bouton "Je postule" introuvable.');
         return;
       }
+
+      log('⏳ Attente chargement formulaire...');
+      const formReady = await waitForForm(30000);
+      if (!formReady) {
+        log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
+        return;
+      }
+      log('   ✅ Formulaire détecté.');
+
       log('   ⏳ Pause 20s (hydration)...');
       await delay(20000);
 
-      await runAuditAndFill(profile);
+      await runAuditAndFill(p);
 
       window.scrollTo(0, document.body.scrollHeight);
       await delay(1000);
-      const rgpdLabel = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.includes('Je déclare avoir lu'));
+
+      const rgpdLabel = Array.from(document.querySelectorAll('label')).find(l => (l.textContent || '').includes('Je déclare avoir lu'));
       if (rgpdLabel) {
         const chk = rgpdLabel.querySelector('.checkbox-btn') || document.querySelector('.checkbox-btn:last-of-type');
-        if (chk && !chk.classList.contains('checked') && !chk.classList.contains('active')) chk.click();
+        if (chk && !chk.classList.contains('checked') && !chk.classList.contains('active')) {
+          chk.click();
+          log('   ✅ RGPD coché.');
+        }
       }
+
       await delay(3000);
       const submitBtn = document.getElementById('applyBtn');
       if (submitBtn && !submitBtn.disabled) {
         log('🚀 ENVOI CANDIDATURE...');
         submitBtn.click();
+      } else {
+        log('❌ Bouton Envoyer introuvable ou grisé.');
       }
     } catch (e) {
       log(`❌ Erreur: ${e.message}`);
+      console.error(e);
     }
   }
 

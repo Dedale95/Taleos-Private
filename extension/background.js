@@ -18,7 +18,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch(e => sendResponse({ error: e.message }));
     return true;
   }
+  if (msg.action === 'reload_and_continue') {
+    reloadAndContinue(sender.tab.id, msg.offerUrl, msg.bankId, msg.profile)
+      .then(() => sendResponse({ ok: true }))
+      .catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
 });
+
+async function reloadAndContinue(tabId, offerUrl, bankId, profile) {
+  await chrome.tabs.update(tabId, { url: offerUrl });
+  const listener = (id, info) => {
+    if (id !== tabId || info.status !== 'complete') return;
+    chrome.tabs.onUpdated.removeListener(listener);
+    const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
+    chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] }).then(() =>
+      chrome.scripting.executeScript({
+        target: { tabId },
+        func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+        args: [{ ...profile, __phase: 2 }]
+      })
+    ).catch(e => console.error('[Taleos] Re-inject:', e));
+  };
+  chrome.tabs.onUpdated.addListener(listener);
+}
 
 async function handleApply(offerUrl, bankId, jobId) {
   const tab = await chrome.tabs.create({ url: offerUrl, active: true });
