@@ -65,6 +65,11 @@ document.querySelector('input[id*="personal_info_LastName"]')
 
 Le CV/LM sont récupérés depuis Firebase Storage (URL) puis convertis en `File` pour l'`input[type=file]` via `DataTransfer`.
 
+## Versioning
+
+- Incrémenter `version` dans manifest.json à chaque modification (1.0.03, 1.0.04, …)
+- Mettre à jour `version_date` (dd/mm/yyyy HH:mm) lors du commit
+
 ## Permissions
 
 - `activeTab`, `scripting`, `storage`, `tabs` : orchestration

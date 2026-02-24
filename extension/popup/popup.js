@@ -13,20 +13,32 @@ const firebaseConfig = {
   measurementId: "G-4PZJ4QXMJ0"
 };
 
+const loadingView = document.getElementById('loading-view');
 const loginView = document.getElementById('login-view');
 const loggedView = document.getElementById('logged-view');
 const loginForm = document.getElementById('login-form');
+let pendingLoginTimeout = null;
 const loginError = document.getElementById('login-error');
 const loginLoading = document.getElementById('login-loading');
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 
 function showLogin() {
+  if (pendingLoginTimeout) {
+    clearTimeout(pendingLoginTimeout);
+    pendingLoginTimeout = null;
+  }
+  if (loadingView) loadingView.classList.add('hidden');
   if (loginView) loginView.classList.remove('hidden');
   if (loggedView) loggedView.classList.add('hidden');
 }
 
 function showLogged(user) {
+  if (pendingLoginTimeout) {
+    clearTimeout(pendingLoginTimeout);
+    pendingLoginTimeout = null;
+  }
+  if (loadingView) loadingView.classList.add('hidden');
   if (loginView) loginView.classList.add('hidden');
   if (loggedView) loggedView.classList.remove('hidden');
   const emailEl = document.getElementById('user-email');
@@ -58,11 +70,15 @@ function setLoading(loading) {
 
 function setVersion() {
   try {
-    const v = chrome?.runtime?.getManifest?.()?.version || '?';
+    const manifest = chrome?.runtime?.getManifest?.() || {};
+    const v = manifest.version || '?';
+    const dateStr = manifest.version_date || '';
     const badge = document.getElementById('version-badge');
     const badgeLogged = document.getElementById('version-badge-logged');
+    const dateEl = document.getElementById('version-date');
     if (badge) badge.textContent = `v${v}`;
     if (badgeLogged) badgeLogged.textContent = `Version ${v}`;
+    if (dateEl) dateEl.textContent = dateStr ? `Mise à jour : ${dateStr}` : '';
   } catch (_) {}
 }
 
@@ -92,10 +108,14 @@ function init() {
         console.warn('Token storage:', e);
       }
     } else {
-      showLogin();
-      if (chrome?.storage?.local) {
-        chrome.storage.local.remove(['taleosUserId', 'taleosIdToken']);
-      }
+      if (pendingLoginTimeout) clearTimeout(pendingLoginTimeout);
+      pendingLoginTimeout = setTimeout(() => {
+        pendingLoginTimeout = null;
+        showLogin();
+        if (chrome?.storage?.local) {
+          chrome.storage.local.remove(['taleosUserId', 'taleosIdToken']);
+        }
+      }, 450);
     }
   });
 

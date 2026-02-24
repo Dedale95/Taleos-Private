@@ -32,13 +32,18 @@
     .error-text { color: #ef4444; font-size: 0.875rem; text-align: center; margin-top: 8px; }
     .loading-text { color: #6b7280; font-size: 0.875rem; text-align: center; margin-top: 8px; }
     .hidden { display: none !important; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #f3f4f6; }
     .card p { font-size: 0.875rem; color: #4b5563; }
   </style>
 </head>
 <body>
   <div id="auth-container">
-    <div id="login-view">
+    <div id="loading-view" style="padding: 48px 24px; text-align: center;">
+      <div style="width: 32px; height: 32px; margin: 0 auto 16px; border: 3px solid #e5e7eb; border-top-color: #667eea; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+      <p style="color: #6b7280; font-size: 0.9rem;">Vérification de la connexion...</p>
+    </div>
+    <div id="login-view" class="hidden">
       <div class="taleos-gradient header header-rounded">
         <div class="logo-box"><span>T</span></div>
         <h1 style="font-size: 1.25rem; font-weight: 700;">Taleos</h1>
@@ -74,7 +79,8 @@
         </div>
         <button id="test-creds-btn" class="btn-secondary" style="margin-bottom: 8px;">🔍 Vérifier identifiants CA</button>
         <p id="creds-status" class="error-text" style="font-size: 0.75rem; margin-bottom: 8px; min-height: 20px;"></p>
-        <p id="version-badge-logged" style="font-size: 0.7rem; color: #6b7280; margin-bottom: 8px;"></p>
+        <p id="version-badge-logged" style="font-size: 0.7rem; color: #6b7280; margin-bottom: 4px;"></p>
+        <p id="version-date" style="font-size: 0.65rem; color: #9ca3af; margin-bottom: 8px;"></p>
         <button id="reload-btn" class="btn-reload">🔄 Mettre à jour l'extension</button>
         <button id="logout-btn" class="btn-logout">Se déconnecter</button>
       </div>
