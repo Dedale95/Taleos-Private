@@ -231,13 +231,47 @@
             await delay(10000);
           }
 
-          const resumeChk = document.querySelector('input[id*="resumeselectionid"]');
-          if (resumeChk && !resumeChk.checked) {
-            resumeChk.click();
-            log('   ✅ Case "is a resume" cochée.');
-            await delay(500);
+          function checkResumeInAttachmentTable() {
+            const resumeChecks = document.querySelectorAll('input[id*="resumeselectionid"]');
+            for (const chk of resumeChecks) {
+              if (!chk.checked) {
+                const styled = chk.nextElementSibling;
+                const label = document.querySelector(`label[for="${chk.id}"]`);
+                const td = chk.closest('td');
+                ((styled && styled.classList && styled.classList.contains('styled-checkbox')) ? styled : label || td || chk).click();
+                return true;
+              }
+            }
+            return false;
           }
 
+          log('   ☑️ Coche "Résumé" dans le tableau des pièces jointes (navigation onglets)...');
+          let checked = false;
+          for (let i = 0; i < 6; i++) {
+            const tableEl = document.querySelector('table.attachment-list');
+            if (tableEl) {
+              tableEl.scrollIntoView({ behavior: 'instant', block: 'center' });
+              await delay(800);
+            }
+            if (checkResumeInAttachmentTable()) {
+              log('   ✅ Case "Résumé" cochée.');
+              checked = true;
+              await delay(1000);
+              break;
+            }
+            const links = Array.from(document.querySelectorAll('a[id*="dtGotoPageLink"]'));
+            if (i < links.length && links[i]?.offsetParent !== null) {
+              const lbl = (links[i].title || links[i].textContent || '').trim().slice(0, 50);
+              log(`   📑 Navigation vers onglet "${lbl}"...`);
+              links[i].click();
+              await delay(2500);
+            } else {
+              break;
+            }
+          }
+          if (!checked) log('   ⚠️ Aucune case "Résumé" non cochée trouvée.');
+
+          await delay(1000);
           const finalSave = document.querySelector('#editTemplateMultipart-editForm-content-ftf-saveContinueCmdBottom') ||
             document.querySelector('input[id*="saveContinueCmdBottom"]');
           if (finalSave) {
@@ -267,6 +301,15 @@
     } catch (e) {
       log(`❌ Erreur : ${e.message}`);
       console.error(e);
+      if (jobId) {
+        try {
+          chrome.runtime.sendMessage({
+            action: 'candidature_failure',
+            jobId,
+            error: e.message || 'Erreur lors de l\'automatisation'
+          });
+        } catch (_) {}
+      }
     } finally {
       document.getElementById(BANNER_ID)?.remove();
     }

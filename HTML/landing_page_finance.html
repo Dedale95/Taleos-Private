@@ -1604,15 +1604,15 @@
             const totalJobsCountEl = document.getElementById('totalJobsCount');
             if (!totalJobsCountEl) return;
 
-            const paths = [
-                'HTML/scraped_jobs_live.json',
-                './HTML/scraped_jobs_live.json',
-                'scraped_jobs_live.json',
-                './scraped_jobs_live.json',
-                // Fallback GitHub (si déployé sur GitHub Pages)
+            // Chemins relatifs au document : si la page est dans HTML/, ./scraped_jobs_live.json fonctionne
+            const inHtmlDir = /\/HTML\/|\/HTML$/.test(window.location.pathname);
+            const paths = inHtmlDir
+                ? ['./scraped_jobs_live.json', 'scraped_jobs_live.json', '../scraped_jobs_live.json']
+                : ['HTML/scraped_jobs_live.json', './HTML/scraped_jobs_live.json', 'scraped_jobs_live.json', './scraped_jobs_live.json'];
+            paths.push(
                 'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs_live.json',
                 'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs_live.json'
-            ];
+            );
 
             for (const path of paths) {
                 try {

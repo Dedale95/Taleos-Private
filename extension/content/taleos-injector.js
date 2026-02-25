@@ -78,6 +78,36 @@
     return m ? m[1] : null;
   }
 
+  // Anti-spam + retry : empêcher les clics multiples, permettre retry si échec
+  const COOLDOWN_MS = 2500;
+  const FAILURE_TIMEOUT_MS = 4 * 60 * 1000;
+  const processingJobs = new Map();
+
+  function clearProcessing(jobId, reEnableButton) {
+    const entry = processingJobs.get(jobId);
+    if (entry) {
+      if (entry.timeoutId) clearTimeout(entry.timeoutId);
+      processingJobs.delete(jobId);
+      if (reEnableButton && entry.btn && entry.btn.isConnected) {
+        entry.btn.disabled = false;
+        entry.btn.removeAttribute('data-taleos-processing');
+        const orig = entry.btn.getAttribute('data-taleos-original-text');
+        if (orig) entry.btn.textContent = orig;
+      }
+    }
+  }
+
+  function setButtonProcessing(btn, jobId) {
+    if (!btn.dataset.taleosOriginalText) btn.dataset.taleosOriginalText = btn.textContent || '📝 Candidater';
+    btn.textContent = '⏳ En cours...';
+    btn.disabled = true;
+    btn.dataset.taleosProcessing = '1';
+    const timeoutId = setTimeout(function() {
+      clearProcessing(jobId, true);
+    }, FAILURE_TIMEOUT_MS);
+    processingJobs.set(jobId, { btn, timestamp: Date.now(), timeoutId });
+  }
+
   async function onApplyClick(e) {
     const btn = e.target.closest?.('.job-apply-btn');
     if (!btn) return;
@@ -97,6 +127,15 @@
     e.preventDefault();
     e.stopPropagation();
 
+    if (!jobId) return;
+
+    const now = Date.now();
+    const entry = processingJobs.get(jobId);
+    if (entry) {
+      if (now - entry.timestamp < COOLDOWN_MS) return;
+      clearProcessing(jobId, false);
+    }
+
     if (!isExtensionValid()) {
       const openUrl = (bankId === 'credit_agricole' || jobUrl.includes('groupecreditagricole.jobs'))
         ? 'https://groupecreditagricole.jobs/fr/connexion/'
@@ -105,6 +144,7 @@
       return;
     }
 
+    setButtonProcessing(btn, jobId);
     syncAuthFromPage(true);
 
     try {
@@ -117,6 +157,7 @@
         companyName
       });
     } catch (err) {
+      clearProcessing(jobId, true);
       const openUrl = (bankId === 'credit_agricole' || jobUrl.includes('groupecreditagricole.jobs'))
         ? 'https://groupecreditagricole.jobs/fr/connexion/'
         : jobUrl;
@@ -128,8 +169,15 @@
 
   chrome.runtime.onMessage.addListener(function(msg) {
     if (msg.action === 'taleos_candidature_success') {
+      clearProcessing(msg.jobId || '', false);
       window.dispatchEvent(new CustomEvent('taleos-extension-candidature-success', {
         detail: { jobId: msg.jobId, status: msg.status }
+      }));
+    }
+    if (msg.action === 'taleos_candidature_failure') {
+      clearProcessing(msg.jobId || '', true);
+      window.dispatchEvent(new CustomEvent('taleos-extension-candidature-failure', {
+        detail: { jobId: msg.jobId, error: msg.error }
       }));
     }
     if (msg.action === 'taleos_request_auth') {

@@ -2800,6 +2800,11 @@
             if (typeof showToast === 'function') showToast('Candidature envoyée !', 'Votre candidature a été enregistrée.', 'success', 4000);
         });
 
+        window.addEventListener('taleos-extension-candidature-failure', (e) => {
+            const err = e.detail?.error || 'Erreur';
+            if (typeof showToast === 'function') showToast('Candidature échouée', 'Vous pouvez réessayer en cliquant à nouveau sur Candidater.', 'error', 5000);
+        });
+
         // Vérifier si l'utilisateur est connecté
         function checkIsAuthenticated() {
             // Utiliser l'état global mis à jour par onAuthStateChanged
@@ -2827,14 +2832,14 @@
 
         // Gérer la candidature à une offre
         async function applyToJob(jobId, jobTitle, buttonElement) {
-            // Trouver le bouton si pas passé en paramètre
-            const btn = buttonElement || event.target;
-            
+            const btn = buttonElement || (typeof event !== 'undefined' && event?.target?.closest?.('.job-apply-btn')) || null;
+            const reEnableBtn = () => { if (btn && btn.isConnected) { btn.disabled = false; } };
+            if (btn) { btn.disabled = true; }
             try {
                 // Vérifier Firebase
                 if (!firebase.auth || !firebase.firestore) {
                     showToast('Erreur', 'Firebase non initialisé. Veuillez rafraîchir la page.', 'error');
-                    return;
+                    reEnableBtn(); return;
                 }
 
                 const auth = firebase.auth();
@@ -2844,7 +2849,7 @@
                 if (!currentUser) {
                     showToast('Non connecté', 'Veuillez vous connecter pour candidater.', 'warning');
                     setTimeout(() => window.location.href = 'auth.html', 1500);
-                    return;
+                    reEnableBtn(); return;
                 }
 
                 const userId = currentUser.uid;
@@ -2853,7 +2858,7 @@
                 const job = allJobs.find(j => j.job_id === jobId);
                 if (!job) {
                     showToast('Erreur', 'Offre introuvable.', 'error');
-                    return;
+                    reEnableBtn(); return;
                 }
 
                 // Vérifier si l'utilisateur a déjà candidaté (doc ID = company_title_date_jobId ; on vérifie par jobId)
@@ -2870,14 +2875,14 @@
                 // Vérifier si une candidature est déjà en attente
                 if (pendingApplications[jobId]) {
                     showToast('Candidature en attente', 'Une candidature est déjà en cours pour cette offre.', 'info', 3000);
-                    return;
+                    reEnableBtn(); return;
                 }
 
                 // Vérifier si le profil est complet avant de lancer le timer
                 const isProfileComplete = await checkProfileCompleteness();
                 if (!isProfileComplete) {
                     showProfileIncompleteModal();
-                    return; // Ne pas lancer le timer si le profil est incomplet
+                    reEnableBtn(); return;
                 }
 
                 const DEBUG_MODE = new URLSearchParams(window.location.search).get('debug') === 'true';
@@ -2929,6 +2934,7 @@
             } catch (error) {
                 console.error('❌ Erreur lors de la candidature:', error);
                 showToast('Erreur', 'Une erreur est survenue. Réessayez.', 'error');
+                reEnableBtn();
             }
         }
 

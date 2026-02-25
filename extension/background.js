@@ -186,6 +186,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     saveCandidatureAndNotifyTaleos(msg, tabIdToClose).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
+  if (msg.action === 'candidature_failure') {
+    notifyTaleosCandidatureFailure(msg).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
   if (msg.action === 'reload_and_continue') {
     reloadAndContinue(sender.tab.id, msg.offerUrl, msg.bankId, msg.profile)
       .then(() => sendResponse({ ok: true }))
@@ -421,6 +425,25 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
     setTimeout(() => {
       chrome.tabs.remove(tabIdToClose).catch(() => {});
     }, 5000);
+  }
+}
+
+async function notifyTaleosCandidatureFailure(msg) {
+  const { jobId, error } = msg;
+  const { taleos_pending_tab } = await chrome.storage.local.get(['taleos_pending_tab']);
+  let taleosTab = taleos_pending_tab;
+  if (!taleosTab) {
+    const taleosTabs = await chrome.tabs.query({ url: '*://*.taleos.co/*' });
+    taleosTab = taleosTabs[0]?.id;
+  }
+  if (!taleosTab) {
+    const ghTabs = await chrome.tabs.query({ url: '*://*.github.io/*' });
+    taleosTab = ghTabs[0]?.id;
+  }
+  if (taleosTab) {
+    try {
+      await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_failure', jobId, error: error || 'Erreur' });
+    } catch (_) {}
   }
 }
 

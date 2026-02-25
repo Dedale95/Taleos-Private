@@ -564,6 +564,13 @@
     return false;
   }
 
+  function sendCandidatureFailure(jobId, reason) {
+    if (!jobId) return;
+    try {
+      chrome.runtime.sendMessage({ action: 'candidature_failure', jobId, error: reason || 'Erreur' });
+    } catch (_) {}
+  }
+
   async function main(profile) {
     showAutomationBanner();
     const phase = profile.__phase;
@@ -674,9 +681,10 @@
           searchRoot.querySelector('a[href*="sign-in"]');
         if (loginBtn) {
           log('🔑 Connexion de l\'utilisateur...');
-          if (!p.auth_email || !p.auth_password) {
-            log('   ❌ Identifiants CA manquants. Configurez-les sur la page Connexions de Taleos.');
-          } else {
+        if (!p.auth_email || !p.auth_password) {
+          log('   ❌ Identifiants CA manquants. Configurez-les sur la page Connexions de Taleos.');
+          sendCandidatureFailure(jobId, 'Identifiants CA manquants');
+        } else {
             log(`   📧 Identifiants récupérés : ${p.auth_email}`);
             log('   📌 Stockage état avant navigation (formulaire sur page séparée)...');
             chrome.storage.local.set({
@@ -714,6 +722,7 @@
         }
         if (!formReady) {
           log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
+          sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
           return;
         }
         log('   ✅ Formulaire détecté (DOM).');
@@ -762,9 +771,11 @@
             }
           } else {
             log('⚠️ Message de succès non détecté (timeout).');
+            sendCandidatureFailure(jobId, 'Message de succès non détecté');
           }
         } else {
           log('❌ Bouton Envoyer introuvable ou grisé.');
+          sendCandidatureFailure(jobId, 'Bouton Envoyer introuvable');
         }
         log('💤 Fin du script.');
         return;
@@ -787,6 +798,7 @@
           await delay(2000);
         } else {
           log('❌ Bouton "Je postule" introuvable.');
+          sendCandidatureFailure(jobId, 'Bouton Je postule introuvable');
           return;
         }
       } else {
@@ -809,6 +821,7 @@
       }
       if (!formReady) {
         log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
+        sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
         return;
       }
       log('   ✅ Formulaire détecté (DOM).');
@@ -860,14 +873,17 @@
           }
         } else {
           log('⚠️ Message de succès non détecté (timeout).');
+          sendCandidatureFailure(jobId, 'Message de succès non détecté');
         }
       } else {
         log('❌ Bouton Envoyer introuvable ou grisé.');
+        sendCandidatureFailure(jobId, 'Bouton Envoyer introuvable');
       }
       log('💤 Fin du script.');
     } catch (e) {
       log(`❌ Erreur: ${e.message}`);
       console.error(e);
+      sendCandidatureFailure(jobId, e.message || 'Erreur');
     } finally {
       hideAutomationBanner();
     }
