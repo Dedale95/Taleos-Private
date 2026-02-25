@@ -17,10 +17,10 @@
     if (document.getElementById(BANNER_ID)) return;
     const banner = document.createElement('div');
     banner.id = BANNER_ID;
-    banner.innerHTML = '⚠️ Automatisation Taleos en cours — Ne touchez à rien.';
+    banner.innerHTML = '⚠️ Automatisation Taleos en cours — Ne touchez à rien, cela pourrait perturber le processus.';
     Object.assign(banner.style, {
       position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483647',
-      background: 'linear-gradient(135deg, #0052a3 0%, #003366 100%)', color: 'white',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white',
       padding: '10px 20px', fontSize: '14px', fontWeight: '600', textAlign: 'center',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
@@ -121,19 +121,64 @@
         await delay(5000);
       }
 
-      const skipSelector = 'input[id*="legalDisclaimerContinueButton"], input[id*="saveContinueCmdBottom"]';
-      for (let i = 0; i < 12; i++) {
+      function findDisclaimerCheckbox() {
+        const cbs = document.querySelectorAll('input[type="checkbox"]');
+        for (const cb of cbs) {
+          const label = cb.closest('label') || document.querySelector(`label[for="${cb.id}"]`);
+          const txt = ((label?.textContent || cb.getAttribute('aria-label') || '') + (cb.value || '')).toLowerCase();
+          if (/accept|accepter|agree|consent|disclaimer|déclaration|confirm/i.test(txt) && cb.offsetParent !== null) return cb;
+        }
+        return null;
+      }
+
+      function findDisclaimerOrContinueBtn() {
+        const byId = [
+          'legalDisclaimerContinueButton',
+          'legalDisclaimerAcceptButton',
+          'legalDisclaimer',
+          'saveContinueCmdBottom',
+          'legalDisclaimerContinue',
+          'disclaimerContinue'
+        ];
+        for (const partial of byId) {
+          const el = document.querySelector(`input[id*="${partial}"], button[id*="${partial}"], a[id*="${partial}"]`);
+          if (el && el.offsetParent !== null) return el;
+        }
+        const byValue = ['Continue', 'Continuer', 'Accept', 'Accepter', 'I accept', 'J\'accepte', 'Next', 'Suivant'];
+        for (const val of byValue) {
+          const el = document.querySelector(`input[value*="${val}"], button[value*="${val}"], input[value="${val}"]`);
+          if (el && el.offsetParent !== null) return el;
+        }
+        const btns = document.querySelectorAll('input[type="submit"], input[type="button"], button, a[role="button"]');
+        for (const b of btns) {
+          const t = ((b.value || b.textContent || '').trim()).toLowerCase();
+          if (/continue|continuer|accept|accepter|suivant|next|valider|submit/i.test(t) && b.offsetParent !== null) return b;
+        }
+        return null;
+      }
+
+      log('📋 Validation du disclaimer de candidature...');
+      for (let i = 0; i < 20; i++) {
         const firstNameInput = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
         if (firstNameInput && firstNameInput.offsetParent !== null) {
           log('   ✅ Formulaire profil atteint.');
           break;
         }
-        const btn = document.querySelector(skipSelector);
-        if (btn && btn.offsetParent !== null) {
+        const chk = findDisclaimerCheckbox();
+        if (chk && !chk.checked) {
+          log('   ☑️ Coche du disclaimer...');
+          chk.click();
+          await delay(1500);
+        }
+        const btn = findDisclaimerOrContinueBtn();
+        if (btn) {
+          log(`   🖱️ Clic sur le bouton (${btn.value || btn.textContent || 'disclaimer/continue'})...`);
+          btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+          await delay(300);
           btn.click();
-          await delay(2000);
+          await delay(3000);
         } else {
-          await delay(1000);
+          await delay(1500);
         }
       }
 

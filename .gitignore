@@ -35,3 +35,6 @@ TEST_CREDENTIALS.txt
 # Clé de compte de service Firebase (ne jamais commiter)
 **/serviceAccountKey.json
 **/service-account*.json
+
+# HTML de debug (peut contenir données sensibles)
+sg_after_login.html
