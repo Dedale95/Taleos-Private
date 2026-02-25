@@ -34,6 +34,15 @@
     showBanner();
     const delay = ms => new Promise(r => setTimeout(r, ms));
 
+    try {
+      const host = document.querySelector('#didomi-host');
+      const btn = host?.shadowRoot?.querySelector('#didomi-notice-disagree-button') ||
+        document.querySelector('#didomi-notice-disagree-button');
+      if (btn) btn.click();
+      document.body.style.setProperty('overflow', 'auto', 'important');
+    } catch (_) {}
+    await delay(2000);
+
     const applySelectors = [
       'a[data-gtm-label="postuler"]',
       'a[data-gtm-label="apply"]',
