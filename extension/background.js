@@ -23,6 +23,33 @@ const PROJECT_ID = 'project-taleos';
 
 let authSyncResolve = null;
 
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete') return;
+  const url = (tab?.url || '').toLowerCase();
+  if (!url.includes('socgen.taleo.net')) return;
+  const { taleos_pending_sg } = await chrome.storage.local.get('taleos_pending_sg');
+  if (!taleos_pending_sg) return;
+  const age = Date.now() - (taleos_pending_sg.timestamp || 0);
+  if (age > 3 * 60 * 1000) {
+    chrome.storage.local.remove('taleos_pending_sg');
+    return;
+  }
+  chrome.storage.local.remove('taleos_pending_sg');
+  const { profile } = taleos_pending_sg;
+  if (!profile) return;
+  try {
+    await new Promise(r => setTimeout(r, 5000));
+    await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.societe_generale] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+      args: [profile]
+    });
+  } catch (e) {
+    console.error('[Taleos] Injection SG Taleo:', e);
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'after_login_submit') {
       const { offerUrl, bankId, profile } = msg;
@@ -286,6 +313,22 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     };
     chrome.tabs.onUpdated.addListener(listener);
     setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 120000);
+  } else if (bankId === 'societe_generale' || (offerUrl && String(offerUrl).toLowerCase().includes('careers.societegenerale.com'))) {
+    chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    chrome.storage.local.set({
+      taleos_pending_sg: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName, __offerUrl: offerUrl },
+        offerUrl, jobId, jobTitle, companyName,
+        timestamp: Date.now()
+      }
+    });
+    const tab = await chrome.tabs.create({ url: offerUrl, active: false });
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach(ms => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
   } else {
     const tab = await chrome.tabs.create({ url: offerUrl, active: false });
     const tabId = tab.id;
@@ -432,6 +475,7 @@ async function fetchProfile(uid, bankId, token) {
     civility: profile.civility || '',
     firstname: profile.first_name || '',
     lastname: profile.last_name || '',
+    email: profile.email || creds.email || '',
     address: profile.address || '',
     zipcode: String(profile.postal_code || ''),
     city: profile.city || '',

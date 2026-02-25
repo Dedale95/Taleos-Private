@@ -18,6 +18,7 @@
     "https://*.firebasestorage.app/*",
     "https://groupecreditagricole.jobs/*",
     "https://careers.societegenerale.com/*",
+    "https://socgen.taleo.net/*",
     "https://*.deloitte.com/*",
     "http://localhost/*",
     "http://localhost:8000/*",
@@ -59,6 +60,15 @@
         "content/ca-connexion-filler.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://careers.societegenerale.com/*"
+      ],
+      "js": [
+        "content/sg-careers-helper.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "icons": {
