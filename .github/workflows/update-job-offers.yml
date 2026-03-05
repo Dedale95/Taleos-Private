@@ -1,6 +1,6 @@
 # Mise à jour quotidienne des offres d'emploi (CA, SG, Deloitte)
 # Exécution tous les jours à 6h00 (heure de Paris)
-# Les fichiers JSON/CSV mis à jour sont commités et poussés automatiquement
+# Les fichiers JSON mis à jour sont commités (scraped_jobs.csv est dans .gitignore)
 
 name: Mise à jour offres quotidienne
 
@@ -43,7 +43,7 @@ jobs:
       - name: Vérifier les changements
         id: changes
         run: |
-          if git diff --quiet HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs.csv 2>/dev/null; then
+          if git diff --quiet HTML/scraped_jobs_live.json HTML/scraped_jobs.json 2>/dev/null; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -54,6 +54,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs.csv
+          git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json
           git commit -m "chore: mise à jour quotidienne des offres (CA, SG, Deloitte)"
           git push origin main

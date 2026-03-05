@@ -69,6 +69,16 @@
         "content/sg-careers-helper.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://socgen.taleo.net/*"
+      ],
+      "js": [
+        "content/sg-taleo-runner.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "icons": {

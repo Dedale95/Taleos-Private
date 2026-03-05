@@ -44,7 +44,7 @@ def read_from_db(db_path, company_name):
                 job_description, company_name, company_description, job_url,
                 first_seen, last_updated
             FROM jobs 
-            WHERE is_valid = 1
+            WHERE is_valid = 1 AND status = 'Live'
             ORDER BY last_updated DESC
         """)
         

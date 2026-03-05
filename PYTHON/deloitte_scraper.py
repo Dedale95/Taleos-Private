@@ -467,7 +467,8 @@ async def fetch_job_experience(context: BrowserContext, job: Dict, sem: asyncio.
                 cleaned_description = description_text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
                 # Replace multiple spaces with single space
                 cleaned_description = re.sub(r'\s+', ' ', cleaned_description)
-                final_description = cleaned_description[:3000] if cleaned_description else ""
+                # Texte complet pour recherche par mots-clés (non affiché sur les vignettes), max 25k car.
+                final_description = cleaned_description[:25000] if cleaned_description else ""
             
             job.update({
                 "experience_level": experience_level,

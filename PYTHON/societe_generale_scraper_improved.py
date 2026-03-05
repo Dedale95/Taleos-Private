@@ -249,6 +249,9 @@ def clean_date(date_str: Optional[str]) -> Optional[str]:
 # =========================================================
 # PAGE COUNT
 # =========================================================
+# IMPORTANT: La liste d'offres et la pagination sont rendues en JavaScript.
+# Ne PAS supprimer le wait_for_selector ci-dessous : sans lui on ne récupère
+# qu'une seule page (~10 URLs) et tout le reste est marqué Expiré à tort.
 async def get_total_pages(context: BrowserContext) -> int:
     page = await context.new_page()
     await page.goto(SEARCH_URL, timeout=config.PAGE_TIMEOUT, wait_until="domcontentloaded")
@@ -258,6 +261,16 @@ async def get_total_pages(context: BrowserContext) -> int:
         logging.info("Cookie banner closed")
     except:
         logging.info("Cookie banner not found")
+
+    # Attendre que la pagination ou la liste d'offres soit rendue (JS)
+    try:
+        await page.wait_for_selector(
+            'a.js-pager[title="Aller à la dernière page"], a[href*="/offres-d-emploi/"], a[href*="/en/job-offers/"]',
+            timeout=config.WAIT_TIMEOUT
+        )
+    except Exception as e:
+        logging.warning(f"Timeout waiting for job list / pagination: {e}")
+    await asyncio.sleep(2)  # laisser le temps au dernier numéro de page d'apparaître
 
     html = await page.content()
     soup = BeautifulSoup(html, "html.parser")
@@ -277,8 +290,15 @@ async def fetch_urls(context: BrowserContext, page_num: int, sem: asyncio.Semaph
             url = f"{SEARCH_URL}&page={page_num}"
             await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until="domcontentloaded")
             
-            # Wait for job listings to load (increased from 2 to 3 seconds)
-            await asyncio.sleep(3)
+            # Attendre que les liens offres soient rendus (JS)
+            try:
+                await page.wait_for_selector(
+                    'a[href*="/offres-d-emploi/"], a[href*="/en/job-offers/"]',
+                    timeout=config.WAIT_TIMEOUT
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(2)
             
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
@@ -488,18 +508,21 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
             technical_skills = []
             behavioral_skills = []
             
-            # Get all text sections
+            # Get all text sections (pour description + texte complet recherche mots-clés)
             all_sections = soup.select("section, div[class*='section'], div.wysiwyg")
-            
+            all_content_parts = []  # tout le texte pour job_description (recherche)
+
             for section in all_sections:
                 h = section.select_one("h2, h3, h4, h5")
                 section_title = h.get_text(strip=True).lower() if h else ""
                 content = section.get_text(strip=True)
-                
-                # Description
+                if content:
+                    all_content_parts.append(content)
+
+                # Description (pour job_family etc.)
                 if any(kw in section_title for kw in ['mission', 'description', 'poste', 'role', 'responsabilit', 'quotidien']):
                     description_parts.append(content)
-                
+
                 # Skills
                 if any(kw in section_title for kw in ['compétence', 'skill', 'profil', 'requirement', 'qualification', 'exigence', 'vous', 'qualifications']):
                     # Try to extract bullet points
@@ -515,7 +538,10 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
                             elif any(soft in text.lower() for soft in ['communication', 'teamwork', 'leadership', 'collaboration', 'autonome', 'rigoureux', 'organizational']):
                                 behavioral_skills.append(text)
 
-            job_description = " ".join(description_parts)[:1500] if description_parts else None
+            # Texte complet pour la recherche par mots-clés (toutes les sections, pas affiché sur les vignettes)
+            job_description = " ".join(all_content_parts)[:25000] if all_content_parts else None
+            if not job_description:
+                job_description = soup.get_text(separator=" ", strip=True)[:25000]
             
             # Classify job family based on title and description
             job_family = classify_job_family(job_title or "", job_description or "")

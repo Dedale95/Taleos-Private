@@ -138,7 +138,7 @@ def merge_from_databases():
                     job_description, company_name, company_description, job_url,
                     first_seen, last_updated
                 FROM jobs 
-                WHERE is_valid = 1
+                WHERE is_valid = 1 AND status = 'Live'
             """)
             
             # Récupérer les noms de colonnes
@@ -248,6 +248,38 @@ if __name__ == "__main__":
             print(f"Erreur: {result.stderr[:500]}")
     except Exception as e:
         print(f"⚠️ Erreur lors de l'export JSON: {e}")
+
+    # 6. Récapitulatif visuel Live vs Expired par entité
+    print()
+    print("=" * 60)
+    print("📊 OFFRES PAR ENTITÉ (Live / Expired)")
+    print("=" * 60)
+    try:
+        total_live = 0
+        total_expired = 0
+        print(f"   {'Entité':<22} │ {'Live':>6} │ {'Expired':>7}")
+        print("   " + "-" * 40)
+        for name, db_path in [("Crédit Agricole", CA_DB), ("Société Générale", SG_DB), ("Deloitte", DELOITTE_DB)]:
+            if db_path.exists():
+                conn = sqlite3.connect(db_path)
+                row = conn.execute("""
+                    SELECT 
+                        SUM(CASE WHEN status = 'Live' AND is_valid = 1 THEN 1 ELSE 0 END) as live,
+                        SUM(CASE WHEN status = 'Expired' THEN 1 ELSE 0 END) as expired
+                    FROM jobs
+                """).fetchone()
+                conn.close()
+                live, expired = row[0] or 0, row[1] or 0
+                total_live += live
+                total_expired += expired
+                print(f"   {name:<22} │ {live:>6} │ {expired:>7}")
+            else:
+                print(f"   {name:<22} │   ---  │   ---  (base manquante)")
+        print("   " + "-" * 40)
+        print(f"   {'TOTAL (exporté)':<22} │ {total_live:>6} │ {total_expired:>7}")
+        print("=" * 60)
+    except Exception as e:
+        print(f"   ⚠️ Erreur stats: {e}")
 
     print()
     print("=" * 80)
