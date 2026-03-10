@@ -265,9 +265,9 @@ async def get_all_jobs(context: BrowserContext) -> List[Dict]:
             else:
                 country = normalize_country("France")  # Deloitte FR context par défaut
 
-            # Si la ville est None ou égale au pays, utiliser "N/A"
+            # Si la ville est None ou égale au pays, afficher uniquement le pays
             if not city or (country and city.lower() == country.lower()):
-                location = f"N/A - {country}"
+                location = country
             else:
                 location = f"{city} - {country}"
 

@@ -1891,6 +1891,12 @@
                         job.cleanRegions = [];
                         job.cleanCountries = [];
 
+                        if (job && job.location && typeof job.location === 'string') {
+                            const loc = job.location.trim();
+                            if (/^N\/A\s*-\s*/i.test(loc)) {
+                                job.location = loc.replace(/^N\/A\s*-\s*/i, '').trim();
+                            }
+                        }
                         if (job && job.location && typeof job.location === 'string' && job.location.includes(' - ')) {
                             try {
                                 const parts = job.location.split(' - ');
@@ -1971,6 +1977,12 @@
                                 }
                             } catch (e) {
                                 console.warn(`Erreur lors du traitement de la location "${job.location}":`, e);
+                            }
+                        } else if (job && job.location && typeof job.location === 'string' && job.location.trim()) {
+                            const countryOnly = job.location.trim();
+                            if (countryOnly) {
+                                job.cleanCountries = [countryOnly];
+                                job.cleanRegions = [countryOnly];
                             }
                         }
                     } catch (e) {

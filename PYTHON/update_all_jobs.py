@@ -51,8 +51,15 @@ def merge_from_databases():
     headers = None
 
     def fix_location(loc):
-        """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)"""
-        if not loc or ' - ' not in loc:
+        """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie, N/A - Luxembourg → Luxembourg)"""
+        if not loc:
+            return loc
+        loc_upper = loc.strip().upper()
+        if loc_upper.startswith('N/A') and (' - ' in loc or '-' in loc):
+            parts = re.split(r'\s*-\s*', loc.strip(), 1)
+            if len(parts) >= 2 and parts[0].strip().upper() == 'N/A':
+                return parts[1].strip()
+        if ' - ' not in loc:
             return loc
         parts = loc.split(' - ', 1)
         city = (parts[0] or '').strip()

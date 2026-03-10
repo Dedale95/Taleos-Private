@@ -434,15 +434,15 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
                 city_normalized = normalize_city(city_raw) if city_raw else None
                 country_normalized = normalize_country(country_raw) if country_raw else None
 
-                # Si la ville est None (rejetée par le normaliseur) ou égale au pays, utiliser "N/A"
+                # Si la ville est None (rejetée par le normaliseur) ou égale au pays, afficher uniquement le pays
                 if city_normalized and country_normalized:
                     # Vérifier si la ville = pays
                     if city_normalized.lower() == country_normalized.lower():
-                        location = f"N/A - {country_normalized}"
+                        location = country_normalized
                     else:
                         location = f"{city_normalized} - {country_normalized}"
-                elif country_normalized: # If only country is available, use "N/A"
-                    location = f"N/A - {country_normalized}"
+                elif country_normalized:
+                    location = country_normalized
                 else:
                     location = None  # Si ni ville ni pays valides, location = None
 

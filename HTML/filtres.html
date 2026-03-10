@@ -1587,6 +1587,12 @@
                                     job.cleanRegions = [];
                                     job.cleanCountries = [];
 
+                                    if (job && job.location && typeof job.location === 'string') {
+                                        const loc = job.location.trim();
+                                        if (/^N\/A\s*-\s*/i.test(loc)) {
+                                            job.location = loc.replace(/^N\/A\s*-\s*/i, '').trim();
+                                        }
+                                    }
                                     if (job && job.location && typeof job.location === 'string' && job.location.includes(' - ')) {
                                         const parts = job.location.split(' - ');
                                         const cityPart = parts[0] || '';
@@ -1617,6 +1623,12 @@
                                             // Dédupliquer
                                             job.cleanCountries = Array.from(new Set(job.cleanCountries));
                                             job.cleanRegions = Array.from(new Set(job.cleanRegions));
+                                        }
+                                    } else if (job && job.location && typeof job.location === 'string' && job.location.trim()) {
+                                        const countryOnly = job.location.trim();
+                                        if (countryOnly) {
+                                            job.cleanCountries = [countryOnly];
+                                            job.cleanRegions = [countryOnly];
                                         }
                                     }
                                     
