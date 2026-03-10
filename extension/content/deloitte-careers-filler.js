@@ -79,12 +79,13 @@
     return null;
   }
 
-  function findAndClickByText(texts) {
+  function findAndClickByText(texts, contextLabel) {
     const all = Array.from(document.querySelectorAll('button, a, span[role="button"], div[role="button"], [data-automation-id="promptOption"], [data-automation-id="compositeHeader"], label'));
     for (const el of all) {
       const t = (el.textContent || '').trim();
       if (texts.some(x => t.toLowerCase().includes(x.toLowerCase()))) {
         if (el.offsetParent !== null) {
+          log(`[${contextLabel}] findAndClickByText: clic sur élément texte="${t}"`);
           el.click();
           return true;
         }
@@ -92,9 +93,11 @@
     }
     const reuseLink = document.querySelector('a[href*="reuse"], [data-automation-id*="reuse"], [data-automation-id*="lastApplication"]');
     if (reuseLink?.offsetParent !== null) {
+      log(`[${contextLabel}] findAndClickByText: clic sur lien de réutilisation (reuse/lastApplication)`);
       reuseLink.click();
       return true;
     }
+    log(`[${contextLabel}] findAndClickByText: aucun élément trouvé pour textes="${texts.join(', ')}"`);
     return false;
   }
 
@@ -215,40 +218,24 @@
       }
     }
 
-    // Étape 4 : Utiliser ma dernière candidature — uniquement SI aucun élément de connexion n'est présent
+    // Étape 4 : Utiliser ma dernière candidature — pour l'instant, **OBSERVATION SEULEMENT**
+    // On NE clique plus automatiquement pour éviter d'atterrir sur le flux de création de compte.
     const hasConnexionUi = document.querySelector('input[data-automation-id="email"]') ||
       document.querySelector('input[data-automation-id="password"]') ||
       document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]') ||
       Array.from(document.querySelectorAll('span')).some(s => /^connexion$/i.test((s.textContent || '').trim()));
 
-    if (!hasConnexionUi) {
-      const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
-        document.querySelector('a[href*="useMyLastApplication"]') ||
-        document.querySelector('a[role="button"][href*="useMyLastApplication"]');
-      if (useLastAppBtn) {
-        const href = useLastAppBtn.getAttribute('href') || useLastAppBtn.href;
-        if (href) {
-          log('Bouton "Utiliser ma dernière candidature" trouvé (après connexion), clic...');
-          try {
-            useLastAppBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-            useLastAppBtn.click();
-            setTimeout(runAutomation, 2500);
-            return;
-          } catch (e) {
-            log('Clic échoué, navigation directe: ' + e.message);
-            window.location.href = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
-            return;
-          }
-        }
-      }
-      if (findAndClickByText(['utiliser ma dernière candidature', 'use my last application', 'use my last application data'])) {
-        log('Clic sur Utiliser ma dernière candidature (texte, après connexion)...');
-        setTimeout(runAutomation, 2500);
-        return;
-      }
-    }
+    const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
+      document.querySelector('a[href*="useMyLastApplication"]') ||
+      document.querySelector('a[role="button"][href*="useMyLastApplication"]');
 
-    if (url.includes('/apply') && !hasConnexionUi && !document.querySelector('[data-automation-id="useMyLastApplication"]')) {
+    log(`[STEP 4] hasConnexionUi=${!!hasConnexionUi}, hasUseMyLastApplication=${!!useLastAppBtn}, url="${url}"`);
+
+    // Si un bouton "Utiliser ma dernière candidature" est visible AVANT connexion, on se contente de logger.
+    // L'utilisateur pourra cliquer lui-même une fois connecté.
+
+    if (url.includes('/apply') && !hasConnexionUi && !useLastAppBtn) {
+      log('[STEP 4] Pas de connexion visible et pas de bouton "Utiliser ma dernière candidature" → retry léger');
       maybeRetryForUseLastApp();
       return;
     }
