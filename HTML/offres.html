@@ -2760,12 +2760,13 @@
                     experienceLevel: profile.experience_level,
                     educationLevel: profile.education_level,
                     institutionType: profile.institution_type,
-                    diplomaStatus: profile.diploma_status
+                    diplomaStatus: profile.diploma_status,
+                    deloitteWorked: profile.deloitte_worked === 'yes' || profile.deloitte_worked === 'no'
                 };
 
                 // Vérifier chaque champ
                 for (const [key, value] of Object.entries(requiredFields)) {
-                    if (value === undefined || value === null || value === '' || 
+                    if (value === undefined || value === null || value === '' || value === false ||
                         (typeof value === 'string' && value.trim() === '')) {
                         console.log(`[PROFILE CHECK] Champ manquant: ${key}`);
                         return false;
@@ -2790,7 +2791,7 @@
                 modal.innerHTML = `
                     <div class="profile-incomplete-modal-content">
                         <h3>⚠️ Profil incomplet</h3>
-                        <p>Pour maximiser vos chances de succès auprès des recruteurs, votre profil doit être complet. Veuillez finaliser les sections manquantes avant de postuler.</p>
+                        <p>Il manque des informations dans votre profil. Vous devez compléter votre profil avant de pouvoir candidater.</p>
                         <div class="profile-incomplete-modal-actions">
                             <button class="profile-incomplete-modal-btn profile-incomplete-modal-btn-secondary" onclick="closeProfileIncompleteModal()">Fermer</button>
                             <button class="profile-incomplete-modal-btn profile-incomplete-modal-btn-primary" onclick="goToProfile()">Compléter mon profil</button>
