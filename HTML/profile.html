@@ -521,9 +521,24 @@
             color: white;
         }
 
+        /* Hover section incomplète ouverte : garder fond rouge pour contraste texte blanc */
+        .accordion-section.incomplete.active .accordion-header:hover {
+            background: #dc2626 !important;
+        }
+        .accordion-section.incomplete.active .accordion-header:hover h2,
+        .accordion-section.incomplete.active .accordion-header:hover .accordion-icon {
+            color: white !important;
+        }
+
         /* Styles pour les sections complètes (check vert, sans liseret) */
         .accordion-section.complete .accordion-header {
             background: rgba(52, 199, 89, 0.05);
+        }
+
+        /* Titre toujours lisible : sombre sur fond clair (complété fermé), blanc uniquement quand ouvert (fond violet) */
+        .accordion-section.complete .accordion-header h2,
+        .accordion-section.complete .accordion-header:hover h2 {
+            color: #1a1a1a;
         }
 
         .accordion-section.complete .accordion-header h2::after {
