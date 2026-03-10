@@ -500,6 +500,10 @@
         .company-group-children.visible {
             max-height: 800px;
         }
+        /* Aligner SG, Deloitte etc. avec le contenu du groupe CA (après la flèche) */
+        .company-filter-other {
+            padding-left: 46px;
+        }
 
         .reset-btn {
             padding: 14px 28px;
@@ -2301,6 +2305,7 @@
                 if (hideDisabled && cnt === 0) return;
                 const disabled = disabledValues.has(c);
                 const label = document.createElement('label');
+                label.className = 'company-filter-other';
                 const cb = document.createElement('input');
                 cb.type = 'checkbox';
                 cb.value = c;
