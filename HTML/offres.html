@@ -1309,7 +1309,7 @@
                 <div class="filters-stats">
                     <div class="stat-item-compact">
                         <span class="stat-number-compact" id="totalJobs">⏳</span>
-                        <span class="stat-label-compact">Offres totales</span>
+                        <span class="stat-label-compact">Offres live</span>
                     </div>
                     <div class="stat-item-compact">
                         <span class="stat-number-compact" id="filteredJobs">⏳</span>
@@ -1570,8 +1570,8 @@
             }
             
             // Essayer plusieurs chemins possibles pour le fichier JSON
-            // On essaie d'abord la version allégée (seulement les offres Live)
-            // On essaie aussi via raw.githubusercontent.com comme fallback
+            // PRIORITÉ : scraped_jobs_live.json (uniquement offres Live, pas les expirées)
+            // On n'affiche jamais les offres expirées
             const currentPath = window.location.pathname;
             const currentHref = window.location.href;
             const isInHTMLFolder = currentPath.includes('/HTML/') || currentPath.includes('HTML/') || 
@@ -1582,36 +1582,32 @@
             // Sinon, prioriser les chemins locaux pour performance
             let possiblePaths;
             if (isFileProtocol) {
-                // Si file://, essayer d'abord GitHub Raw (fonctionne même avec file://)
                 possiblePaths = [
                     'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs_live.json',
                     'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs_live.json',
-                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs.json',
-                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs.json',
-                    // Essayer aussi les chemins locaux (peu probable qu'ils fonctionnent avec file://)
                     'scraped_jobs_live.json',
                     './scraped_jobs_live.json',
                     'HTML/scraped_jobs_live.json',
                     './HTML/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs.json',
+                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs.json',
                     'scraped_jobs.json',
                     './scraped_jobs.json',
                     'HTML/scraped_jobs.json',
                     './HTML/scraped_jobs.json'
                 ];
             } else {
-                // Si HTTP/HTTPS, prioriser les chemins locaux (plus rapide)
                 possiblePaths = [
                     'scraped_jobs_live.json',
                     './scraped_jobs_live.json',
                     'HTML/scraped_jobs_live.json',
                     './HTML/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs_live.json',
                     'scraped_jobs.json',
                     './scraped_jobs.json',
                     'HTML/scraped_jobs.json',
                     './HTML/scraped_jobs.json',
-                    // Fallback GitHub (si déployé sur GitHub Pages)
-                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs_live.json',
-                    'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs_live.json',
                     'https://raw.githubusercontent.com/Dedale95/mon-site/main/HTML/scraped_jobs.json',
                     'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs.json'
                 ];
@@ -1657,14 +1653,14 @@
                                     console.log(`✅ JSON parsé avec succès : ${Array.isArray(data) ? 'tableau' : 'objet'}`);
                                     
                                     if (data && Array.isArray(data) && data.length > 0) {
-                                        // Ne garder que les offres Live (scraped_jobs.json inclut les Expired en fallback)
                                         const beforeCount = data.length;
-                                        data = data.filter(job => job && job.status === 'Live');
+                                        const statusLive = (s) => String(s || '').toLowerCase().trim() === 'live';
+                                        data = data.filter(job => job && statusLive(job.status));
                                         if (beforeCount > data.length) {
-                                            console.log(`📋 Filtrage : ${beforeCount - data.length} offres expirées exclues → ${data.length} Live`);
+                                            console.log(`📋 Filtrage : ${beforeCount - data.length} offres expirées exclues → ${data.length} offres live`);
                                         }
                                         loadedPath = path;
-                                        console.log(`✅ Fichier JSON chargé depuis : ${path} (${data.length} offres Live)`);
+                                        console.log(`✅ Fichier JSON chargé depuis : ${path} (${data.length} offres live)`);
                                         break;
                                     } else {
                                         console.warn(`⚠️ Fichier JSON vide ou invalide pour : ${path}`, {

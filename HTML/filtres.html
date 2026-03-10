@@ -1484,8 +1484,12 @@
                         if (response.ok) {
                             const data = await response.json();
                             if (Array.isArray(data) && data.length > 0) {
-                                // Normaliser les jobs (identique à offres.html)
-                                allJobs = data.map(job => {
+                                const statusLive = (s) => String(s || '').toLowerCase().trim() === 'live';
+                                const liveData = data.filter(job => job && statusLive(job.status));
+                                if (liveData.length < data.length) {
+                                    console.log(`📋 Filtrage : ${data.length - liveData.length} offres expirées exclues → ${liveData.length} offres live`);
+                                }
+                                allJobs = liveData.map(job => {
                                     // Nettoyage des noms d'entreprises
                                     if (job && job.company_name && typeof job.company_name === 'string') {
                                         job.company_name = job.company_name.replace(/\s*\([A-Z&]+\)\s*$/g, '').trim();
@@ -1560,7 +1564,7 @@
                                     
                                     return job;
                                 });
-                                console.log(`✅ ${allJobs.length} offres chargées`);
+                                console.log(`✅ ${allJobs.length} offres live chargées`);
                                 return;
                             }
                         }

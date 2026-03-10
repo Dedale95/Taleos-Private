@@ -1088,7 +1088,7 @@
                     <div class="stat-number" id="totalJobsCount">
                         <span style="display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite;"></span>
                     </div>
-                    <div class="stat-label">offres actualisées quotidiennement</div>
+                    <div class="stat-label">offres live actualisées quotidiennement</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-number">24/7</div>
@@ -1619,7 +1619,9 @@
                     const response = await fetch(path);
                     if (response.ok) {
                         const data = await response.json();
-                        const count = Array.isArray(data) ? data.length : 0;
+                        const statusLive = (s) => String(s || '').toLowerCase().trim() === 'live';
+                        const liveData = Array.isArray(data) ? data.filter(job => job && statusLive(job.status)) : [];
+                        const count = liveData.length;
                         if (count > 0) {
                             // Formater le nombre avec des espaces pour les milliers
                             const formattedCount = count.toLocaleString('fr-FR').replace(/,/g, ' ');
