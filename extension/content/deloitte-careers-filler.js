@@ -186,23 +186,11 @@
       }
     }
 
-    // Étape 2 : Bouton Connexion visible (avant affichage formulaire)
+    // Étape 2 / 3 : Connexion d'abord (bouton ou formulaire), JAMAIS "Utiliser ma dernière candidature" avant
     const emailInput = document.querySelector('input[data-automation-id="email"]');
     const passwordInput = document.querySelector('input[data-automation-id="password"]');
 
-    if (!emailInput || !passwordInput) {
-      const connexionSpan = Array.from(document.querySelectorAll('span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
-      const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
-      const btn = connexionSpan || connexionBtn;
-      if (btn?.offsetParent !== null) {
-        log('Clic sur bouton Connexion...');
-        btn.click();
-        setTimeout(runAutomation, 2000);
-        return;
-      }
-    }
-
-    // Étape 3 : Formulaire login visible → remplir et soumettre
+    // 2a. Si le formulaire est visible → on le remplit et on envoie, puis on reviendra plus tard
     if (emailInput && passwordInput) {
       fillInput(emailInput, email);
       fillInput(passwordInput, password);
@@ -214,18 +202,33 @@
         setTimeout(runAutomation, 3000);
         return;
       }
+    } else {
+      // 2b. Sinon, on cherche d'abord le bouton / lien "Connexion" et on le clique
+      const connexionSpan = Array.from(document.querySelectorAll('span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
+      const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
+      const btn = connexionSpan || connexionBtn;
+      if (btn?.offsetParent !== null) {
+        log('Clic sur bouton Connexion (avant toute réutilisation de candidature)...');
+        btn.click();
+        setTimeout(runAutomation, 2000);
+        return;
+      }
     }
 
-    // Étape 4 : Utiliser ma dernière candidature — uniquement si le formulaire de connexion n’est pas visible
-    const loginVisible = (emailInput && passwordInput) || document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]') || Array.from(document.querySelectorAll('span')).some(s => /^connexion$/i.test((s.textContent || '').trim()));
-    if (!loginVisible) {
+    // Étape 4 : Utiliser ma dernière candidature — uniquement SI aucun élément de connexion n'est présent
+    const hasConnexionUi = document.querySelector('input[data-automation-id="email"]') ||
+      document.querySelector('input[data-automation-id="password"]') ||
+      document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]') ||
+      Array.from(document.querySelectorAll('span')).some(s => /^connexion$/i.test((s.textContent || '').trim()));
+
+    if (!hasConnexionUi) {
       const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
         document.querySelector('a[href*="useMyLastApplication"]') ||
         document.querySelector('a[role="button"][href*="useMyLastApplication"]');
       if (useLastAppBtn) {
         const href = useLastAppBtn.getAttribute('href') || useLastAppBtn.href;
         if (href) {
-          log('Bouton "Utiliser ma dernière candidature" trouvé (connexion déjà faite), clic...');
+          log('Bouton "Utiliser ma dernière candidature" trouvé (après connexion), clic...');
           try {
             useLastAppBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
             useLastAppBtn.click();
@@ -239,12 +242,13 @@
         }
       }
       if (findAndClickByText(['utiliser ma dernière candidature', 'use my last application', 'use my last application data'])) {
-        log('Clic sur Utiliser ma dernière candidature (texte)...');
+        log('Clic sur Utiliser ma dernière candidature (texte, après connexion)...');
         setTimeout(runAutomation, 2500);
         return;
       }
     }
-    if (url.includes('/apply') && !emailInput && !document.querySelector('[data-automation-id="useMyLastApplication"]')) {
+
+    if (url.includes('/apply') && !hasConnexionUi && !document.querySelector('[data-automation-id="useMyLastApplication"]')) {
       maybeRetryForUseLastApp();
       return;
     }

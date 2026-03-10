@@ -174,6 +174,7 @@
     btn.textContent = '⏳ En cours...';
     btn.disabled = true;
     btn.dataset.taleosProcessing = '1';
+    btn.setAttribute('data-taleos-processing', '1');
     const timeoutId = setTimeout(function() {
       clearProcessing(jobId, true);
     }, FAILURE_TIMEOUT_MS);
@@ -215,6 +216,7 @@
     e.stopImmediatePropagation();
     // Marquer tout de suite pour que la page (si elle reçoit l’événement) n’ouvre pas d’onglet
     btn.dataset.taleosProcessing = '1';
+    btn.setAttribute('data-taleos-processing', '1');
 
     // Ping rapide : si l'extension ne répond pas, ouvrir l'onglet directement ici
     try {
