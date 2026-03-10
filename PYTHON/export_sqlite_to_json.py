@@ -19,6 +19,7 @@ import sqlite3
 import json
 from pathlib import Path
 from datetime import datetime
+from country_normalizer import get_country_from_city, normalize_country
 
 # Configuration des chemins
 PYTHON_DIR = Path(__file__).parent
@@ -29,6 +30,21 @@ OUTPUT_JSON = HTML_DIR / "scraped_jobs.json"
 CA_DB = PYTHON_DIR / "credit_agricole_jobs.db"
 SG_DB = PYTHON_DIR / "societe_generale_jobs.db"
 DELOITTE_DB = PYTHON_DIR / "deloitte_jobs.db"
+
+def fix_location(loc):
+    """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)"""
+    if not loc or ' - ' not in loc:
+        return loc
+    parts = loc.split(' - ', 1)
+    city = (parts[0] or '').strip()
+    country = (parts[1] or '').strip()
+    if not city or country.lower() != 'france':
+        return loc
+    correct_country = get_country_from_city(city)
+    if correct_country:
+        return f"{city} - {normalize_country(correct_country)}"
+    return loc
+
 
 def read_from_db(db_path, company_name, live_only=True):
     """Lit les offres depuis une base SQLite.
@@ -59,6 +75,10 @@ def read_from_db(db_path, company_name, live_only=True):
         jobs = []
         for row in cursor.fetchall():
             job = dict(row)
+            
+            # Corriger les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)
+            if job.get('location'):
+                job['location'] = fix_location(job['location'])
             
             # Convertir les JSON strings en listes pour technical_skills et behavioral_skills
             for col in ['technical_skills', 'behavioral_skills']:

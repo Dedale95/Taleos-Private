@@ -21,7 +21,7 @@ from tqdm.asyncio import tqdm
 from urllib.parse import urljoin, urlparse, parse_qs
 from datetime import datetime
 from city_normalizer import normalize_city
-from country_normalizer import normalize_country
+from country_normalizer import normalize_country, get_country_from_city
 from job_family_classifier import classify_job_family
 
 # ================= Logging =================
@@ -258,10 +258,15 @@ async def get_all_jobs(context: BrowserContext) -> List[Dict]:
         location = None
         if location_raw:
             city = normalize_city(location_raw)
-            country = normalize_country("France") # Deloitte FR context
+            # Inférer le pays depuis la ville si connue hors France (Tunis, Douala, Abidjan, etc.)
+            country_from_city = get_country_from_city(city) if city else None
+            if country_from_city:
+                country = normalize_country(country_from_city)
+            else:
+                country = normalize_country("France")  # Deloitte FR context par défaut
 
             # Si la ville est None ou égale au pays, utiliser "N/A"
-            if not city or city.lower() == country.lower():
+            if not city or (country and city.lower() == country.lower()):
                 location = f"N/A - {country}"
             else:
                 location = f"{city} - {country}"

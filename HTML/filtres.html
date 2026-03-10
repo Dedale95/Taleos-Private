@@ -2069,7 +2069,8 @@
                 expandSpan.className = 'company-group-expand';
                 expandSpan.textContent = '▶';
                 const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children';
+                childrenDiv.className = 'company-group-children visible';
+                expandSpan.classList.add('expanded');
                 expandSpan.onclick = (e) => {
                     e.stopPropagation();
                     childrenDiv.classList.toggle('visible');
@@ -2088,12 +2089,12 @@
                 const span = document.createElement('span');
                 span.textContent = `Groupe Crédit Agricole (${groupCount})`;
                 groupLabel.appendChild(span);
-                groupLabel.onclick = (e) => { if (e.target !== expandSpan) groupCb.click(); };
                 groupDiv.appendChild(expandSpan);
                 groupDiv.appendChild(groupLabel);
                 container.appendChild(groupDiv);
 
                 const renderedCaSubs = [];
+                const childCheckboxes = [];
                 caSubs.forEach(c => {
                     const cnt = counts[c] || 0;
                     if (hideDisabled && cnt === 0) return;

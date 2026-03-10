@@ -2244,13 +2244,13 @@
                 const span = document.createElement('span');
                 span.textContent = `Groupe Crédit Agricole (${groupCount})`;
                 groupLabel.appendChild(span);
-                groupLabel.onclick = (e) => { if (e.target !== expandSpan) groupCb.click(); };
                 groupDiv.appendChild(expandSpan);
                 groupDiv.appendChild(groupLabel);
                 container.appendChild(groupDiv);
 
                 const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children';
+                childrenDiv.className = 'company-group-children visible';
+                expandSpan.classList.add('expanded');
                 const childCheckboxes = [];
                 caSubs.forEach(c => {
                     const cnt = counts[c] || 0;

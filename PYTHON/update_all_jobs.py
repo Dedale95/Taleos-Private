@@ -15,6 +15,7 @@ import sqlite3
 import json
 from datetime import datetime
 from pathlib import Path
+from country_normalizer import get_country_from_city, normalize_country
 
 # Configuration des chemins
 BASE_DIR = Path(__file__).parent.parent
@@ -48,6 +49,20 @@ def merge_from_databases():
     print(f"🔄 Fusion des données depuis les bases SQLite vers {OUTPUT_CSV}...")
     all_jobs = []
     headers = None
+
+    def fix_location(loc):
+        """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)"""
+        if not loc or ' - ' not in loc:
+            return loc
+        parts = loc.split(' - ', 1)
+        city = (parts[0] or '').strip()
+        country = (parts[1] or '').strip()
+        if not city or country.lower() != 'france':
+            return loc
+        correct_country = get_country_from_city(city)
+        if correct_country:
+            return f"{city} - {normalize_country(correct_country)}"
+        return loc
 
     def clean_description(desc):
         """Nettoie les descriptions en remplaçant les retours à la ligne par des espaces"""
@@ -167,6 +182,10 @@ def merge_from_databases():
                 # Normaliser le niveau d'étude
                 if 'education_level' in job and job['education_level']:
                     job['education_level'] = normalize_education_level(job['education_level'])
+                
+                # Corriger les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)
+                if 'location' in job and job['location']:
+                    job['location'] = fix_location(job['location'])
                 
                 jobs.append(job)
             
