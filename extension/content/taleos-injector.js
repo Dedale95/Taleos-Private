@@ -209,18 +209,21 @@
       return;
     }
 
-    // Ping rapide : si l'extension ne répond pas, laisser la page ouvrir l'onglet
+    // Bloquer immédiatement le clic (sync) pour éviter le double onglet page+extension
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Ping rapide : si l'extension ne répond pas, ouvrir l'onglet directement ici
     try {
       await Promise.race([
         chrome.runtime.sendMessage({ action: 'ping' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('ping_timeout')), 300))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ping_timeout')), 500))
       ]);
     } catch (_) {
-      return; // Extension non disponible → laisser la page gérer (window.open)
+      // Extension non disponible → ouvrir l'onglet manuellement
+      window.open(jobUrl, '_blank');
+      return;
     }
-
-    e.preventDefault();
-    e.stopPropagation();
 
     try {
       const checkPromise = chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete' });
@@ -328,6 +331,11 @@
     }
     if (msg.action === 'taleos_auth_required') {
       window.dispatchEvent(new CustomEvent('taleos-extension-auth-required'));
+    }
+    if (msg.action === 'taleos_offer_unavailable') {
+      window.dispatchEvent(new CustomEvent('taleos-extension-offer-unavailable', {
+        detail: { jobId: msg.jobId, jobTitle: msg.jobTitle }
+      }));
     }
   });
 

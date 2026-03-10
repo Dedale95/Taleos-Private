@@ -948,6 +948,18 @@
             border-color: #30b853;
         }
 
+        .application-expired {
+            opacity: 0.65;
+            border-left: 4px solid #b45309 !important;
+        }
+
+        .job-expired-label {
+            display: inline-block;
+            font-size: 0.8rem;
+            color: #b45309;
+            font-style: italic;
+        }
+
         .job-cancel-btn {
             background: white;
             color: #ef4444;
@@ -3028,6 +3040,16 @@
             if (typeof showToast === 'function') showToast('Candidature échouée', 'Vous pouvez réessayer en cliquant à nouveau sur Candidater.', 'error', 5000);
         });
 
+        window.addEventListener('taleos-extension-offer-unavailable', (e) => {
+            const jobId = (e.detail?.jobId || '').trim();
+            const jobTitle = e.detail?.jobTitle || 'cette offre';
+            if (!jobId) return;
+            applicationStatuses.set(jobId, 'expirée');
+            if (typeof updateJobCardButtons === 'function') updateJobCardButtons(jobId);
+            if (typeof updateJobCardStyles === 'function') updateJobCardStyles(jobId);
+            if (typeof showToast === 'function') showToast('Offre expirée', `L'offre "${jobTitle}" n'est plus disponible.`, 'warning', 6000);
+        });
+
         // Vérifier si l'utilisateur est connecté
         function checkIsAuthenticated() {
             // Utiliser l'état global mis à jour par onAuthStateChanged
@@ -3434,17 +3456,23 @@
                     const isApplied = userApplications.has(jobId);
                     const isPending = pendingApplications[jobId];
                     const status = applicationStatuses.get(jobId);
-                    // Considérer comme envoyée si statut 'envoyée' OU si candidature existe sans timer
                     const isSubmitted = status === 'envoyée' || (isApplied && !isPending);
+                    const isExpired = status === 'expirée';
                     
-                    // Retirer toutes les classes d'état
-                    card.classList.remove('application-pending', 'application-submitted');
+                    card.classList.remove('application-pending', 'application-submitted', 'application-expired');
                     
-                    // Mettre à jour le badge
                     let existingBadge = card.querySelector('.job-card-badge');
                     
-                    if (isSubmitted) {
-                        // Candidature envoyée (vert)
+                    if (isExpired) {
+                        card.classList.add('application-expired');
+                        if (!existingBadge) {
+                            existingBadge = document.createElement('div');
+                            existingBadge.className = 'job-card-badge';
+                            card.insertBefore(existingBadge, card.firstChild);
+                        }
+                        existingBadge.textContent = '⚠️ Offre expirée';
+                        existingBadge.style.cssText = 'background:#b45309;color:#fff;';
+                    } else if (isSubmitted) {
                         card.classList.add('application-submitted');
                         if (!existingBadge) {
                             existingBadge = document.createElement('div');
@@ -3452,11 +3480,9 @@
                             card.insertBefore(existingBadge, card.firstChild);
                         }
                         existingBadge.textContent = '✓ Candidature envoyée';
+                        existingBadge.style.cssText = '';
                     } else {
-                        // Pas de candidature - retirer le badge
-                        if (existingBadge) {
-                            existingBadge.remove();
-                        }
+                        if (existingBadge) existingBadge.remove();
                     }
                 }
             });
@@ -3474,17 +3500,18 @@
                         const isApplied = userApplications.has(jobId);
                         const isPending = pendingApplications[jobId];
                         const status = applicationStatuses.get(jobId);
-                        // Considérer comme envoyée si statut 'envoyée' OU si candidature existe sans timer
                         const isSubmitted = status === 'envoyée' || (isApplied && !isPending);
+                        const isExpired = status === 'expirée';
                         const job = filteredJobs.find(j => String(j.job_id || '').trim() === jobIdStr);
                         if (job) {
                             const jobTitle = cleanJobTitle(job.job_title);
                             
                             let buttonHTML = '';
+                            const jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                             
-                            let jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
-                            
-                            if (isSubmitted || isApplied || isPending) {
+                            if (isExpired) {
+                                buttonHTML = `<span class="job-expired-label">Offre indisponible</span>`;
+                            } else if (isSubmitted || isApplied || isPending) {
                                 buttonHTML = jobLinkHTML;
                             } else {
                                 buttonHTML = `<button class="job-apply-btn" onclick="applyToJob('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">📝 Candidater</button>`;

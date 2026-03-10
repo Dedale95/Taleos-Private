@@ -108,6 +108,23 @@
     return inp && (inp.tagName === 'INPUT' || inp.tagName === 'TEXTAREA') ? inp : null;
   }
 
+  async function notifyOfferUnavailable(jobId, jobTitle) {
+    try {
+      const { taleos_pending_tab } = await chrome.storage.local.get('taleos_pending_tab');
+      let taleosTab = taleos_pending_tab;
+      if (!taleosTab) {
+        const tabs = await chrome.tabs.query({ url: ['*://*.taleos.co/*', '*://*.github.io/*', 'http://localhost/*'] });
+        taleosTab = tabs[0]?.id;
+      }
+      if (taleosTab) {
+        chrome.tabs.sendMessage(taleosTab, { action: 'taleos_offer_unavailable', jobId, jobTitle }).catch(() => {});
+      }
+      chrome.storage.local.remove('taleos_pending_deloitte');
+      hideBanner();
+      setTimeout(() => { try { chrome.tabs.remove(chrome.tabs.TAB_ID_NONE); } catch(_){} }, 4000);
+    } catch (_) {}
+  }
+
   async function runAutomation() {
     const { taleos_pending_deloitte } = await chrome.storage.local.get('taleos_pending_deloitte');
     if (!taleos_pending_deloitte) {
@@ -124,8 +141,18 @@
     log('runAutomation: URL=' + window.location.href);
 
     const { profile, tabId } = taleos_pending_deloitte;
+    const jobId = taleos_pending_deloitte.jobId || '';
+    const jobTitle = taleos_pending_deloitte.jobTitle || '';
     const email = profile?.auth_email || profile?.email || '';
     const password = profile?.auth_password || '';
+
+    // Détection "Offre introuvable"
+    const pageText = (document.body?.innerText || '').toLowerCase();
+    if (pageText.includes('offre introuvable') || pageText.includes('job not found') || pageText.includes('this position is no longer available') || pageText.includes('cette offre est peut-être expirée')) {
+      log('Offre introuvable détectée, notification Taleos...');
+      await notifyOfferUnavailable(jobId, jobTitle);
+      return;
+    }
 
     if (!email || !password) {
       log('Identifiants Deloitte manquants');
@@ -159,7 +186,37 @@
       }
     }
 
-    // Étape 2 : Utiliser ma dernière candidature (PRIORITAIRE après login)
+    // Étape 2 : Bouton Connexion visible (avant affichage formulaire)
+    const emailInput = document.querySelector('input[data-automation-id="email"]');
+    const passwordInput = document.querySelector('input[data-automation-id="password"]');
+
+    if (!emailInput || !passwordInput) {
+      const connexionSpan = Array.from(document.querySelectorAll('span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
+      const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
+      const btn = connexionSpan || connexionBtn;
+      if (btn?.offsetParent !== null) {
+        log('Clic sur bouton Connexion...');
+        btn.click();
+        setTimeout(runAutomation, 2000);
+        return;
+      }
+    }
+
+    // Étape 3 : Formulaire login visible → remplir et soumettre
+    if (emailInput && passwordInput) {
+      fillInput(emailInput, email);
+      fillInput(passwordInput, password);
+
+      const submitBtn = document.querySelector('[data-automation-id="click_filter"][aria-label="Connexion"], [aria-label="Connexion"][role="button"], button[data-automation-id="signInSubmitButton"]');
+      if (submitBtn?.offsetParent !== null) {
+        log('Clic sur Connexion (submit)...');
+        submitBtn.click();
+        setTimeout(runAutomation, 3000);
+        return;
+      }
+    }
+
+    // Étape 4 : Utiliser ma dernière candidature (seulement APRÈS être connecté)
     const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
       document.querySelector('a[href*="useMyLastApplication"]') ||
       document.querySelector('a[role="button"][href*="useMyLastApplication"]');
@@ -184,39 +241,9 @@
       setTimeout(runAutomation, 2500);
       return;
     }
-    if (url.includes('/apply') && !document.querySelector('input[data-automation-id="email"]')) {
+    if (url.includes('/apply') && !emailInput) {
       maybeRetryForUseLastApp();
       return;
-    }
-
-    // Étape 3 : Formulaire login visible → remplir et cliquer Connexion (si pas encore sur "Utiliser ma dernière candidature")
-    const emailInput = document.querySelector('input[data-automation-id="email"]');
-    const passwordInput = document.querySelector('input[data-automation-id="password"]');
-
-    if (emailInput && passwordInput) {
-      fillInput(emailInput, email);
-      fillInput(passwordInput, password);
-
-      const submitBtn = document.querySelector('[data-automation-id="click_filter"][aria-label="Connexion"], [aria-label="Connexion"][role="button"], button[data-automation-id="signInSubmitButton"]');
-      if (submitBtn?.offsetParent !== null) {
-        log('Clic sur Connexion (submit)...');
-        submitBtn.click();
-        setTimeout(runAutomation, 3000);
-        return;
-      }
-    }
-
-    // Étape 4 : Bouton Connexion visible (avant affichage formulaire)
-    if (!emailInput || !passwordInput) {
-      const connexionSpan = Array.from(document.querySelectorAll('span.css-1xtbc5b, span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
-      const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
-      const btn = connexionSpan || connexionBtn;
-      if (btn?.offsetParent !== null) {
-        log('Clic sur Connexion...');
-        btn.click();
-        setTimeout(runAutomation, 2000);
-        return;
-      }
     }
 
     // Étape 5 : Remplir le formulaire de candidature
