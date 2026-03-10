@@ -113,6 +113,28 @@
     return inp && (inp.tagName === 'INPUT' || inp.tagName === 'TEXTAREA') ? inp : null;
   }
 
+  /** Workday : cliquer une option de liste (menuItem / promptOption) dont le libellé correspond */
+  function clickWorkdayOptionByLabelAndValue(labelKeywords, valueText) {
+    const labels = Array.from(document.querySelectorAll('label, [data-automation-id="label"], span[role="presentation"]'));
+    for (const label of labels) {
+      const text = (label.textContent || '').trim().toLowerCase();
+      if (!labelKeywords.some(k => text.includes(k.toLowerCase()))) continue;
+      const container = label.closest('li, div[data-automation-id], section, [role="listbox"]') || document.body;
+      const options = container.querySelectorAll('[data-automation-id="promptOption"], [data-automation-id="menuItem"], [role="option"]');
+      const target = (valueText || '').trim().toLowerCase();
+      for (const opt of options) {
+        const t = (opt.textContent || opt.getAttribute('aria-label') || '').trim().toLowerCase();
+        if (t === target || t.includes(target) || (target === 'oui' && /^oui$/i.test(t)) || (target === 'non' && /^non$/i.test(t))) {
+          if (opt.offsetParent !== null) {
+            opt.click();
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   async function notifyOfferUnavailable(jobId, jobTitle) {
     try {
       const { taleos_pending_tab } = await chrome.storage.local.get('taleos_pending_tab');
@@ -237,64 +259,74 @@
       log('Aucun bouton Connexion visible', 2);
     }
 
-    // Étape 4 : Utiliser ma dernière candidature (uniquement si on a déjà fait Connexion)
-    const hasConnexionUi = document.querySelector('input[data-automation-id="email"]') ||
-      document.querySelector('input[data-automation-id="password"]') ||
-      document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]') ||
-      Array.from(document.querySelectorAll('span')).some(s => /^connexion$/i.test((s.textContent || '').trim()));
+    // Étape 4 : "Utiliser ma dernière candidature" — seulement sur /apply (pas sur /apply/useMyLastApplication)
+    if (!url.includes('useMyLastApplication')) {
+      const hasConnexionUi = document.querySelector('input[data-automation-id="email"]') ||
+        document.querySelector('input[data-automation-id="password"]') ||
+        document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]') ||
+        Array.from(document.querySelectorAll('span')).some(s => /^connexion$/i.test((s.textContent || '').trim()));
 
-    const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
-      document.querySelector('a[href*="useMyLastApplication"]') ||
-      document.querySelector('a[role="button"][href*="useMyLastApplication"]');
+      const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
+        document.querySelector('a[href*="useMyLastApplication"]') ||
+        document.querySelector('a[role="button"][href*="useMyLastApplication"]');
 
-    const didLogin = !!window.__taleosDeloitteDidLoginClick;
-    log(`Connexion visible=${!!hasConnexionUi}, bouton "Utiliser ma dernière candidature"=${!!useLastAppBtn}, déjà connecté (flag)=${didLogin}`, 4);
+      const didLogin = !!window.__taleosDeloitteDidLoginClick;
+      log(`Connexion visible=${!!hasConnexionUi}, bouton "Utiliser ma dernière candidature"=${!!useLastAppBtn}, flag=${didLogin}`, 4);
 
-    // Cas 1 : tu arrives déjà connecté sur /apply → pas d'UI de connexion, bouton présent : on clique.
-    // Cas 2 : tu as fait Connexion dans ce flux (didLogin=true) et l'UI n'est plus là → on clique aussi.
-    if (!hasConnexionUi && useLastAppBtn && (!hasConnexionUi || didLogin)) {
-      log('Clic sur "Utiliser ma dernière candidature"', 4);
-      try {
-        useLastAppBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-      } catch (e) {}
-      try {
-        useLastAppBtn.click();
-      } catch (e) {
-        log('Erreur clic useMyLastApplication: ' + e.message, 4);
+      if (!hasConnexionUi && useLastAppBtn) {
+        log('Clic sur "Utiliser ma dernière candidature"', 4);
+        try {
+          useLastAppBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        } catch (e) {}
+        try {
+          useLastAppBtn.click();
+        } catch (e) {
+          log('Erreur clic useMyLastApplication: ' + e.message, 4);
+        }
+        setTimeout(runAutomation, 2500);
+        return;
       }
-      setTimeout(runAutomation, 2500);
-      return;
+
+      if (url.includes('/apply') && !hasConnexionUi && !useLastAppBtn) {
+        log('Attente bouton "Utiliser ma dernière candidature" → retry', 4);
+        maybeRetryForUseLastApp();
+        return;
+      }
+    } else {
+      log('Déjà sur useMyLastApplication → remplissage formulaire', 4);
     }
 
-    if (url.includes('/apply') && !hasConnexionUi && !useLastAppBtn) {
-      log('Attente bouton "Utiliser ma dernière candidature" → retry', 4);
-      maybeRetryForUseLastApp();
-      return;
-    }
-
-    // Étape 5 : Remplir le formulaire de candidature
+    // Étape 5 : Remplir le formulaire de candidature (profil Firebase : Comment nous avez-vous connus, Avez-vous déjà travaillé pour Deloitte, etc.)
     let filled = false;
 
-    // Comment nous avez-vous connus? / How Did You Hear About Us?
+    // Comment nous avez-vous connus? → "Site Deloitte Careers"
+    let hearAboutFilled = false;
     const hearAboutSelect = findSelectByLabel(['comment nous avez-vous connus', 'how did you hear about us']);
     if (hearAboutSelect) {
       fillSelect(hearAboutSelect, SITE_DELOITTE_CAREERS);
+      hearAboutFilled = true;
       filled = true;
     }
     const hearAboutInput = findInputByLabel(['comment nous avez-vous connus', 'how did you hear about us']);
     if (hearAboutInput) {
       fillInput(hearAboutInput, SITE_DELOITTE_CAREERS);
+      hearAboutFilled = true;
+      filled = true;
+    }
+    if (!hearAboutFilled && clickWorkdayOptionByLabelAndValue(['comment nous avez-vous connus', 'how did you hear about us'], SITE_DELOITTE_CAREERS)) {
       filled = true;
     }
 
-    // Avez-vous déjà travaillé pour Deloitte? / Have you worked for Deloitte?
-    const workedYesNo = profile.deloitte_worked === 'yes' ? 'Oui' : 'Non';
+    // Avez-vous déjà travaillé pour Deloitte? (valeur depuis Firebase : deloitte_worked / deloitteWorked)
+    const workedRaw = profile.deloitte_worked || profile.deloitteWorked || 'no';
+    const workedYesNo = workedRaw === 'yes' ? 'Oui' : 'Non';
+    log('Avez-vous déjà travaillé pour Deloitte? → ' + workedYesNo + ' (Firebase: ' + workedRaw + ')', 5);
     const workedSelect = findSelectByLabel(['avez-vous déjà travaillé pour deloitte', 'have you worked for deloitte']);
     if (workedSelect) {
       fillSelect(workedSelect, workedYesNo);
       filled = true;
     }
-    const workedRadioValues = profile.deloitte_worked === 'yes' ? ['yes', '1', 'oui', 'true'] : ['no', '0', 'non', 'false'];
+    const workedRadioValues = workedRaw === 'yes' ? ['yes', '1', 'oui', 'true'] : ['no', '0', 'non', 'false'];
     const workedRadios = document.querySelectorAll('input[type="radio"][name*="worked"], input[type="radio"][name*="deloitte"], input[type="radio"][name*="previous"]');
     for (const r of workedRadios) {
       const v = (r.value || '').toLowerCase();
@@ -305,9 +337,12 @@
         break;
       }
     }
+    if (!filled && clickWorkdayOptionByLabelAndValue(['avez-vous déjà travaillé pour deloitte', 'have you worked for deloitte'], workedYesNo)) {
+      filled = true;
+    }
 
     // Si oui : ancien bureau, ancienne adresse email, pays
-    if (profile.deloitte_worked === 'yes') {
+    if (workedRaw === 'yes') {
       const oldOffice = findInputByLabel(['votre ancien bureau', 'your previous office', 'ancien bureau']);
       if (oldOffice && profile.deloitte_old_office) {
         fillInput(oldOffice, profile.deloitte_old_office);
