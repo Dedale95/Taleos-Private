@@ -345,6 +345,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runTestConnection(msg).then(sendResponse).catch(e => sendResponse({ success: false, message: e.message || 'Erreur' }));
     return true;
   }
+  if (msg.action === 'taleos_check_profile_complete') {
+    checkProfileCompletenessFromFirestore().then((complete) => sendResponse({ complete })).catch(e => sendResponse({ complete: false, error: e.message }));
+    return true;
+  }
   if (msg.action === 'taleos_apply') {
     const taleosTabId = sender.tab?.id;
     handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId)
@@ -880,6 +884,40 @@ async function testCredentials(bankId) {
   if (!taleosUserId || !taleosIdToken) throw new Error('Non connecté. Connectez-vous d\'abord.');
   const profile = await fetchProfile(taleosUserId, bankId, taleosIdToken);
   return { ok: true, email: profile.auth_email || '(vide)' };
+}
+
+/** Vérifie si le profil utilisateur est complet (même logique que offres.html) */
+async function checkProfileCompletenessFromFirestore() {
+  const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+  if (!taleosUserId || !taleosIdToken) return false;
+  const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const profileRes = await fetch(`${base}/profiles/${taleosUserId}`, { headers: { Authorization: `Bearer ${taleosIdToken}` } });
+  if (!profileRes.ok) return false;
+  const profile = parseFirestoreDoc(await profileRes.json());
+  const required = {
+    civility: profile.civility,
+    firstName: profile.first_name,
+    lastName: profile.last_name,
+    phone: profile.phone,
+    address: profile.address,
+    postalCode: profile.postal_code,
+    city: profile.city,
+    country: profile.country,
+    jobs: profile.jobs && Array.isArray(profile.jobs) && profile.jobs.length > 0,
+    contractType: profile.contract_type,
+    availableFrom: profile.available_from || profile.available_from_raw,
+    continents: profile.continents && Array.isArray(profile.continents) && profile.continents.length > 0,
+    preferredCountries: profile.preferred_countries && Array.isArray(profile.preferred_countries) && profile.preferred_countries.length > 0,
+    experienceLevel: profile.experience_level,
+    educationLevel: profile.education_level,
+    institutionType: profile.institution_type,
+    diplomaStatus: profile.diploma_status,
+    deloitteWorked: profile.deloitte_worked === 'yes' || profile.deloitte_worked === 'no'
+  };
+  for (const [k, v] of Object.entries(required)) {
+    if (v === undefined || v === null || v === '' || v === false || (typeof v === 'string' && v.trim() === '')) return false;
+  }
+  return true;
 }
 
 async function fetchProfile(uid, bankId, token) {

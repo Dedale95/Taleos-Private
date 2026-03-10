@@ -175,6 +175,34 @@
       return;
     }
 
+    try {
+      const checkRes = await chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete' });
+      if (checkRes && checkRes.complete === false) {
+        const script = document.createElement('script');
+        script.textContent = `
+          (function() {
+            if (typeof showProfileIncompleteModal === 'function') {
+              showProfileIncompleteModal();
+            } else {
+              var m = document.createElement('div');
+              m.id = 'profileIncompleteModal';
+              m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999999';
+              m.innerHTML = '<div style="background:#fff;padding:24px;border-radius:12px;max-width:400px;text-align:center"><h3>Profil incomplet</h3><p>Il manque des informations dans votre profil. Vous devez compléter votre profil avant de pouvoir candidater.</p><button id="taleos-btn-profile" style="margin:8px;padding:10px 20px;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer">Compléter mon profil</button><button id="taleos-btn-close" style="margin:8px;padding:10px 20px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer">Fermer</button></div>';
+              m.onclick = function(e) { if (e.target === m) m.remove(); };
+              document.body.appendChild(m);
+              m.querySelector('#taleos-btn-profile').onclick = function() { m.remove(); window.location.href = 'profile.html'; };
+              m.querySelector('#taleos-btn-close').onclick = function() { m.remove(); };
+            }
+          })();
+        `;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+        return;
+      }
+    } catch (err) {
+      console.warn('[Taleos] Vérification profil:', err);
+    }
+
     setButtonProcessing(btn, jobId);
     syncAuthFromPage(true);
 
