@@ -1,6 +1,8 @@
 # Mise à jour quotidienne des offres d'emploi (CA, SG, Deloitte)
 # Exécution tous les jours à 6h00 (heure de Paris)
 # Les fichiers JSON mis à jour sont commités (scraped_jobs.csv est dans .gitignore)
+# IMPORTANT : scraped_jobs.json et scraped_jobs_live.json contiennent UNIQUEMENT les offres Live
+# (les offres expirées sont exclues - le site affiche le nombre d'offres live uniquement)
 
 name: Mise à jour offres quotidienne
 

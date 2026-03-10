@@ -3,6 +3,11 @@
 Script pour exporter les données SQLite vers JSON
 Utilisé par les fichiers HTML pour charger les données.
 
+IMPORTANT - Distinction Live / Expirées :
+- scraped_jobs.json et scraped_jobs_live.json : UNIQUEMENT offres Live (pour le site Taleos)
+- scraped_jobs_full.json : Live + Expired (pour mes-candidatures / référence)
+Le site affiche le nombre d'offres live, pas live+expirées.
+
 Recherche par mots-clés :
 - La colonne job_description contient le TEXTE COMPLET de l'offre (jusqu'à ~25k caractères).
 - Ce texte est exporté dans le JSON et utilisé UNIQUEMENT pour la recherche par mots-clés
@@ -25,8 +30,11 @@ CA_DB = PYTHON_DIR / "credit_agricole_jobs.db"
 SG_DB = PYTHON_DIR / "societe_generale_jobs.db"
 DELOITTE_DB = PYTHON_DIR / "deloitte_jobs.db"
 
-def read_from_db(db_path, company_name):
-    """Lit les offres depuis une base SQLite"""
+def read_from_db(db_path, company_name, live_only=True):
+    """Lit les offres depuis une base SQLite.
+    live_only=True : uniquement les offres Live (pour affichage site).
+    live_only=False : Live + Expired (pour mes-candidatures, référence).
+    """
     if not db_path.exists():
         print(f"⚠️ Base de données manquante : {db_path}")
         return []
@@ -34,8 +42,8 @@ def read_from_db(db_path, company_name):
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row  # Permet d'accéder aux colonnes par nom
-        # job_description = texte complet de l'offre pour la recherche par mots-clés (non affiché sur les vignettes)
-        cursor = conn.execute("""
+        status_filter = "AND status = 'Live'" if live_only else ""
+        cursor = conn.execute(f"""
             SELECT 
                 job_id, job_title, contract_type, publication_date, location,
                 job_family, duration, management_position, status,
@@ -44,7 +52,7 @@ def read_from_db(db_path, company_name):
                 job_description, company_name, company_description, job_url,
                 first_seen, last_updated
             FROM jobs 
-            WHERE is_valid = 1 AND status = 'Live'
+            WHERE is_valid = 1 {status_filter}
             ORDER BY last_updated DESC
         """)
         
@@ -92,11 +100,11 @@ def main():
     
     for name, db_path in sources_info:
         print(f"📁 Lecture de {name} depuis {db_path.name}...")
-        jobs = read_from_db(db_path, name)
+        jobs = read_from_db(db_path, name, live_only=True)
         
         if jobs:
             all_jobs.extend(jobs)
-            print(f"   ✅ {len(jobs)} offres lues")
+            print(f"   ✅ {len(jobs)} offres Live lues")
         else:
             print(f"   ⚠️ Aucune offre trouvée dans {db_path.name}")
     
@@ -106,7 +114,8 @@ def main():
             json.dump(all_jobs, f, ensure_ascii=False, indent=2)
         
         print()
-        print(f"✅ Export terminé : {len(all_jobs)} jobs sauvegardés dans {OUTPUT_JSON}")
+        print(f"✅ Export terminé : {len(all_jobs)} offres Live sauvegardées dans {OUTPUT_JSON.name}")
+        print(f"   (Les offres expirées sont exclues du site - voir scraped_jobs_full.json pour référence)")
         
         # Créer une version allégée avec seulement les offres Live (pour GitHub Pages)
         live_jobs = [job for job in all_jobs if job.get('status') == 'Live']
@@ -115,6 +124,19 @@ def main():
             json.dump(live_jobs, f, ensure_ascii=False, indent=2)
         
         print(f"✅ Version allégée créée : {len(live_jobs)} offres Live dans {OUTPUT_JSON_LIVE.name}")
+        
+        # Version complète (Live + Expired) pour mes-candidatures / référence
+        all_jobs_full = []
+        for name, db_path in sources_info:
+            if db_path.exists():
+                full = read_from_db(db_path, name, live_only=False)
+                all_jobs_full.extend(full)
+        OUTPUT_JSON_FULL = HTML_DIR / "scraped_jobs_full.json"
+        if all_jobs_full:
+            with open(OUTPUT_JSON_FULL, 'w', encoding='utf-8') as f:
+                json.dump(all_jobs_full, f, ensure_ascii=False, indent=2)
+            live_count = sum(1 for j in all_jobs_full if j.get('status') == 'Live')
+            print(f"✅ Version complète créée : {len(all_jobs_full)} offres (dont {live_count} Live) dans {OUTPUT_JSON_FULL.name}")
         
         # Afficher la répartition par entreprise
         companies = {}
@@ -135,6 +157,13 @@ def main():
         print("\n📊 Répartition par statut:")
         for status, count in sorted(statuses.items(), key=lambda x: x[1], reverse=True):
             print(f"   - {status}: {count} offres")
+        
+        # Validation : le site doit afficher uniquement les offres Live
+        expired_in_export = sum(1 for j in all_jobs if str(j.get('status', '')).lower().strip() != 'live')
+        if expired_in_export > 0:
+            print(f"\n⚠️ ATTENTION : {expired_in_export} offres expirées dans l'export site (ne devrait pas arriver)")
+        else:
+            print(f"\n✅ Validation : {len(all_jobs)} offres Live dans le JSON du site (0 expirées)")
     else:
         print("❌ Aucun job à exporter !")
     
