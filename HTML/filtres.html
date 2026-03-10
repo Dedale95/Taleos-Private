@@ -558,13 +558,13 @@
         .company-group-children.visible {
             max-height: 800px;
         }
-        /* Aligner SG, Deloitte etc. avec le groupe CA : spacer = même largeur que la flèche */
+        /* Aligner SG, Deloitte etc. avec le groupe CA : spacer = flèche (60px) + margin-right (8px) = 68px */
         .company-filter-other {
             display: flex;
             align-items: center;
         }
         .company-filter-spacer {
-            width: 44px;
+            width: 68px;
             flex-shrink: 0;
         }
 
@@ -1511,11 +1511,11 @@
         };
 
         function getCityRegion(city, country) {
-            if (!city) return country === "France" ? "Autres régions françaises" : country;
+            if (!country || String(country).toLowerCase() !== "france") return null; // Le filtre Région ne concerne que les régions françaises
+            if (!city) return "Autres régions françaises";
             const normalizedCity = city.toLowerCase();
             if (cityToRegion[normalizedCity]) return cityToRegion[normalizedCity];
-            if (country === "France") return "Autres régions françaises";
-            return city;
+            return "Autres régions françaises";
         }
 
         // Initialisation
@@ -1628,7 +1628,7 @@
                                         const countryOnly = job.location.trim();
                                         if (countryOnly) {
                                             job.cleanCountries = [countryOnly];
-                                            job.cleanRegions = [countryOnly];
+                                            job.cleanRegions = countryOnly.toLowerCase() === "france" ? ["Autres régions françaises"] : [];
                                         }
                                     }
                                     
@@ -1754,8 +1754,10 @@
                             educations: []
                         },
                         order: data.order !== undefined ? data.order : 0,
-                        expanded: data.expanded !== undefined ? data.expanded : false
+                        expanded: data.expanded !== undefined ? data.expanded : false,
+                        companyGroupCAExpanded: data.companyGroupCAExpanded === true
                     };
+                    companyGroupCAExpandedByAccordion[accordion.id] = accordion.companyGroupCAExpanded;
                     loadedAccordions.push(accordion);
                     console.log('📦 [loadAccordions] Accordéon chargé:', accordion.id, accordion.name);
                 });
@@ -1939,7 +1941,8 @@
                     educations: []
                 },
                 order: accordions.length,
-                expanded: true
+                expanded: true,
+                companyGroupCAExpanded: false
             };
 
             // Vérifier si l'utilisateur est connecté avant de créer l'accordéon
@@ -2077,7 +2080,7 @@
         const companyGroupCAExpandedByAccordion = {}; // État ouvert/fermé par accordéon
         function getCompanyGroupCAExpanded(accordionId) {
             if (companyGroupCAExpandedByAccordion[accordionId] !== undefined) return companyGroupCAExpandedByAccordion[accordionId];
-            return localStorage.getItem('companyGroupCAExpanded') !== 'false';
+            return false; // fermé par défaut, ouvert uniquement si l'utilisateur l'a laissé ouvert
         }
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
@@ -2115,8 +2118,13 @@
                     e.stopPropagation();
                     childrenDiv.classList.toggle('visible');
                     expandSpan.classList.toggle('expanded');
-                    companyGroupCAExpandedByAccordion[accordionId] = childrenDiv.classList.contains('visible');
-                    localStorage.setItem('companyGroupCAExpanded', companyGroupCAExpandedByAccordion[accordionId]);
+                    const expanded = childrenDiv.classList.contains('visible');
+                    companyGroupCAExpandedByAccordion[accordionId] = expanded;
+                    const accordion = accordions.find(a => (a.id || '').toString() === (accordionId || '').toString());
+                    if (accordion) {
+                        accordion.companyGroupCAExpanded = expanded;
+                        saveAccordion(accordion);
+                    }
                 };
                 const groupLabel = document.createElement('label');
                 groupLabel.style.display = 'flex';

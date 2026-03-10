@@ -500,13 +500,13 @@
         .company-group-children.visible {
             max-height: 800px;
         }
-        /* Aligner SG, Deloitte etc. avec le groupe CA : spacer = même largeur que la flèche */
+        /* Aligner SG, Deloitte etc. avec le groupe CA : spacer = flèche (60px) + margin-right (8px) = 68px */
         .company-filter-other {
             display: flex;
             align-items: center;
         }
         .company-filter-spacer {
-            width: 44px;
+            width: 68px;
             flex-shrink: 0;
         }
 
@@ -1534,11 +1534,11 @@
         };
 
         function getCityRegion(city, country) {
-            if (!city) return country === "France" ? "Autres régions françaises" : country;
+            if (!country || String(country).toLowerCase() !== "france") return null; // Le filtre Région ne concerne que les régions françaises
+            if (!city) return "Autres régions françaises";
             const normalizedCity = city.toLowerCase();
             if (cityToRegion[normalizedCity]) return cityToRegion[normalizedCity];
-            if (country === "France") return "Autres régions françaises";
-            return city; // Pour l'international pas mappé, on garde la ville (ex: "A Coruña")
+            return "Autres régions françaises";
         }
 
         // Fonction pour formater une date au format français dd/mm/yyyy
@@ -1982,7 +1982,7 @@
                             const countryOnly = job.location.trim();
                             if (countryOnly) {
                                 job.cleanCountries = [countryOnly];
-                                job.cleanRegions = [countryOnly];
+                                job.cleanRegions = countryOnly.toLowerCase() === "france" ? ["Autres régions françaises"] : [];
                             }
                         }
                     } catch (e) {
@@ -2065,6 +2065,11 @@
         async function initializeFilters() {
             // Restaurer les filtres depuis Firestore (si connecté) ou localStorage
             const restoredFilters = await restoreFilters();
+            if (restoredFilters?.companyGroupCAExpanded !== undefined) {
+                companyGroupCAExpanded = restoredFilters.companyGroupCAExpanded;
+            } else {
+                companyGroupCAExpanded = localStorage.getItem('companyGroupCAExpanded') === 'true';
+            }
             
             const sets = {
                 regions: new Set(), countries: new Set(), contracts: new Set(),
@@ -2213,7 +2218,7 @@
         }
 
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
-        let companyGroupCAExpanded = localStorage.getItem('companyGroupCAExpanded') !== 'false'; // Persisté dans localStorage
+        let companyGroupCAExpanded = false; // Fermé par défaut, ouvert uniquement si l'utilisateur l'a laissé ouvert
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -2259,6 +2264,7 @@
                     expandSpan.classList.toggle('expanded');
                     companyGroupCAExpanded = childrenDiv.classList.contains('visible');
                     localStorage.setItem('companyGroupCAExpanded', companyGroupCAExpanded);
+                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
                 };
                 const groupLabel = document.createElement('label');
                 groupLabel.style.display = 'flex';
@@ -2400,6 +2406,7 @@
                 families: getCheckedValues('familyFilter'),
                 companies: getSelectedCompanies(),
                 educations: getCheckedValues('educationFilter'),
+                companyGroupCAExpanded: companyGroupCAExpanded,
                 savedAt: new Date().toISOString()
             };
             

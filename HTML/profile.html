@@ -533,14 +533,16 @@
             background: rgba(52, 199, 89, 0.1);
         }
 
-        /* Section complète ouverte : garder fond violet pour que le titre blanc reste lisible */
-        .accordion-section.complete.active .accordion-header {
-            background: #667eea;
+        /* Section complète ouverte : fond violet foncé pour contraste avec texte blanc (éviter blanc sur vert clair) */
+        .accordion-section.complete.active .accordion-header,
+        .accordion-section.complete.active .accordion-header:hover {
+            background: #667eea !important;
         }
 
         .accordion-section.complete.active .accordion-header h2,
+        .accordion-section.complete.active .accordion-header h2::after,
         .accordion-section.complete.active .accordion-icon {
-            color: white;
+            color: white !important;
         }
 
         .form-group.incomplete label {
@@ -1748,14 +1750,14 @@
                     </div>
                 </div>
 
-                <!-- Section Expérience Deloitte -->
+                <!-- Section Historique par entreprise (Deloitte, etc.) -->
                 <div class="form-section accordion-section">
                     <div class="accordion-header" onclick="toggleAccordion(this)">
-                        <h2>Expérience Deloitte</h2>
+                        <h2>Historique par entreprise</h2>
                         <span class="accordion-icon">▼</span>
                     </div>
                     <div class="accordion-content">
-                        <p style="color: #666; font-size: 0.9rem; margin-bottom: 24px; line-height: 1.6;">Ces informations sont nécessaires pour certaines candidatures Deloitte.</p>
+                        <p style="color: #666; font-size: 0.9rem; margin-bottom: 24px; line-height: 1.6;">Ces informations sont nécessaires pour certaines candidatures (Deloitte, etc.).</p>
                         
                         <div class="form-group">
                             <label for="deloitteWorked">Avez-vous déjà travaillé pour Deloitte ?</label>
@@ -2797,6 +2799,9 @@
                 'Niveau d\'expérience': [
                     { id: 'experienceLevel', section: 'Niveau d\'expérience' }
                 ],
+                'Historique par entreprise': [
+                    { id: 'deloitteWorked', section: 'Historique par entreprise' }
+                ],
                 'Formation': [
                     { id: 'educationLevel', section: 'Formation' },
                     { id: 'institutionType', section: 'Formation' },
@@ -2858,6 +2863,9 @@
                 ],
                 'Niveau d\'expérience': [
                     { id: 'experienceLevel', label: 'Niveau d\'expérience', section: 'Niveau d\'expérience' }
+                ],
+                'Historique par entreprise': [
+                    { id: 'deloitteWorked', label: 'Avez-vous déjà travaillé pour Deloitte ?', section: 'Historique par entreprise' }
                 ],
                 'Formation': [
                     { id: 'educationLevel', label: 'Niveau d\'études', section: 'Formation' },
