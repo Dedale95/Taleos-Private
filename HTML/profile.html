@@ -2932,7 +2932,8 @@
                 // Marquer la section comme complète ou incomplète
                 const accordionHeaders = document.querySelectorAll('.accordion-header h2');
                 accordionHeaders.forEach(header => {
-                    if (header.textContent.trim() === sectionName) {
+                    const headerText = header.textContent.replace(/\s*✓\s*$/g, '').trim();
+                    if (headerText === sectionName) {
                         const section = header.closest('.accordion-section');
                         if (section) {
                             if (isComplete) {
