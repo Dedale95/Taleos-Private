@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Recherche avancée - Taleos</title>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -1421,6 +1424,7 @@
         let currentAuthState = false;
         let userApplications = new Set();
         let applicationStatuses = new Map();
+        // pendingApplications : plus utilisé (timer supprimé). Conservé pour compatibilité cancelApplication.
         let pendingApplications = {};
 
         // Fonction pour nettoyer le titre d'une offre (retirer les balises HTML si présentes)
@@ -2914,12 +2918,7 @@
                     return;
                 }
 
-                if (pendingApplications[jobId]) {
-                    showToast('Candidature en attente', 'Une candidature est déjà en cours pour cette offre.', 'info', 3000);
-                    reEnableBtn(); return;
-                }
-
-                // Vérifier si le profil est complet avant de lancer le timer
+                // Vérifier si le profil est complet
                 const profileCheck = await checkProfileCompleteness();
                 const isProfileComplete = profileCheck && (profileCheck.complete === true || profileCheck === true);
                 if (!isProfileComplete) {
@@ -2927,38 +2926,16 @@
                     reEnableBtn(); return;
                 }
 
-                const DEBUG_MODE = new URLSearchParams(window.location.search).get('debug') === 'true';
-                const TIMER_DURATION = DEBUG_MODE ? 5 : 10; // 5s en debug, 10s en normal
-                
-                let remainingSeconds = TIMER_DURATION;
-                
-                if (DEBUG_MODE) {
-                    console.log('[DEBUG] Mode debug activé - Timer réduit à 5 secondes');
+                // Toutes les candidatures nécessitent l'ouverture d'un onglet (pas de timer)
+                const url = job.job_url || job.url || '';
+                if (!url) {
+                    showToast('Erreur', 'URL de l\'offre introuvable.', 'error');
+                    reEnableBtn();
+                    return;
                 }
-                
-                pendingApplications[jobId] = {
-                    job: job,
-                    remainingSeconds: remainingSeconds,
-                    intervalId: null
-                };
-
-                showToast('Candidature en attente', 'Vous avez 10 secondes pour annuler avant l\'envoi.', 'info', 5000);
-
-                updateJobCardButtons(jobId);
-                updateJobCardStyles(jobId);
-
-                const intervalId = setInterval(() => {
-                    remainingSeconds--;
-                    pendingApplications[jobId].remainingSeconds = remainingSeconds;
-                    updateJobCardButtons(jobId);
-
-                    if (remainingSeconds <= 0) {
-                        clearInterval(intervalId);
-                        submitApplication(jobId, job);
-                    }
-                }, 1000);
-
-                pendingApplications[jobId].intervalId = intervalId;
+                showToast('Ouverture de l\'offre', 'Un nouvel onglet s\'ouvre. Complétez votre candidature sur le site de l\'entreprise.', 'info', 4000);
+                window.open(url, '_blank');
+                reEnableBtn();
                 
             } catch (error) {
                 console.error('❌ Erreur lors de la candidature:', error);
@@ -3029,8 +3006,10 @@
             }
         }
 
-        // Soumettre la candidature après le timer
-        async function submitApplication(jobId, job) {
+        // SUPPRIMÉ : submitApplication (timer 10s). La vignette passe à "envoyée" UNIQUEMENT
+        // via taleos-extension-candidature-success (onglet de candidature signale le succès).
+        async function _submitApplication_REMOVED(jobId, job) {
+            return; // DÉSACTIVÉ - la vignette passe à "envoyée" via taleos-extension-candidature-success uniquement
             try {
                 const auth = firebase.auth();
                 const db = firebase.firestore();
@@ -3262,18 +3241,7 @@
                     
                     let existingBadge = card.querySelector('.job-card-badge');
                     
-                    if (isPending) {
-                        card.classList.add('application-pending');
-                        if (!existingBadge) {
-                            existingBadge = document.createElement('div');
-                            existingBadge.className = 'job-card-badge';
-                            card.insertBefore(existingBadge, card.firstChild);
-                        }
-                        const rem = pendingApplications[cardJobId]?.remainingSeconds;
-                        const mm = rem != null ? Math.floor(rem / 60) : 0;
-                        const ss = rem != null ? rem % 60 : 0;
-                        existingBadge.textContent = '⏳ Candidature en cours (' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0') + ')';
-                    } else if (isSubmitted) {
+                    if (isSubmitted) {
                         card.classList.add('application-submitted');
                         if (!existingBadge) {
                             existingBadge = document.createElement('div');
@@ -3310,26 +3278,11 @@
                             let buttonHTML = '';
                             let jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                             
-                            if (isPending) {
-                                buttonHTML = `
-                                    <button class="job-cancel-btn" onclick="cancelApplication('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">✕ Annuler</button>
-                                    ${jobLinkHTML}
-                                `;
-                                const badge = card.querySelector('.job-card-badge');
-                                if (badge) {
-                                    const rs = pendingApplications[jobId]?.remainingSeconds ?? 0;
-                                    const m = Math.floor(rs / 60), s = rs % 60;
-                                    badge.textContent = '⏳ Candidature en cours (' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + ')';
-                                }
+                            if (isSubmitted || isApplied || isPending) {
+                                buttonHTML = jobLinkHTML;
                             } else {
-                                if (isSubmitted || (isApplied && !isPending)) {
-                                    buttonHTML = jobLinkHTML;
-                                } else if (isApplied) {
-                                    buttonHTML = jobLinkHTML;
-                                } else {
-                                    buttonHTML = `<button class="job-apply-btn" onclick="applyToJob('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">📝 Candidater</button>`;
-                                    buttonHTML += jobLinkHTML;
-                                }
+                                buttonHTML = `<button class="job-apply-btn" onclick="applyToJob('${jobId}', '${jobTitle.replace(/'/g, "\\'")}', this)">📝 Candidater</button>`;
+                                buttonHTML += jobLinkHTML;
                             }
                             
                             actionsDiv.innerHTML = buttonHTML;
@@ -3350,19 +3303,11 @@
             let cardClass = 'job-card';
             let badgeHTML = '';
             
-            if (isPending) {
-                cardClass += ' application-pending';
-                const rs = pendingApplications[job.job_id]?.remainingSeconds ?? 10;
-                const m = Math.floor(rs / 60), s = rs % 60;
-                const t = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
-                badgeHTML = '<div class="job-card-badge">⏳ Candidature en cours (' + t + ')</div>';
-            } else if (isSubmitted || (hasApplied && !isPending)) {
+            if (isSubmitted || (hasApplied && !isPending)) {
                 cardClass += ' application-submitted';
                 badgeHTML = '<div class="job-card-badge">✓ Candidature envoyée</div>';
-            } else if (hasApplied) {
-                cardClass += ' application-pending';
-                badgeHTML = '<div class="job-card-badge">⏳ Candidature en cours</div>';
             }
+            // Plus de "Candidature en cours" avec timer : la vignette passe à "envoyée" uniquement via l'onglet de candidature
             
             return `
         <div class="${cardClass}" data-job-url="${job.job_url}">
@@ -3390,16 +3335,10 @@
                 <div class="job-footer">
                     <div class="job-actions">
                     ${isAuthenticated ? (() => {
-                        const isPending = pendingApplications[job.job_id];
                         const status = applicationStatuses.get(job.job_id);
                         const isSubmitted = status === 'envoyée';
                         
-                        if (isPending) {
-                            return `<button class="job-cancel-btn" onclick="cancelApplication('${job.job_id}', '${cleanJobTitle(job.job_title).replace(/'/g, "\\'")}', this)">✕ Annuler</button>
-                                    <a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
-                        } else if (isSubmitted || (hasApplied && !isPending)) {
-                            return `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
-                        } else if (hasApplied) {
+                        if (isSubmitted || hasApplied) {
                             return `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                         } else {
                             return `<button class="job-apply-btn" onclick="applyToJob('${job.job_id}', '${cleanJobTitle(job.job_title).replace(/'/g, "\\'")}', this)">📝 Candidater</button>

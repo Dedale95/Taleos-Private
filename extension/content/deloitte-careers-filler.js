@@ -110,13 +110,18 @@
 
   async function runAutomation() {
     const { taleos_pending_deloitte } = await chrome.storage.local.get('taleos_pending_deloitte');
-    if (!taleos_pending_deloitte) return;
+    if (!taleos_pending_deloitte) {
+      log('runAutomation: taleos_pending_deloitte absent, skip');
+      return;
+    }
 
     const age = Date.now() - (taleos_pending_deloitte.timestamp || 0);
     if (age > MAX_PENDING_AGE) {
+      log('runAutomation: pending expiré (>10min), skip');
       chrome.storage.local.remove('taleos_pending_deloitte');
       return;
     }
+    log('runAutomation: URL=' + window.location.href);
 
     const { profile, tabId } = taleos_pending_deloitte;
     const email = profile?.auth_email || profile?.email || '';
@@ -154,7 +159,37 @@
       }
     }
 
-    // Étape 2 : Formulaire login visible → remplir et cliquer Connexion
+    // Étape 2 : Utiliser ma dernière candidature (PRIORITAIRE après login)
+    const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
+      document.querySelector('a[href*="useMyLastApplication"]') ||
+      document.querySelector('a[role="button"][href*="useMyLastApplication"]');
+    if (useLastAppBtn) {
+      const href = useLastAppBtn.getAttribute('href') || useLastAppBtn.href;
+      if (href) {
+        log('Bouton "Utiliser ma dernière candidature" trouvé, clic...');
+        try {
+          useLastAppBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+          useLastAppBtn.click();
+          setTimeout(runAutomation, 2500);
+          return;
+        } catch (e) {
+          log('Clic échoué, navigation directe: ' + e.message);
+          window.location.href = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
+          return;
+        }
+      }
+    }
+    if (findAndClickByText(['utiliser ma dernière candidature', 'use my last application', 'use my last application data'])) {
+      log('Clic sur Utiliser ma dernière candidature (texte)...');
+      setTimeout(runAutomation, 2500);
+      return;
+    }
+    if (url.includes('/apply') && !document.querySelector('input[data-automation-id="email"]')) {
+      maybeRetryForUseLastApp();
+      return;
+    }
+
+    // Étape 3 : Formulaire login visible → remplir et cliquer Connexion (si pas encore sur "Utiliser ma dernière candidature")
     const emailInput = document.querySelector('input[data-automation-id="email"]');
     const passwordInput = document.querySelector('input[data-automation-id="password"]');
 
@@ -171,7 +206,7 @@
       }
     }
 
-    // Étape 3 : Bouton Connexion visible (avant affichage formulaire)
+    // Étape 4 : Bouton Connexion visible (avant affichage formulaire)
     if (!emailInput || !passwordInput) {
       const connexionSpan = Array.from(document.querySelectorAll('span.css-1xtbc5b, span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
       const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
@@ -182,20 +217,6 @@
         setTimeout(runAutomation, 2000);
         return;
       }
-    }
-
-    // Étape 4 : Utiliser ma dernière candidature / Use My Last Application
-    const useLastAppBtn = document.querySelector('[data-automation-id="useMyLastApplication"]') ||
-      document.querySelector('a[href*="useMyLastApplication"]');
-    if (useLastAppBtn && useLastAppBtn.href) {
-      log('Navigation vers Utiliser ma dernière candidature (lien peut être visuellement désactivé)...');
-      window.location.href = useLastAppBtn.href;
-      return;
-    }
-    if (findAndClickByText(['utiliser ma dernière candidature', 'use my last application', 'use my last application data'])) {
-      log('Clic sur Utiliser ma dernière candidature (texte)...');
-      setTimeout(runAutomation, 2500);
-      return;
     }
 
     // Étape 5 : Remplir le formulaire de candidature
@@ -221,7 +242,7 @@
       filled = true;
     }
     const workedRadioValues = profile.deloitte_worked === 'yes' ? ['yes', '1', 'oui', 'true'] : ['no', '0', 'non', 'false'];
-    const workedRadios = document.querySelectorAll('input[type="radio'][name*="worked"], input[type="radio"][name*="deloitte"], input[type="radio"][name*="previous"]');
+    const workedRadios = document.querySelectorAll('input[type="radio"][name*="worked"], input[type="radio"][name*="deloitte"], input[type="radio"][name*="previous"]');
     for (const r of workedRadios) {
       const v = (r.value || '').toLowerCase();
       if (workedRadioValues.some(x => v.includes(x))) {
@@ -334,14 +355,21 @@
     setTimeout(hideBanner, 2000);
   }
 
+  let runCount = 0;
+  const MAX_RETRIES = 8;
+
   function scheduleRun(delay) {
     chrome.storage.local.get('taleos_pending_deloitte').then((s) => {
-      if (s.taleos_pending_deloitte) setTimeout(runAutomation, delay || 1500);
+      if (s.taleos_pending_deloitte) {
+        runCount = 0;
+        setTimeout(runAutomation, delay || 1500);
+      }
     });
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_pending_deloitte?.newValue) {
+      runCount = 0;
       setTimeout(runAutomation, 1000);
     }
   });
@@ -355,4 +383,13 @@
   window.addEventListener('pageshow', function(ev) {
     if (ev.persisted) scheduleRun(2000);
   });
+
+  // Retry si on est sur /apply et que le bouton "Utiliser ma dernière candidature" n'est pas encore chargé
+  function maybeRetryForUseLastApp() {
+    if (runCount >= MAX_RETRIES) return;
+    if (!window.location.href.includes('/apply')) return;
+    runCount++;
+    log('Retry ' + runCount + '/' + MAX_RETRIES + ' pour "Utiliser ma dernière candidature"...');
+    setTimeout(runAutomation, 2000);
+  }
 })();

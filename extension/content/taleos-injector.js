@@ -209,6 +209,16 @@
       return;
     }
 
+    // Ping rapide : si l'extension ne répond pas, laisser la page ouvrir l'onglet
+    try {
+      await Promise.race([
+        chrome.runtime.sendMessage({ action: 'ping' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ping_timeout')), 300))
+      ]);
+    } catch (_) {
+      return; // Extension non disponible → laisser la page gérer (window.open)
+    }
+
     e.preventDefault();
     e.stopPropagation();
 
