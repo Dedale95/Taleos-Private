@@ -97,7 +97,8 @@
     {
       "matches": [
         "https://*.myworkdayjobs.com/*",
-        "https://www.deloitte.com/*"
+        "https://www.deloitte.com/*",
+        "https://*.deloitte.com/*"
       ],
       "js": [
         "content/deloitte-careers-filler.js"

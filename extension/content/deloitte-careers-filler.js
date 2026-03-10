@@ -170,25 +170,34 @@
 
     showBanner();
 
-    // Sur deloitte.com : redirection vers myworkdayjobs
+    // Sur deloitte.com : d'abord essayer un lien direct Workday, sinon chercher le bouton Postuler
     if (url.includes('deloitte.com') && !url.includes('myworkdayjobs.com')) {
-      const workdayLink = document.querySelector('a[href*="myworkdayjobs.com"][href*="apply"]');
+      const workdayLink = document.querySelector('a[href*="myworkdayjobs.com"][href*="apply"], a[href*="myworkdayjobs.com"]');
       if (workdayLink?.href) {
-        log('Redirection vers Workday apply', 1);
+        log('Lien Workday trouvé → redirection', 1);
         window.location.href = workdayLink.href;
         return;
       }
     }
 
-    // Étape 1 : Page offre sans /apply → cliquer Postuler
+    // Étape 1 : Page offre sans /apply → cliquer Postuler (plusieurs sélecteurs, chargement dynamique possible)
     if (!url.includes('/apply') && !url.includes('/apply/')) {
-      const postulerBtn = document.querySelector('a.deloitte-green-button.deloitte-banner-apply-button, a[href*="/apply"]');
-      const postulerByText = Array.from(document.querySelectorAll('a')).find(a => /^postuler$/i.test((a.textContent || '').trim()));
-      const btn = postulerBtn || postulerByText;
+      const bySelector = document.querySelector('a.deloitte-green-button.deloitte-banner-apply-button, a[href*="/apply"], a[href*="myworkdayjobs.com"]');
+      const byText = Array.from(document.querySelectorAll('a, button, [role="button"]')).find(el => {
+        const t = (el.textContent || '').trim();
+        const isPostuler = /^postuler(\s|$)/i.test(t) || (t.toLowerCase().includes('postuler') && t.length < 60);
+        return isPostuler && el.offsetParent !== null;
+      });
+      const btn = bySelector || byText;
       if (btn && btn.offsetParent !== null) {
         log('Clic sur Postuler', 1);
         try { btn.click(); } catch (e) { log('Erreur clic Postuler: ' + e.message, 1); }
         setTimeout(runAutomation, 2000);
+        return;
+      }
+      if (url.includes('deloitte.com')) {
+        log('Bouton Postuler non trouvé → retry dans 2s', 1);
+        maybeRetryForPostuler();
         return;
       }
     }
@@ -400,6 +409,16 @@
 
   let runCount = 0;
   const MAX_RETRIES = 8;
+  let postulerRetryCount = 0;
+  const MAX_POSTULER_RETRIES = 6;
+
+  function maybeRetryForPostuler() {
+    if (postulerRetryCount >= MAX_POSTULER_RETRIES) return;
+    if (!window.location.href.includes('deloitte.com') || window.location.href.includes('myworkdayjobs.com')) return;
+    postulerRetryCount++;
+    log('Retry ' + postulerRetryCount + '/' + MAX_POSTULER_RETRIES + ' (attente bouton Postuler)', 1);
+    setTimeout(runAutomation, 2000);
+  }
 
   function scheduleRun(delay) {
     chrome.storage.local.get('taleos_pending_deloitte').then((s) => {
@@ -413,6 +432,7 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_pending_deloitte?.newValue) {
       runCount = 0;
+      postulerRetryCount = 0;
       setTimeout(runAutomation, 1000);
     }
   });
