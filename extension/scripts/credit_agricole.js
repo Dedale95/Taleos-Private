@@ -307,7 +307,8 @@
     const hasCv = hasCvInput || !!hasCvUi;
     if (p.cv_storage_path && !hasCv) {
       log('   ✏️  CV : Manquant -> Upload depuis Firebase');
-      await setFileInputFromStorage('form-apply-cv', p.cv_storage_path, 'cv.pdf');
+      const cvName = p.cv_filename || p.cv_storage_path?.split('/').pop() || 'cv.pdf';
+      await setFileInputFromStorage('form-apply-cv', p.cv_storage_path, cvName);
       await delay(3000);
     } else {
       log(`   ✅ CV : ${hasCv ? 'Présent (Firebase identique ou déjà uploadé) -> Skip' : 'Non requis'}`);
@@ -320,7 +321,8 @@
     const hasLm = hasLmInput || !!hasLmUi;
     if (p.lm_storage_path && !hasLm) {
       log('   ✏️  LM : Manquante -> Upload depuis Firebase');
-      await setFileInputFromStorage('form-apply-lm', p.lm_storage_path, 'lm.pdf');
+      const lmName = p.lm_filename || p.lm_storage_path?.split('/').pop() || 'lm.pdf';
+      await setFileInputFromStorage('form-apply-lm', p.lm_storage_path, lmName);
       await delay(2000);
     } else {
       log(`   ✅ LM : ${hasLm ? 'Présente (Firebase identique ou déjà uploadée) -> Skip' : 'Non requise'}`);
@@ -618,7 +620,7 @@
 
     log(`🔄 Connexion Firebase PROFILES...`);
     log(`✅ Identifiants trouvés pour : ${p.auth_email || '(vide)'}`);
-    dumpProfile(p);
+    if (phase === 3) dumpProfile(p);
 
     try {
       if (phase === 2) {

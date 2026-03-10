@@ -69,7 +69,20 @@
     });
     return;
   }
-  if (!path.includes('connexion') && !path.includes('login') && !path.includes('connection')) return;
+  if (!path.includes('connexion') && !path.includes('login') && !path.includes('connection')) {
+    const isOfferPage = path.includes('nos-offres-emploi') || path.includes('our-offers') || path.includes('our-offres');
+    const isCandidaturePage = path.includes('/candidature/') || path.includes('/application/') || path.includes('/apply/');
+    chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback']).then((s) => {
+      const url = s.taleos_pending_offer?.offerUrl || s.taleos_redirect_fallback;
+      if (url && url.includes('groupecreditagricole.jobs') && !isOfferPage && !isCandidaturePage) {
+        console.log('[Taleos CA Connexion] Redirection vers l\'offre après connexion (page d\'accueil détectée)...');
+        window.location.replace(url);
+      } else if (isOfferPage && s.taleos_pending_offer?.profile) {
+        chrome.runtime.sendMessage({ action: 'ca_offer_page_ready' }).catch(() => {});
+      }
+    });
+    return;
+  }
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const MAX_PENDING_AGE = 2 * 60 * 1000;

@@ -1,0 +1,13 @@
+---
+description: Toujours committer et pousser automatiquement tous les changements
+alwaysApply: true
+---
+
+# Git : commit et push automatiques
+
+**Règle impérative** : Toujours committer et pousser automatiquement tous les changements qu'on fait ensemble.
+
+1. **Après toute modification** : exécuter `git add` → `git commit` → `git push origin <branche>`.
+2. **Committer TOUS les fichiers modifiés** concernés par nos échanges, pas seulement une partie.
+3. **Ne jamais s'arrêter au commit local** : toujours pousser immédiatement vers GitHub.
+4. Enchaîner en une seule séquence sans demander confirmation.

@@ -4,7 +4,7 @@
  */
 (function() {
   'use strict';
-  const DEBUG = true;
+  const DEBUG = false;
   const log = (msg) => { if (DEBUG) console.log(`[Taleos SG Runner] ${msg}`); };
 
   async function triggerInjection() {
