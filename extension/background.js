@@ -3,6 +3,23 @@
  * Orchestre : ouverture onglet, récupération profil Firestore, injection du script banque
  */
 
+chrome.alarms.create('taleos-keepalive', { periodInMinutes: 4 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'taleos-keepalive') { /* keep service worker warm */ }
+});
+
+chrome.runtime.onInstalled.addListener((details) => {
+  chrome.alarms.create('taleos-keepalive', { periodInMinutes: 4 });
+  if (details.reason === 'update') {
+    const patterns = ['https://*.taleos.co/*', 'http://localhost/*', 'http://127.0.0.1/*'];
+    patterns.forEach((url) => {
+      chrome.tabs.query({ url }, (tabs) => {
+        tabs.forEach((tab) => { try { chrome.tabs.reload(tab.id); } catch (_) {} });
+      });
+    });
+  }
+});
+
 (function setLastUpdate() {
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, '0');
@@ -23,6 +40,7 @@ const PROJECT_ID = 'project-taleos';
 
 let authSyncResolve = null;
 const sgLastInject = new Map();
+const caLastInject = new Map();
 
 async function injectSgAutomation(tabId, profile) {
   const now = Date.now();
@@ -35,7 +53,7 @@ async function injectSgAutomation(tabId, profile) {
   try {
     await new Promise(r => setTimeout(r, 1500));
     const target = { tabId, allFrames: true };
-    await chrome.scripting.executeScript({ target, files: [BANK_SCRIPT_MAP.societe_generale] });
+    await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', BANK_SCRIPT_MAP.societe_generale] });
     await chrome.scripting.executeScript({
       target,
       func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -64,7 +82,103 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   injectSgAutomation(tabId, profile);
 });
 
+/** Listener persistant CA candidature : injecte phase 3 après reload (fallback si handleApply listener perdu) */
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete') return;
+  const url = (tab?.url || '').toLowerCase();
+  if (!url.includes('groupecreditagricole.jobs')) return;
+  if (!url.includes('/candidature/') && !url.includes('/application/') && !url.includes('/apply/')) return;
+  const { taleos_ca_candidature_pending } = await chrome.storage.local.get('taleos_ca_candidature_pending');
+  if (!taleos_ca_candidature_pending?.profile || taleos_ca_candidature_pending.tabId !== tabId) return;
+  const age = Date.now() - (taleos_ca_candidature_pending.timestamp || 0);
+  if (age > 2 * 60 * 1000) {
+    chrome.storage.local.remove(['taleos_ca_candidature_pending', 'taleos_ca_candidature_reloaded']);
+    return;
+  }
+  if (caLastInject.get(tabId) && Date.now() - caLastInject.get(tabId) < 8000) return;
+  caLastInject.set(tabId, Date.now());
+  chrome.storage.local.remove(['taleos_ca_candidature_pending', 'taleos_ca_candidature_reloaded']);
+  console.log('[Taleos CA] Injection phase 3 (listener persistant candidature)');
+  await new Promise(r => setTimeout(r, 6000));
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.credit_agricole] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+      args: [taleos_ca_candidature_pending.profile]
+    });
+  } catch (e) {
+    console.error('[Taleos CA] Injection phase 3:', e);
+  }
+});
+
+/** Listener persistant CA : injecte sur page offre après connexion (fallback si handleApply listener perdu) */
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete') return;
+  const url = (tab?.url || '').toLowerCase();
+  if (!url.includes('groupecreditagricole.jobs')) return;
+  if (!url.includes('/nos-offres-emploi/') && !url.includes('/our-offers/') && !url.includes('/our-offres/')) return;
+  const { taleos_pending_offer } = await chrome.storage.local.get('taleos_pending_offer');
+  if (!taleos_pending_offer?.profile) return;
+  const age = Date.now() - (taleos_pending_offer.timestamp || 0);
+  if (age > 3 * 60 * 1000) {
+    chrome.storage.local.remove(['taleos_pending_offer', 'taleos_redirect_fallback']);
+    return;
+  }
+  if (caLastInject.get(tabId) && Date.now() - caLastInject.get(tabId) < 5000) return;
+  caLastInject.set(tabId, Date.now());
+  const { profile } = taleos_pending_offer;
+  chrome.storage.local.remove('taleos_pending_offer');
+  console.log('[Taleos CA] Injection page offre (listener persistant)');
+  await new Promise(r => setTimeout(r, 2000));
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.credit_agricole] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+      args: [{ ...profile, __phase: 2 }]
+    });
+  } catch (e) {
+    console.error('[Taleos CA] Injection:', e);
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'ping') {
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.action === 'ca_offer_page_ready') {
+    const tabId = sender.tab?.id;
+    if (!tabId) return;
+    chrome.storage.local.get('taleos_pending_offer').then(async (s) => {
+      const { taleos_pending_offer } = s;
+      if (!taleos_pending_offer?.profile) return;
+      const age = Date.now() - (taleos_pending_offer.timestamp || 0);
+      if (age > 3 * 60 * 1000) {
+        chrome.storage.local.remove(['taleos_pending_offer', 'taleos_redirect_fallback']);
+        return;
+      }
+      if (caLastInject.get(tabId) && Date.now() - caLastInject.get(tabId) < 5000) return;
+      caLastInject.set(tabId, Date.now());
+      const { profile } = taleos_pending_offer;
+      chrome.storage.local.remove('taleos_pending_offer');
+      console.log('[Taleos CA] Injection page offre (message ca_offer_page_ready)');
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.credit_agricole] });
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+          args: [{ ...profile, __phase: 2 }]
+        });
+      } catch (e) {
+        console.error('[Taleos CA] Injection:', e);
+      }
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
   if (msg.action === 'sg_page_loaded') {
     const tabId = sender.tab?.id;
     console.log('[Taleos SG] sg_page_loaded reçu, tabId:', tabId);
@@ -208,8 +322,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'taleos_apply') {
     const taleosTabId = sender.tab?.id;
     handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId)
-      .then(() => sendResponse({ ok: true }))
-      .catch(e => sendResponse({ error: e.message }));
+      .then((result) => sendResponse(result?.error ? { error: result.error, openUrl: true } : { ok: true }))
+      .catch(e => sendResponse({ error: e.message || 'Erreur', openUrl: true }));
+    return true;
+  }
+  if (msg.action === 'taleos_setup_for_open_tab') {
+    const careersTabId = sender.tab?.id;
+    if (!careersTabId) {
+      sendResponse({ error: 'Onglet introuvable' });
+      return false;
+    }
+    const { offerUrl, bankId, jobId, jobTitle, companyName } = msg;
+    chrome.storage.local.remove('taleos_apply_fallback');
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId) {
+          sendResponse({ error: 'Utilisateur non connecté' });
+          return;
+        }
+        const profile = await fetchProfile(taleosUserId, bankId || 'societe_generale', taleosIdToken);
+        profile.__jobId = jobId;
+        profile.__jobTitle = jobTitle || '';
+        profile.__companyName = companyName || 'Société Générale';
+        profile.__offerUrl = offerUrl;
+        chrome.storage.local.remove('taleos_sg_navigate_profile_attempted');
+        chrome.storage.local.set({
+          taleos_pending_sg: {
+            profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName, __offerUrl: offerUrl },
+            offerUrl, jobId, jobTitle, companyName,
+            timestamp: Date.now()
+          },
+          taleos_sg_tab_id: careersTabId
+        });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ error: e.message || 'Erreur profil' });
+      }
+    })();
     return true;
   }
   if (msg.action === 'candidature_success') {
@@ -275,7 +425,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     try {
       await chrome.tabs.sendMessage(taleosTabId, { action: 'taleos_auth_required' });
     } catch (_) {}
-    return;
+    return { error: 'Utilisateur non connecté' };
   }
 
   let profile;
@@ -283,7 +433,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     profile = await fetchProfile(taleosUserId, bankId, taleosIdToken);
   } catch (e) {
     console.error('[Taleos] Profil:', e);
-    return;
+    return { error: e.message || 'Profil introuvable' };
   }
   profile.__jobId = jobId;
   profile.__jobTitle = jobTitle || '';
@@ -313,6 +463,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     }
     const tab = await chrome.tabs.create(caCreateOpts);
     const tabId = tab.id;
+    chrome.storage.local.remove(['taleos_ca_candidature_reloaded', 'taleos_ca_candidature_pending']);
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
       [100, 300, 600].forEach(ms => setTimeout(() => {
@@ -347,11 +498,25 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         }
         if (url.includes('/candidature/') || url.includes('/application/') || url.includes('/apply/')) {
           chrome.storage.local.remove('taleos_pending_offer');
+          const { taleos_ca_candidature_reloaded } = await chrome.storage.local.get('taleos_ca_candidature_reloaded');
+          if (taleos_ca_candidature_reloaded !== tabId) {
+            chrome.storage.local.set({
+              taleos_ca_candidature_reloaded: tabId,
+              taleos_ca_candidature_pending: { tabId, profile: { ...profile, __phase: 3, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName, __offerUrl: offerUrl }, timestamp: Date.now() }
+            });
+            chrome.tabs.reload(tabId);
+            return;
+          }
+          chrome.storage.local.remove(['taleos_ca_candidature_reloaded', 'taleos_ca_candidature_pending']);
+          if (caLastInject.get(tabId) && Date.now() - caLastInject.get(tabId) < 8000) return;
+          caLastInject.set(tabId, Date.now());
           await new Promise(r => setTimeout(r, 5000));
           injectAndRun(3);
           return;
         }
         if (url.includes('/nos-offres-emploi/') || url.includes('/our-offers/') || url.includes('/our-offres/')) {
+          if (caLastInject.get(tabId) && Date.now() - caLastInject.get(tabId) < 5000) return;
+          caLastInject.set(tabId, Date.now());
           chrome.storage.local.remove('taleos_pending_offer');
           await new Promise(r => setTimeout(r, 2000));
           injectAndRun(2);
@@ -370,6 +535,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(createOpts);
+    chrome.storage.local.remove('taleos_sg_navigate_profile_attempted');
     chrome.storage.local.set({
       taleos_pending_sg: {
         profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName, __offerUrl: offerUrl },
@@ -379,10 +545,15 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       taleos_sg_tab_id: tab.id
     });
     if (taleosTabId) {
-      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
-      [100, 300, 600].forEach(ms => setTimeout(() => {
-        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
-      }, ms));
+      const keepTaleosActive = () => chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      keepTaleosActive();
+      [100, 300, 600, 1000, 2000, 3000, 5000].forEach(ms => setTimeout(keepTaleosActive, ms));
+      const sgTabId = tab.id;
+      const refocusListener = (activeInfo) => {
+        if (activeInfo.tabId === sgTabId) keepTaleosActive();
+      };
+      chrome.tabs.onActivated.addListener(refocusListener);
+      setTimeout(() => chrome.tabs.onActivated.removeListener(refocusListener), 15000);
     }
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
@@ -478,12 +649,13 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
   if (taleosTab) {
     try {
       await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_success', jobId, status: 'envoyée' });
+      chrome.tabs.update(taleosTab, { active: true }).catch(() => {});
     } catch (_) {}
   }
   if (tabIdToClose) {
     setTimeout(() => {
       chrome.tabs.remove(tabIdToClose).catch(() => {});
-    }, 5000);
+    }, 3000);
   }
 }
 
@@ -545,6 +717,8 @@ async function fetchProfile(uid, bankId, token) {
 
   const cvStoragePath = profile.cv_storage_path || null;
   const lmStoragePath = profile.letter_storage_path || null;
+  const cvFilename = profile.cv_filename || (cvStoragePath ? cvStoragePath.split('/').pop() : null);
+  const lmFilename = profile.letter_filename || (lmStoragePath ? lmStoragePath.split('/').pop() : null);
 
   const cType = profile.contract_type;
   const contractList = Array.isArray(cType) ? cType : (cType ? [cType] : []);
@@ -577,6 +751,8 @@ async function fetchProfile(uid, bankId, token) {
     languages,
     cv_storage_path: cvStoragePath,
     lm_storage_path: lmStoragePath,
+    cv_filename: cvFilename,
+    lm_filename: lmFilename,
     auth_email: (creds.email || '').trim(),
     auth_password: authPassword
   };
