@@ -201,6 +201,7 @@
       const submitBtn = document.querySelector('[data-automation-id="click_filter"][aria-label="Connexion"], [aria-label="Connexion"][role="button"], button[data-automation-id="signInSubmitButton"]');
       if (submitBtn?.offsetParent !== null) {
         log('Clic sur Connexion (submit)...');
+        window.__taleosDeloitteDidLoginClick = true;
         submitBtn.click();
         setTimeout(runAutomation, 3000);
         return;
@@ -210,11 +211,14 @@
       const connexionSpan = Array.from(document.querySelectorAll('span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
       const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
       const btn = connexionSpan || connexionBtn;
-      if (btn?.offsetParent !== null) {
+      if (btn && btn.offsetParent !== null) {
         log('Clic sur bouton Connexion (avant toute réutilisation de candidature)...');
+        window.__taleosDeloitteDidLoginClick = true;
         btn.click();
         setTimeout(runAutomation, 2000);
         return;
+      } else {
+        log('STEP 2: aucun bouton Connexion visible');
       }
     }
 
@@ -229,11 +233,21 @@
       document.querySelector('a[href*="useMyLastApplication"]') ||
       document.querySelector('a[role="button"][href*="useMyLastApplication"]');
 
-    log(`[STEP 4] hasConnexionUi=${!!hasConnexionUi}, hasUseMyLastApplication=${!!useLastAppBtn}, url="${url}"`);
+    log(`[STEP 4] hasConnexionUi=${!!hasConnexionUi}, hasUseMyLastApplication=${!!useLastAppBtn}, didLoginClick=${!!window.__taleosDeloitteDidLoginClick}, url="${url}"`);
 
-    // Si un bouton "Utiliser ma dernière candidature" est visible AVANT connexion, on se contente de logger.
-    // L'utilisateur pourra cliquer lui-même une fois connecté.
+    // Si on a déjà cliqué au moins une fois sur Connexion ET qu'il n'y a plus d'UI de connexion,
+    // on peut cliquer automatiquement sur "Utiliser ma dernière candidature".
+    if (!hasConnexionUi && useLastAppBtn && window.__taleosDeloitteDidLoginClick) {
+      log('[STEP 4] Clic auto sur "Utiliser ma dernière candidature" (après Connexion)');
+      try {
+        useLastAppBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+      } catch(e) {}
+      useLastAppBtn.click();
+      setTimeout(runAutomation, 2500);
+      return;
+    }
 
+    // Si on est sur /apply, sans UI de connexion et sans bouton de réutilisation, on tente un petit retry.
     if (url.includes('/apply') && !hasConnexionUi && !useLastAppBtn) {
       log('[STEP 4] Pas de connexion visible et pas de bouton "Utiliser ma dernière candidature" → retry léger');
       maybeRetryForUseLastApp();
