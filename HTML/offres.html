@@ -2192,6 +2192,7 @@
         }
 
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
+        let companyGroupCAExpanded = true; // État ouvert/fermé du groupe CA (préservé lors des rebuilds)
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -2215,6 +2216,8 @@
         function populateCompanyFilterWithGroup(companies, counts, disabledValues, hideDisabled, restoredCheckedValues) {
             const container = document.getElementById('companyFilter');
             const checkedValues = restoredCheckedValues ? new Set(restoredCheckedValues) : new Set(getSelectedCompanies());
+            const prevChildren = container.querySelector('.company-group-children');
+            if (prevChildren) companyGroupCAExpanded = prevChildren.classList.contains('visible');
             container.innerHTML = '';
 
             const caSubs = companies.filter(c => isCreditAgricoleSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
@@ -2233,6 +2236,7 @@
                     e.stopPropagation();
                     childrenDiv.classList.toggle('visible');
                     expandSpan.classList.toggle('expanded');
+                    companyGroupCAExpanded = childrenDiv.classList.contains('visible');
                 };
                 const groupLabel = document.createElement('label');
                 groupLabel.style.display = 'flex';
@@ -2260,8 +2264,8 @@
                 container.appendChild(groupDiv);
 
                 const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children visible';
-                expandSpan.classList.add('expanded');
+                childrenDiv.className = 'company-group-children' + (companyGroupCAExpanded ? ' visible' : '');
+                if (companyGroupCAExpanded) expandSpan.classList.add('expanded');
                 const childCheckboxes = [];
                 caSubs.forEach(c => {
                     const cnt = counts[c] || 0;

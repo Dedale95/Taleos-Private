@@ -2053,6 +2053,7 @@
         }
 
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
+        const companyGroupCAExpandedByAccordion = {}; // État ouvert/fermé par accordéon (préservé lors des rebuilds)
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -2065,6 +2066,9 @@
             const container = document.getElementById(`companyFilter-${accordionId}`);
             if (!container) return;
             const cv = checkedValues instanceof Set ? checkedValues : new Set(checkedValues || []);
+            const prevChildren = container.querySelector('.company-group-children');
+            if (prevChildren) companyGroupCAExpandedByAccordion[accordionId] = prevChildren.classList.contains('visible');
+            const wasExpanded = companyGroupCAExpandedByAccordion[accordionId] !== false;
             container.innerHTML = '';
 
             const caSubs = values.filter(c => isCreditAgricoleSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
@@ -2080,12 +2084,13 @@
                 expandSpan.className = 'company-group-expand';
                 expandSpan.textContent = '▶';
                 const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children visible';
-                expandSpan.classList.add('expanded');
+                childrenDiv.className = 'company-group-children' + (wasExpanded ? ' visible' : '');
+                if (wasExpanded) expandSpan.classList.add('expanded');
                 expandSpan.onclick = (e) => {
                     e.stopPropagation();
                     childrenDiv.classList.toggle('visible');
                     expandSpan.classList.toggle('expanded');
+                    companyGroupCAExpandedByAccordion[accordionId] = childrenDiv.classList.contains('visible');
                 };
                 const groupLabel = document.createElement('label');
                 groupLabel.style.display = 'flex';
