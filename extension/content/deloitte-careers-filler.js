@@ -447,10 +447,11 @@
     if (ev.persisted) scheduleRun(2000);
   });
 
-  // Retry si on est sur /apply et que le bouton "Utiliser ma dernière candidature" n'est pas encore chargé
+  // Retry si on est sur /apply (URL de base) et que le bouton "Utiliser ma dernière candidature" n'est pas encore chargé
   function maybeRetryForUseLastApp() {
+    const href = window.location.href;
+    if (!href.includes('/apply') || href.includes('useMyLastApplication')) return;
     if (runCount >= MAX_RETRIES) return;
-    if (!window.location.href.includes('/apply')) return;
     runCount++;
     log('Retry ' + runCount + '/' + MAX_RETRIES + ' (attente bouton)', 4);
     setTimeout(runAutomation, 2000);
