@@ -2707,12 +2707,17 @@
                 }
             });
 
+            const sortedAllFamilies = Array.from(allFamilies).sort((a, b) => {
+                const diff = (familyCounts[b] || 0) - (familyCounts[a] || 0);
+                return diff !== 0 ? diff : String(a).localeCompare(String(b));
+            });
+
             // hideDisabled=false pour Contrat/Études (garde le barré), true pour Famille (masque)
             populateCheckboxFilter('contractFilter', sortedAllContracts,
                 new Set([...allContracts].filter(c => !availableContracts.has(c) && !selectedContracts.includes(c))), contractCounts, false);
             populateCheckboxFilter('experienceFilter', sortedAllExperiences,
                 new Set([...allExperiences].filter(e => !availableExperiences.has(e) && !selectedExperiences.includes(e))), experienceCounts, false);
-            populateCheckboxFilter('familyFilter', Array.from(allFamilies).sort(),
+            populateCheckboxFilter('familyFilter', sortedAllFamilies,
                 new Set([...allFamilies].filter(f => !availableFamilies.has(f) && !selectedFamilies.includes(f))), familyCounts, true);
             populateCheckboxFilter('companyFilter', Array.from(allCompanies).sort(),
                 new Set([...allCompanies].filter(c => !availableCompanies.has(c) && !selectedCompanies.includes(c))), companyCounts, true);

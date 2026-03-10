@@ -2529,6 +2529,11 @@
                 return a.localeCompare(b);
             });
 
+            const sortedFamilies = Array.from(allFamilies).sort((a, b) => {
+                const diff = (familyCounts[b] || 0) - (familyCounts[a] || 0);
+                return diff !== 0 ? diff : String(a).localeCompare(String(b));
+            });
+
             const checkedCountries = new Set(filters.countries || []);
             const checkedRegions = new Set(filters.regions || []);
             const checkedContracts = new Set(filters.contracts || []);
@@ -2556,7 +2561,7 @@
                 experienceCounts, false, checkedExperiences);
 
             // Famille : hideDisabled=true (masque les 0)
-            populateCheckboxFilterAccordion(accordionId, 'familyFilter', Array.from(allFamilies).sort(),
+            populateCheckboxFilterAccordion(accordionId, 'familyFilter', sortedFamilies,
                 new Set([...allFamilies].filter(f => !availableFamilies.has(f) && !checkedFamilies.has(f))),
                 familyCounts, true, checkedFamilies);
 
