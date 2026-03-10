@@ -527,7 +527,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 120000);
   } else if (bankId === 'societe_generale' || (offerUrl && String(offerUrl).toLowerCase().includes('careers.societegenerale.com')) || (offerUrl && String(offerUrl).toLowerCase().includes('socgen.taleo.net'))) {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
-    const createOpts = { url: offerUrl, active: false };
+    const createOpts = { url: offerUrl, active: true };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);
@@ -544,17 +544,6 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       },
       taleos_sg_tab_id: tab.id
     });
-    if (taleosTabId) {
-      const keepTaleosActive = () => chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
-      keepTaleosActive();
-      [100, 300, 600, 1000, 2000, 3000, 5000].forEach(ms => setTimeout(keepTaleosActive, ms));
-      const sgTabId = tab.id;
-      const refocusListener = (activeInfo) => {
-        if (activeInfo.tabId === sgTabId) keepTaleosActive();
-      };
-      chrome.tabs.onActivated.addListener(refocusListener);
-      setTimeout(() => chrome.tabs.onActivated.removeListener(refocusListener), 15000);
-    }
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
     const otherCreateOpts = { url: offerUrl, active: false };
@@ -568,9 +557,6 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     const tabId = tab.id;
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
-      [100, 300, 600].forEach(ms => setTimeout(() => {
-        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
-      }, ms));
     }
     const listener = async (id, info) => {
       if (id !== tabId || info.status !== 'complete') return;
