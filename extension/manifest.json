@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.0.15",
+  "version": "1.0.17",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -11,6 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
+    "https://taleos.co/*",
     "https://*.taleos.co/*",
     "https://*.firebaseapp.com/*",
     "https://*.googleapis.com/*",
@@ -42,6 +43,7 @@
   "content_scripts": [
     {
       "matches": [
+        "https://taleos.co/*",
         "https://*.taleos.co/*",
         "http://localhost/*",
         "http://localhost:8000/*",

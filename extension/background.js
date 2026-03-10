@@ -65,6 +65,28 @@ async function injectSgAutomation(tabId, profile) {
   }
 }
 
+/** Injection programmatique du taleos-injector (fallback si content_scripts ne s'exécute pas) */
+const TALEOS_SITE_PATTERNS = [
+  'taleos.co',
+  'github.io',
+  'localhost',
+  '127.0.0.1'
+];
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete') return;
+  const url = (tab?.url || '');
+  const urlLower = url.toLowerCase();
+  const isTaleosSite = TALEOS_SITE_PATTERNS.some(p => urlLower.includes(p));
+  if (isTaleosSite && (urlLower.startsWith('https://') || urlLower.startsWith('http://'))) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content/taleos-injector.js']
+      });
+    } catch (_) {}
+  }
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (info.status !== 'complete') return;
   const url = (tab?.url || '').toLowerCase();

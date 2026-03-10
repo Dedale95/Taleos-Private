@@ -6,6 +6,9 @@
 
 (function() {
   'use strict';
+  if (window.__taleosInjectorLoaded) return;
+  window.__taleosInjectorLoaded = true;
+  try { document.documentElement.setAttribute('data-taleos-injector', 'ready'); } catch (_) {}
 
   function syncAuthFromPage(forceRefresh) {
     try {

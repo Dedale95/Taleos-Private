@@ -694,11 +694,18 @@
         </div>
     </nav>
 
+    <!-- Bandeau d'avertissement si domaine non supporté par l'extension -->
+    <div id="extensionDomainWarning" style="display: none; background: #fef3c7; border-bottom: 2px solid #f59e0b; padding: 12px 24px; text-align: center; font-size: 14px; color: #92400e;">
+        <strong>⚠️ L'extension Taleos ne fonctionne pas sur cette page.</strong> Utilisez <strong>https://taleos.co</strong> ou <strong>https://dedale95.github.io</strong> pour lier vos comptes. Évitez d'ouvrir les fichiers en local (file://).
+    </div>
+
     <div class="container">
         <div class="page-header">
             <h1>Mes Connexions</h1>
             <p>Liez vos comptes des sites carrière pour une expérience optimisée</p>
         </div>
+
+        <div id="extensionStatusBanner" style="display: none; margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; font-size: 14px;"></div>
 
         <div class="info-box">
             <h3>ℹ️ Pourquoi lier vos comptes ?</h3>
@@ -743,6 +750,47 @@
     </footer>
 
     <script>
+        // Vérifier si le domaine est supporté par l'extension Taleos
+        (function() {
+            const host = window.location.hostname || '';
+            const protocol = window.location.protocol || '';
+            const isSupported = protocol === 'file:' ? false : (
+                host === 'taleos.co' ||
+                host.endsWith('.taleos.co') ||
+                host === 'localhost' ||
+                host === '127.0.0.1' ||
+                host.endsWith('.github.io')
+            );
+            if (!isSupported) {
+                const el = document.getElementById('extensionDomainWarning');
+                if (el) el.style.display = 'block';
+            }
+        })();
+
+        // Vérifier si l'extension Taleos est détectée (data attribute posé par taleos-injector)
+        function isExtensionReady() {
+            return document.documentElement.getAttribute('data-taleos-injector') === 'ready';
+        }
+        function checkExtensionStatus() {
+            const banner = document.getElementById('extensionStatusBanner');
+            if (!banner) return;
+            if (isExtensionReady()) {
+                banner.style.display = 'block';
+                banner.style.background = '#d1fae5';
+                banner.style.border = '1px solid #10b981';
+                banner.style.color = '#065f46';
+                banner.innerHTML = '✅ Extension Taleos détectée';
+            } else {
+                banner.style.display = 'block';
+                banner.style.background = '#fef3c7';
+                banner.style.border = '1px solid #f59e0b';
+                banner.style.color = '#92400e';
+                banner.innerHTML = '⚠️ Extension Taleos non détectée. <strong>Rechargez la page (F5)</strong> et assurez-vous que l\'extension est installée. Si le problème persiste, ouvrez <code>chrome://extensions</code> et rechargez l\'extension Taleos.';
+            }
+        }
+        setTimeout(checkExtensionStatus, 1500);
+        setTimeout(checkExtensionStatus, 3500);
+
         // Configuration Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyAGeNfIevsaNjfbKTYWMaURhJWdfzWMjmc",
@@ -1040,12 +1088,20 @@
                 }
                 console.log("Test de connexion via extension Taleos:", firebaseUserId);
 
+                // Attendre que l'extension soit détectée (max 3 s)
+                for (let i = 0; i < 6 && !isExtensionReady(); i++) {
+                    await new Promise(r => setTimeout(r, 500));
+                }
+                if (!isExtensionReady()) {
+                    throw new Error('Extension Taleos non détectée. Rechargez la page (F5), vérifiez que l\'extension est installée, puis allez sur chrome://extensions et rechargez l\'extension Taleos.');
+                }
+
                 // Utiliser l'extension Taleos pour tester la connexion (ouvre un onglet, teste, sauvegarde Firebase)
                 const data = await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         window.removeEventListener('taleos-test-connection-result', handler);
-                        resolve({ success: false, message: 'Extension Taleos non détectée ou timeout. Installez l\'extension et réessayez.' });
-                    }, 40000);
+                        resolve({ success: false, message: 'Timeout (60 s). Un onglet a-t-il été ouvert ? Si non, rechargez la page et l\'extension.' });
+                    }, 60000);
                     const handler = (e) => {
                         clearTimeout(timeout);
                         window.removeEventListener('taleos-test-connection-result', handler);
