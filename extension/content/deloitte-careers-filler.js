@@ -1012,16 +1012,18 @@
       const wantLabel = phoneCountryCode === '+44' ? 'Royaume-Uni (+44)' : phoneCountryCode === '+33' ? 'France (+33)' : phoneCountryCode;
       log('   🔵 Indicatif de pays (téléphone) : Firebase phone_country_code=' + phoneCountryCode + ' → ' + wantLabel + ' (pour France mettre +33 dans Firebase)', 5);
 
-      // Textbox « Indicatif de pays » : input Rechercher dans le formField qui contient le label "Indicatif de pays"
-      let indicatifTextbox = null;
-      try {
-        const searchInputs = Array.from(document.querySelectorAll('input[placeholder="Rechercher"]'));
-        indicatifTextbox = searchInputs.find(function (inp) {
-          const field = inp.closest('[data-automation-id^="formField-"], section, div');
-          const txt = (field && field.textContent || '').toLowerCase();
-          return txt.includes('indicatif de pays');
-        }) || null;
-      } catch (_) {}
+      // Textbox « Indicatif de pays » : input #phoneNumber--countryPhoneCode (placeholder Rechercher)
+      let indicatifTextbox = document.getElementById('phoneNumber--countryPhoneCode');
+      if (!indicatifTextbox) {
+        try {
+          const searchInputs = Array.from(document.querySelectorAll('input[placeholder="Rechercher"]'));
+          indicatifTextbox = searchInputs.find(function (inp) {
+            const field = inp.closest('[data-automation-id^="formField-"], section, div');
+            const txt = (field && field.textContent || '').toLowerCase();
+            return txt.includes('indicatif de pays');
+          }) || null;
+        } catch (_) {}
+      }
       if (!indicatifTextbox) {
         indicatifTextbox = document.querySelector('[role="textbox"][aria-label^="Indicatif de pays"]') ||
           document.querySelector('input[aria-label*="Indicatif de pays"]');
