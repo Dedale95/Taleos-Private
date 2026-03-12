@@ -66,6 +66,14 @@
     return true;
   }
 
+  /** Scroll élément en vue (évite "click intercepted" sur Workday). */
+  function scrollIntoViewIfNeeded(el) {
+    if (!el || typeof el.scrollIntoView !== 'function') return;
+    try {
+      el.scrollIntoView({ behavior: 'instant', block: 'center' });
+    } catch (_) {}
+  }
+
   /** Workday : ouvrir un bouton listbox (id, name ou selector) et cliquer l'option dont le label correspond (option cliquée après 400ms). */
   function clickWorkdayListboxOption(buttonSelector, optionLabelOrValue, label) {
     let btn = null;
@@ -85,6 +93,7 @@
       log('   ⏭️  ' + label + ' : bouton non trouvé → Skip', 5);
       return false;
     }
+    scrollIntoViewIfNeeded(btn);
     const currentAria = (btn.getAttribute('aria-label') || '').trim();
     const target = (optionLabelOrValue || '').trim().toLowerCase();
     const isPlaceholder = /sélectionnez une valeur|select a value/i.test(currentAria) || (btn.getAttribute('value') === '' || !btn.getAttribute('value'));
@@ -477,6 +486,15 @@
     }
 
     // Étape 5 : Remplir le formulaire de candidature (profil Firebase)
+    // Mapping Workday (étape 1 "Mes données personnelles") :
+    // - Comment nous avez-vous connus : input searchBox id="source--source" → remplir "Site Deloitte Careers" puis Enter
+    // - Déjà travaillé Deloitte : radios Oui/Non (value true/false), souvent opacity 0 → cliquer le label associé
+    // - Titre : bouton listbox name="legalName--title" → options "Monsieur" / "Madame"
+    // - Prénom/Nom : id="name--legalName--firstName" / "name--legalName--lastName"
+    // - Adresse : input par label "Nature et nom de la voie", Ville, Code postal
+    // - Type téléphone : bouton listbox phoneNumber--phoneType → "Mobile Personnel" / "Fixe Personnel"
+    // - Indicatif pays : combobox "Rechercher" → "France (+33)", "Royaume-Uni (+44)", etc.
+    // - Numéro téléphone : id="phoneNumber--phoneNumber"
     let filled = false;
 
     log('📂 [STEP 5] Données Firebase utilisées pour le formulaire:', 5);
@@ -498,27 +516,35 @@
     );
 
     // ——— Comment nous avez-vous connus? → "Site Deloitte Careers" ———
+    // Workday : champ recherche (placeholder "Rechercher"). Remplir le texte puis Enter valide la sélection.
     log('   🔵 Comment nous avez-vous connus? → cible "Site Deloitte Careers" (Firebase)', 5);
     let hearAboutFilled = false;
-    const hearSearchBox = document.querySelector('input[data-automation-id="searchBox"][id="source--source"]');
+    const hearSearchBox = document.querySelector('input[data-automation-id="searchBox"][id="source--source"]') ||
+      findInputByLabel(['comment nous avez-vous connus', 'how did you hear about us']);
     if (hearSearchBox && hearSearchBox.offsetParent !== null) {
+      scrollIntoViewIfNeeded(hearSearchBox);
       try {
         hearSearchBox.focus();
         hearSearchBox.click();
       } catch (e) {}
+      fillInput(hearSearchBox, SITE_DELOITTE_CAREERS);
       const opt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="Site Deloitte Careers"]');
       if (opt && opt.offsetParent !== null) {
         opt.click();
-        // Entrée ferme le menu et valide la sélection (comportement utilisateur).
+        hearAboutFilled = true;
+        filled = true;
+        log('   ✏️  Comment nous avez-vous connus? : Sélectionné "Site Deloitte Careers" (option) (Firebase)', 5);
+      }
+      if (!hearAboutFilled) {
         setTimeout(function() {
           try {
             const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-            (document.activeElement || opt || hearSearchBox).dispatchEvent(enterEv);
+            (document.activeElement || hearSearchBox).dispatchEvent(enterEv);
+            log('   ✏️  Comment nous avez-vous connus? : Rempli + Entrée (Firebase)', 5);
           } catch (_) {}
-        }, 200);
+        }, 350);
         hearAboutFilled = true;
         filled = true;
-        log('   ✏️  Comment nous avez-vous connus? : Sélectionné "Site Deloitte Careers" + Entrée (Firebase)', 5);
       }
     }
     if (!hearAboutFilled) {
@@ -579,13 +605,30 @@
       const radioYes = document.querySelector('input[name="candidateIsPreviousWorker"][type="radio"][value="true"]') || document.querySelector('input[name="candidateIsPreviousWorker"][type="radio"][value="1"]');
       const radioNo = document.querySelector('input[name="candidateIsPreviousWorker"][type="radio"][value="false"]') || document.querySelector('input[name="candidateIsPreviousWorker"][type="radio"][value="0"]');
       const radio = workedRaw === 'yes' ? radioYes : radioNo;
-      if (radio && radio.offsetParent !== null) {
-        if (!radio.checked) {
-          radio.click();
-          log('   ✏️  Avez-vous déjà travaillé : Coché candidateIsPreviousWorker value="' + radio.value + '" (Firebase)', 5);
-          filled = true;
-        } else {
+      if (radio) {
+        if (radio.checked) {
           log('   ✅ Avez-vous déjà travaillé : Déjà coché (candidateIsPreviousWorker) → Skip', 5);
+        } else {
+          const style = typeof getComputedStyle !== 'undefined' ? getComputedStyle(radio) : null;
+          const hidden = !radio.offsetParent || (style && (parseFloat(style.opacity) === 0 || style.visibility === 'hidden'));
+          if (hidden) {
+            const labelToClick = (radio.id && document.querySelector('label[for="' + radio.id + '"]')) || radio.closest('label') ||
+              Array.from(document.querySelectorAll('label, span[role="presentation"], [data-automation-id="label"]')).find(el => /^(oui|non)$/i.test((el.textContent || '').trim()) && el.closest('div, li')?.querySelector('input[name="candidateIsPreviousWorker"]') === radio);
+            if (labelToClick && labelToClick.offsetParent !== null) {
+              scrollIntoViewIfNeeded(labelToClick);
+              labelToClick.click();
+              log('   ✏️  Avez-vous déjà travaillé : Coché via label (radio masqué) value="' + radio.value + '" (Firebase)', 5);
+              filled = true;
+            } else {
+              radio.click();
+              log('   ✏️  Avez-vous déjà travaillé : Coché candidateIsPreviousWorker value="' + radio.value + '" (Firebase)', 5);
+              filled = true;
+            }
+          } else {
+            radio.click();
+            log('   ✏️  Avez-vous déjà travaillé : Coché candidateIsPreviousWorker value="' + radio.value + '" (Firebase)', 5);
+            filled = true;
+          }
         }
       } else {
         log('   ⏭️  Avez-vous déjà travaillé : aucun radio candidateIsPreviousWorker trouvé → Skip', 5);
@@ -654,13 +697,16 @@
     if (phoneCountryCode) {
       const wantLabel = phoneCountryCode === '+44' ? 'Royaume-Uni (+44)' : phoneCountryCode === '+33' ? 'France (+33)' : phoneCountryCode;
       log('   🔵 Indicatif de pays (téléphone) : Firebase phone_country_code=' + phoneCountryCode + ' → ' + wantLabel + ' (pour France mettre +33 dans Firebase)', 5);
-      const allListbox = document.querySelectorAll('button[aria-haspopup="listbox"], [data-automation-id="compositeHeader"]');
       let countryCodeDone = false;
+      const allListbox = document.querySelectorAll('button[aria-haspopup="listbox"], [data-automation-id="compositeHeader"], [role="combobox"]');
       for (const b of allListbox) {
         const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-        // On ne doit pas toucher au champ « Pays » (résidence). On limite donc ici strictement à l'indicatif téléphonique.
-        const isCountryField = aria && (aria.includes('indicatif') || aria.includes('country code') || aria.includes('dialling code') || aria.includes('+33') || aria.includes('+44'));
-        if (!isCountryField) continue;
+        const text = (b.textContent || '').toLowerCase().trim();
+        const combined = aria + ' ' + text;
+        // Ne pas toucher au champ « Pays » (résidence) : label "Pays France" sans "indicatif" ni indicatif téléphone (+33).
+        const isPaysResidence = combined.includes('pays') && !combined.includes('indicatif') && !/\+\d{2,4}/.test(combined);
+        const isCountryCodeField = !isPaysResidence && (combined.includes('indicatif') || combined.includes('country code') || combined.includes('dialling') || /\+\d{2,4}/.test(combined));
+        if (!isCountryCodeField) continue;
         const currentVal = (b.getAttribute('aria-label') || b.textContent || '').trim();
         if (currentVal.includes(phoneCountryCode) && !/sélectionnez|select a value/i.test(currentVal)) {
           log('   ✅ Indicatif de pays : Déjà ' + currentVal + ' (Firebase identique) → Skip', 5);
@@ -674,6 +720,38 @@
         break;
       }
       if (!countryCodeDone) {
+        const indicatifInput = findInputByLabel(['indicatif de pays', 'country code', 'indicatif']);
+        if (indicatifInput && indicatifInput.offsetParent !== null && (indicatifInput.placeholder || '').toLowerCase().includes('rechercher')) {
+          scrollIntoViewIfNeeded(indicatifInput);
+          indicatifInput.focus();
+          indicatifInput.click();
+          fillInput(indicatifInput, wantLabel);
+          countryCodeDone = true;
+          filled = true;
+          setTimeout(function() {
+            const opts = document.querySelectorAll('[role="option"], [data-automation-id="promptOption"]');
+            let clickable = null;
+            for (const o of opts) {
+              const t = (o.getAttribute('aria-label') || o.textContent || '').trim();
+              if (t.includes(phoneCountryCode) || (phoneCountryCode === '+44' && t.includes('Royaume-Uni')) || (phoneCountryCode === '+33' && t.includes('France'))) {
+                clickable = o.closest('[role="option"]') || o.closest('li') || o;
+                break;
+              }
+            }
+            if (clickable && clickable.offsetParent !== null) {
+              clickable.click();
+              log('   ✏️  Indicatif de pays : Sélectionné ' + wantLabel + ' via champ recherche (Firebase)', 5);
+            } else {
+              try {
+                const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
+                indicatifInput.dispatchEvent(enterEv);
+                log('   ✏️  Indicatif de pays : Rempli ' + wantLabel + ' + Entrée (Firebase)', 5);
+              } catch (_) {}
+            }
+          }, 450);
+        }
+      }
+      if (!countryCodeDone) {
         const opt = document.querySelector('[data-automation-label="' + wantLabel + '"], [data-automation-label*="' + phoneCountryCode + '"], [aria-label*="' + phoneCountryCode + '"]');
         if (opt && opt.offsetParent !== null) {
           const listbox = opt.closest('[role="listbox"], ul, [data-automation-id="menuItem"]')?.parentElement || opt.closest('li')?.parentElement;
@@ -682,6 +760,7 @@
           const triggerNearLabel = labelIndicatif?.closest('div')?.querySelector('button[aria-haspopup="listbox"], [data-automation-id="compositeHeader"], [role="combobox"]');
           const toClick = trigger || triggerNearLabel || document.querySelector('button[aria-label*="+33"], button[aria-label*="+44"], [data-automation-id="compositeHeader"]');
           if (toClick && toClick.offsetParent !== null) {
+            scrollIntoViewIfNeeded(toClick);
             try { toClick.click(); } catch (e) {}
             setTimeout(function() {
               const o = document.querySelector('[data-automation-label="' + wantLabel + '"], [data-automation-label*="' + phoneCountryCode + '"], [aria-label*="' + phoneCountryCode + '"]');
