@@ -1036,7 +1036,7 @@ async function fetchProfile(uid, bankId, token) {
     establishment: (profile.establishment || profile.institution_name || '').trim(),
     school_type: profile.institution_type || '',
     diploma_status: profile.diploma_status || '',
-    diploma_year: String(profile.graduation_year || ''),
+    diploma_year: String(profile.graduation_year ?? profile.graduationYear ?? ''),
     languages,
     cv_storage_path: cvStoragePath,
     lm_storage_path: lmStoragePath,

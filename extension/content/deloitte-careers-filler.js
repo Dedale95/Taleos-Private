@@ -359,14 +359,15 @@
 
   /**
    * Remplir l'étape 2 Workday "Mon expérience" (Études) depuis Firebase.
-   * - Établissement : profile.establishment ou "Autre" → sélection "Autre établissement" si Autre.
+   * - Établissement : profile.establishment (Firebase) ; "Autre" uniquement si vide → option "Autre établissement".
    * - Diplôme : mapping education_level → option listbox (ex. Bac+5 → Master 2 / Master Spé...).
-   * - Domaine d'études : "banque finance assurance" (valeur cohérente avec les offres finance).
-   * - Année de fin : profile.diploma_year (graduation_year Firebase, ex. 2018) ; année de début : diploma_year - 4.
+   * - Domaine d'études : non obligatoire (*) → on ne remplit que si une valeur existe en profil (sinon on laisse vide).
+   * - Année de fin : profile.diploma_year (Firebase graduation_year, ex. 2018) ; année de début : diploma_year - 4.
    */
   function fillWorkdayStep2Education(profile) {
     const establishmentVal = (profile.establishment || '').trim() || 'Autre';
-    const diplomaYear = profile.diploma_year ? String(profile.diploma_year).replace(/\D/g, '') : '';
+    const diplomaYearRaw = profile.diploma_year != null ? profile.diploma_year : '';
+    const diplomaYear = String(diplomaYearRaw).replace(/\D/g, '');
     const yearEnd = diplomaYear.length === 4 ? parseInt(diplomaYear, 10) : null;
     const yearStart = yearEnd != null && yearEnd >= 4 ? yearEnd - 4 : null;
 
@@ -423,15 +424,16 @@
       }
     }
 
+    const domainVal = (profile.study_domain || profile.field_of_study || '').trim();
     const domainInput = findInputByLabel(["domaine d'études", 'domaine d\'études', 'field of study']);
-    if (domainInput && domainInput.offsetParent !== null) {
+    if (domainInput && domainInput.offsetParent !== null && domainVal) {
       scrollIntoViewIfNeeded(domainInput);
       domainInput.focus();
       domainInput.click();
-      fillInput(domainInput, 'banque finance assurance');
+      fillInput(domainInput, domainVal);
       setTimeout(function() {
         domainInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-        log('   ✏️  Domaine d\'études : banque finance assurance + Entrée', 5);
+        log('   ✏️  Domaine d\'études : ' + domainVal + ' (Firebase, optionnel)', 5);
       }, 350);
     }
 
@@ -440,15 +442,19 @@
     const yearFields = spinbuttons.length >= 2 ? spinbuttons : Array.from(document.querySelectorAll('input[type="number"]')).filter(i => (i.getAttribute('placeholder') || '').match(/^\d{4}$/) || (i.getAttribute('aria-label') || '').toLowerCase().includes('year'));
     if (yearEnd != null && yearFields.length >= 2) {
       try {
-        const firstYear = yearFields[0];
-        const secondYear = yearFields[1];
+        const label0 = (yearFields[0].getAttribute('aria-label') || yearFields[0].getAttribute('name') || '').toLowerCase();
+        const label1 = (yearFields[1].getAttribute('aria-label') || yearFields[1].getAttribute('name') || '').toLowerCase();
+        const isEndFirst = /fin|end|to|obtention/.test(label0) || /année de fin|year end/.test(label0);
+        const isStartFirst = /début|start|from/.test(label0) || /année de début|year start/.test(label0);
+        const startField = (isEndFirst ? yearFields[1] : yearFields[0]);
+        const endField = (isEndFirst ? yearFields[0] : yearFields[1]);
         if (yearStart != null) {
-          firstYear.focus();
-          fillInput(firstYear, String(yearStart));
+          startField.focus();
+          fillInput(startField, String(yearStart));
         }
-        secondYear.focus();
-        fillInput(secondYear, String(yearEnd));
-        log('   ✏️  Années études : De ' + (yearStart != null ? yearStart : '?') + ' À ' + yearEnd + ' (Firebase graduation_year)', 5);
+        endField.focus();
+        fillInput(endField, String(yearEnd));
+        log('   ✏️  Années études : De ' + (yearStart != null ? yearStart : '?') + ' À ' + yearEnd + ' (Firebase graduation_year, aucune modification)', 5);
       } catch (e) {
         log('   ⏭️  Années : ' + (e && e.message), 5);
       }
