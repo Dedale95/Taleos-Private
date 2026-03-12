@@ -1047,11 +1047,43 @@
           } catch (_) {}
         }
         setTimeout(function() {
-          const opt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="' + wantLabel + '"]');
-          if (opt && opt.offsetParent !== null) {
-            const clickable = opt.closest('[role="menuitemradio"], [role="option"], li, div') || opt;
+          let opt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="' + wantLabel + '"]');
+          if (!opt || !opt.offsetParent) {
+            // Si l'option n'est pas encore visible, essayer de scroller la liste virtualisée
+            const list = document.querySelector('[data-automation-id="activeListContainer"] .ReactVirtualized__Grid__innerScrollContainer') ||
+              document.querySelector('.ReactVirtualized__Grid__innerScrollContainer');
+            if (list) {
+              let tries = 0;
+              const maxTries = 12;
+              (function scrollAndFind() {
+                opt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="' + wantLabel + '"]');
+                if (opt && opt.offsetParent) {
+                  const leaf = opt.closest('[data-automation-id="promptLeafNode"]') ||
+                    opt.closest('[role="menuitemradio"], [role="option"], li, div') || opt;
+                  try {
+                    leaf.click();
+                    log('   ✏️  Indicatif de pays : Sélectionné "' + wantLabel + '" via option radio après scroll (Firebase)', 5);
+                    filled = true;
+                  } catch (e) {
+                    log('   ⏭️  Indicatif de pays : échec clic option "' + wantLabel + '" après scroll (' + e.message + ')', 5);
+                  }
+                  return;
+                }
+                if (tries++ >= maxTries) {
+                  log('   ⏭️  Indicatif de pays : option "' + wantLabel + '" non visible après scroll', 5);
+                  return;
+                }
+                list.scrollTop += 260;
+                setTimeout(scrollAndFind, 180);
+              })();
+              return;
+            }
+          }
+          if (opt && opt.offsetParent) {
+            const leaf = opt.closest('[data-automation-id="promptLeafNode"]') ||
+              opt.closest('[role="menuitemradio"], [role="option"], li, div') || opt;
             try {
-              clickable.click();
+              leaf.click();
               log('   ✏️  Indicatif de pays : Sélectionné "' + wantLabel + '" via option radio (Firebase)', 5);
               filled = true;
             } catch (e) {
