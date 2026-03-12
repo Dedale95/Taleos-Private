@@ -1064,4 +1064,62 @@
     log('Retry ' + runCount + '/' + MAX_RETRIES + ' (attente bouton)', 4);
     setTimeout(runAutomation, 2000);
   }
+
+  /**
+   * Collecte toutes les valeurs du champ "Établissement ou université" en testant chaque paire
+   * de lettres AA, AB, ... AZ, BA, ... ZZ : pour chaque paire on saisit, on envoie Entrée pour
+   * charger les écoles, on récupère les options affichées. Doublons retirés à la fin.
+   */
+  async function collectDeloitteInstitutions() {
+    const input = findInputByLabel(['établissement ou université', 'institution']);
+    if (!input || !input.offsetParent) {
+      return { list: [], error: 'Champ Établissement non trouvé. Ouvrez l\'étape 2 "Mon expérience" du formulaire Deloitte.' };
+    }
+    const seen = new Set();
+    const collectVisibleOptions = () => {
+      const opts = document.querySelectorAll('[role="listbox"] [role="option"], [role="option"]');
+      for (const o of opts) {
+        const t = (o.textContent || o.getAttribute('aria-label') || '').trim();
+        if (t && !/sélectionnez une valeur|select a value/i.test(t)) seen.add(t);
+      }
+    };
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const pairs = [];
+    for (const a of letters) {
+      for (const b of letters) {
+        pairs.push(a + b);
+      }
+    }
+    const sendEnter = () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    };
+    for (let i = 0; i < pairs.length; i++) {
+      const pair = pairs[i];
+      input.focus();
+      input.click();
+      fillInput(input, '');
+      await new Promise(r => setTimeout(r, 150));
+      fillInput(input, pair);
+      await new Promise(r => setTimeout(r, 350));
+      sendEnter();
+      await new Promise(r => setTimeout(r, 750));
+      collectVisibleOptions();
+    }
+    await new Promise(r => setTimeout(r, 200));
+    input.focus();
+    fillInput(input, 'Autre');
+    await new Promise(r => setTimeout(r, 400));
+    sendEnter();
+    await new Promise(r => setTimeout(r, 700));
+    collectVisibleOptions();
+    seen.add('Autre établissement');
+    const list = Array.from(seen).sort((a, b) => a.localeCompare(b, 'fr'));
+    return { list };
+  }
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.action !== 'collect_deloitte_institutions') return false;
+    collectDeloitteInstitutions().then(sendResponse).catch(err => sendResponse({ list: [], error: (err && err.message) || 'Erreur' }));
+    return true;
+  });
 })();

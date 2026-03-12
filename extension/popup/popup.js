@@ -146,7 +146,7 @@ let lastCollectedInstitutions = null;
 async function collectDeloitteInstitutions() {
   const statusEl = document.getElementById('collect-status');
   const copyBtn = document.getElementById('copy-institutions-btn');
-  if (statusEl) statusEl.textContent = 'Récupération en cours (≈ 30 s)…';
+  if (statusEl) statusEl.textContent = 'Récupération en cours (AA→ZZ, ≈ 15 min)…';
   if (copyBtn) copyBtn.classList.add('hidden');
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
