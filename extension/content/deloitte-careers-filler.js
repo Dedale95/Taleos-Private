@@ -758,51 +758,32 @@
     );
 
     // ——— Comment nous avez-vous connus? → "Site Deloitte Careers" ———
-    // Workday : champ tout en haut, avec un label texte. On se base sur le texte visible,
-    // pas sur les attributs ARIA qui semblent différents entre environnements.
-    log('   🔵 Comment nous avez-vous connus? → cible \"Site Deloitte Careers\" (Firebase)', 5);
+    // Workday : input searchBox id="source--source"
+    log('   🔵 Comment nous avez-vous connus? → cible "Site Deloitte Careers" (Firebase)', 5);
     let hearAboutFilled = false;
-
-    // 1) Trouver le bloc par texte « Comment nous avez-vous connus ? »
-    try {
-      const hearLabel = Array.from(document.querySelectorAll('label, span, div, p, h2, h3')).find(function(el) {
-        const t = (el.textContent || '').toLowerCase().replace(/\s+/g, ' ').trim();
-        return t.includes('comment nous avez-vous connus');
-      });
-      if (hearLabel) {
-        let container = hearLabel.closest('section, div') || hearLabel.parentElement || document;
-        // dans ce conteneur, on prend le premier input / textbox / combobox après le label
-        const candidates = Array.from(container.querySelectorAll('input, textarea, button, [role=\"textbox\"], [role=\"combobox\"], [role=\"button\"]'));
-        const hearField = candidates.find(function(el) {
-          if (!el.offsetParent) return false;
-          const role = (el.getAttribute('role') || '').toLowerCase();
-          const type = (el.getAttribute('type') || '').toLowerCase();
-          const ph = (el.getAttribute('placeholder') || '').toLowerCase();
-          return role === 'textbox' || role === 'combobox' || type === 'text' || ph.includes('rechercher');
-        }) || candidates[0];
-        if (hearField && hearField.offsetParent !== null) {
-          scrollIntoViewIfNeeded(hearField);
-          try {
-            hearField.focus();
-            hearField.click();
-          } catch (_) {}
-          fillInput(hearField, SITE_DELOITTE_CAREERS);
-          setTimeout(function() {
-            const opt = Array.from(document.querySelectorAll('[role=\"option\"], [data-automation-id=\"promptOption\"], li'))
-              .find(function(o) {
-                const txt = (o.textContent || o.getAttribute && o.getAttribute('aria-label') || '').trim();
-                return /site\s+de(l)?oitte\s+careers/i.test(txt) || txt === SITE_DELOITTE_CAREERS;
-              });
-            if (opt && opt.offsetParent !== null) {
-              opt.click();
-              hearAboutFilled = true;
-              filled = true;
-              log('   ✏️  Comment nous avez-vous connus? : Sélectionné \"Site Deloitte Careers\" via bloc texte (Firebase)', 5);
-            }
-          }, 400);
+    const hearField = document.getElementById('source--source') ||
+      document.querySelector('input[data-automation-id="searchBox"][id="source--source"]');
+    if (hearField && hearField.offsetParent !== null) {
+      scrollIntoViewIfNeeded(hearField);
+      try {
+        hearField.focus();
+        hearField.click();
+      } catch (_) {}
+      fillInput(hearField, SITE_DELOITTE_CAREERS);
+      setTimeout(function() {
+        const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="promptOption"]'))
+          .find(function(o) {
+            const txt = (o.textContent || o.getAttribute('aria-label') || '').trim();
+            return txt === SITE_DELOITTE_CAREERS;
+          });
+        if (opt && opt.offsetParent !== null) {
+          opt.click();
+          hearAboutFilled = true;
+          filled = true;
+          log('   ✏️  Comment nous avez-vous connus? : Sélectionné "Site Deloitte Careers" via id=source--source (Firebase)', 5);
         }
-      }
-    } catch (_) {}
+      }, 400);
+    }
     if (!hearAboutFilled) {
       const hearAboutSelect = findSelectByLabel(['comment nous avez-vous connus', 'how did you hear about us']);
       if (hearAboutSelect) {
@@ -942,29 +923,14 @@
     const titleCivility = (profile.civility || '').trim();
     if (titleCivility) {
       const titleOption = /madame|mme|mrs|female/i.test(titleCivility) ? 'Madame' : 'Monsieur';
-      let titleBtn = null;
-      // 1) Chercher par texte visible « Titre (préfixe) »
-      try {
-        const titleLabel = Array.from(document.querySelectorAll('label, span, div, p, h2, h3')).find(function(el) {
-          const t = (el.textContent || '').toLowerCase().replace(/\s+/g, ' ').trim();
-          return t.includes('titre (préfixe)');
-        });
-        if (titleLabel) {
-          const cont = titleLabel.closest('section, div') || titleLabel.parentElement;
-          if (cont) {
-            titleBtn = cont.querySelector('button, [role="button"], [role="combobox"]');
-          }
-        }
-      } catch (_) {}
-      // 2) Fallback ARIA / name
-      if (!titleBtn) {
-        titleBtn =
-          document.querySelector('[role="button"][aria-label^="Titre (préfixe)"]') ||
-          document.querySelector('button[aria-label^="Titre (préfixe)"]') ||
-          document.querySelector('[role="combobox"][aria-label^="Titre (préfixe)"]') ||
-          document.querySelector('button[aria-haspopup="listbox"][name*="legalName--title"]') ||
-          document.querySelector('[role="combobox"][name*="legalName--title"]');
-      }
+      let titleBtn =
+        document.getElementById('name--legalName--title') ||
+        document.querySelector('button[name="legalName--title"]') ||
+        document.querySelector('[role="button"][aria-label^="Titre (préfixe)"]') ||
+        document.querySelector('button[aria-label^="Titre (préfixe)"]') ||
+        document.querySelector('[role="combobox"][aria-label^="Titre (préfixe)"]') ||
+        document.querySelector('button[aria-haspopup="listbox"][name*="legalName--title"]') ||
+        document.querySelector('[role="combobox"][name*="legalName--title"]');
       if (titleBtn && titleBtn.offsetParent !== null) {
         scrollIntoViewIfNeeded(titleBtn);
         if (clickWorkdayListboxOption(titleBtn, titleOption, 'Titre (préfixe)')) filled = true;
@@ -998,28 +964,16 @@
     if (zipEl && profile.zipcode && fillInputIfNeeded(zipEl, profile.zipcode, 'Code postal')) filled = true;
 
     // ——— Type d'appareil téléphonique : bouton listbox → Mobile personnel ———
-    let phoneTypeBtn = null;
-    try {
-      const phoneTypeLabel = Array.from(document.querySelectorAll('label, span, div, p, h2, h3')).find(function(el) {
-        const t = (el.textContent || '').toLowerCase().replace(/\s+/g, ' ').trim();
-        return t.includes('type d\'appareil téléphonique');
-      });
-      if (phoneTypeLabel) {
-        const cont = phoneTypeLabel.closest('section, div') || phoneTypeLabel.parentElement;
-        if (cont) {
-          phoneTypeBtn = cont.querySelector('button, [role="button"], [role="combobox"]');
-        }
-      }
-    } catch (_) {}
-    if (!phoneTypeBtn) {
-      phoneTypeBtn = document.querySelector(
+    let phoneTypeBtn =
+      document.getElementById('phoneNumber--phoneType') ||
+      document.querySelector('button[name="phoneType"]') ||
+      document.querySelector(
         '[role="button"][aria-label^="Type d\'appareil téléphonique"], ' +
         'button[aria-label^="Type d\'appareil téléphonique"], ' +
         '[role="combobox"][aria-label^="Type d\'appareil téléphonique"], ' +
         'button[aria-haspopup="listbox"][name*="phoneType"], ' +
         '[role="combobox"][name*="phoneType"]'
       );
-    }
     if (phoneTypeBtn && phoneTypeBtn.offsetParent !== null) {
       scrollIntoViewIfNeeded(phoneTypeBtn);
       if (clickWorkdayListboxOption(phoneTypeBtn, 'Mobile Personnel', 'Type d\'appareil téléphonique')) filled = true;
@@ -1053,8 +1007,17 @@
         }
       } catch (_) {}
 
-      // 2) Textbox ARIA « Indicatif de pays »
-      const indicatifTextbox = document.querySelector('[role=\"textbox\"][aria-label^=\"Indicatif de pays\"]');
+      // 2) Textbox « Indicatif de pays » : on prend l'input Rechercher dans le même bloc que le chip France (+33)
+      let indicatifTextbox = null;
+      try {
+        const francePrompt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="France (+33)"]');
+        const blocIndicatif = francePrompt ? (francePrompt.closest('section, div') || francePrompt.parentElement) : document;
+        indicatifTextbox = blocIndicatif && blocIndicatif.querySelector('input[placeholder="Rechercher"]');
+      } catch (_) {}
+      if (!indicatifTextbox) {
+        indicatifTextbox = document.querySelector('[role="textbox"][aria-label^="Indicatif de pays"]') ||
+          document.querySelector('input[aria-label*="Indicatif de pays"]');
+      }
       if (indicatifTextbox && indicatifTextbox.offsetParent !== null) {
         scrollIntoViewIfNeeded(indicatifTextbox);
         try {
