@@ -1,0 +1,2 @@
+# Pour fetch_firebase_profile.py (récupération profil Firestore comme l’extension)
+firebase-admin>=6.0.0

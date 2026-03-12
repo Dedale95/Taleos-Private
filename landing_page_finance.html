@@ -1448,7 +1448,7 @@
             }
         }
 
-        // Charger le nombre total d'offres
+        // Charger le nombre total d'offres (LIVE uniquement)
         async function loadTotalJobsCount() {
             const totalJobsCountEl = document.getElementById('totalJobsCount');
             if (!totalJobsCountEl) return;
@@ -1463,12 +1463,15 @@
                 'https://raw.githubusercontent.com/Dedale95/mon-site/main/scraped_jobs_live.json'
             ];
 
+            const statusLive = (s) => String(s || '').toLowerCase().trim() === 'live';
+
             for (const path of paths) {
                 try {
                     const response = await fetch(path);
                     if (response.ok) {
                         const data = await response.json();
-                        const count = Array.isArray(data) ? data.length : 0;
+                        const liveData = Array.isArray(data) ? data.filter(job => job && statusLive(job.status)) : [];
+                        const count = liveData.length;
                         if (count > 0) {
                             // Formater le nombre avec des espaces pour les milliers
                             const formattedCount = count.toLocaleString('fr-FR').replace(/,/g, ' ');

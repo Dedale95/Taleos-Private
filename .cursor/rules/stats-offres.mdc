@@ -1,0 +1,21 @@
+---
+description: Toujours afficher le split Live/Expired quand on rapporte les stats des offres
+alwaysApply: true
+---
+
+# Stats offres d'emploi
+
+Quand tu rapportes les comptages d'offres (Crédit Agricole, Société Générale, Deloitte) :
+
+1. **Toujours faire le split Live / Expired** — ne jamais donner uniquement le total.
+2. Le total "exporté" ou "affiché sur le site" = uniquement les offres **Live**.
+3. Pour obtenir les stats : `python PYTHON/show_job_stats.py`
+
+Exemple de format attendu :
+```
+Source              | Live  | Expired
+Crédit Agricole     | 1 303 | 1 414
+Société Générale    | 1 154 | 1 167
+Deloitte            | 355   | 121
+Total exporté       | 2 812 |
+```
