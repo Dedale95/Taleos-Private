@@ -945,15 +945,27 @@
 
     // ——— Prénom : id="name--legalName--firstName" (ne pas inverser avec nom) ———
     const firstnameEl = document.getElementById('name--legalName--firstName') || document.querySelector('input[name="legalName--firstName"]');
-    if (firstnameEl && profile.firstname && fillInputIfNeeded(firstnameEl, profile.firstname, 'Prénom')) filled = true;
+    if (firstnameEl && profile.firstname) {
+      log('   ✏️  Prénom : forcer "' + profile.firstname + '" dans id=name--legalName--firstName (Firebase)', 5);
+      fillInput(firstnameEl, profile.firstname);
+      filled = true;
+    }
 
     // ——— Nom de famille : id="name--legalName--lastName" ———
     const lastnameEl = document.getElementById('name--legalName--lastName') || document.querySelector('input[name="legalName--lastName"]');
-    if (lastnameEl && profile.lastname && fillInputIfNeeded(lastnameEl, profile.lastname, 'Nom de famille')) filled = true;
+    if (lastnameEl && profile.lastname) {
+      log('   ✏️  Nom de famille : forcer "' + profile.lastname + '" dans id=name--legalName--lastName (Firebase)', 5);
+      fillInput(lastnameEl, profile.lastname);
+      filled = true;
+    }
 
     // ——— Nature et nom de la voie ———
     const addressEl = document.querySelector('input[id*="address"], input[name*="address"]') || findInputByLabel(['nature et nom de la voie', 'address', 'adresse', 'street']);
-    if (addressEl && profile.address && fillInputIfNeeded(addressEl, profile.address, 'Nature et nom de la voie')) filled = true;
+    if (addressEl && profile.address) {
+      log('   ✏️  Adresse : forcer "' + profile.address + '" dans le champ adresse (Firebase)', 5);
+      fillInput(addressEl, profile.address);
+      filled = true;
+    }
 
     // ——— Ville ———
     const cityEl = findInputByLabel(['ville', 'city']);
