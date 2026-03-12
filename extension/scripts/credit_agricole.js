@@ -751,6 +751,8 @@
         if (rgpdLabel) {
           const chk = rgpdLabel.querySelector('.checkbox-btn') || document.querySelector('.checkbox-btn:last-of-type');
           if (chk && !chk.classList.contains('checked') && !chk.classList.contains('active')) {
+            chk.scrollIntoView({ behavior: 'instant', block: 'center' });
+            await delay(300);
             chk.click();
             log('   ✅ RGPD coché.');
           }
@@ -852,6 +854,8 @@
       if (rgpdLabel2) {
         const chk = rgpdLabel2.querySelector('.checkbox-btn') || document.querySelector('.checkbox-btn:last-of-type');
         if (chk && !chk.classList.contains('checked') && !chk.classList.contains('active')) {
+          chk.scrollIntoView({ behavior: 'instant', block: 'center' });
+          await delay(300);
           chk.click();
           log('   ✅ RGPD Coché (Via Label Texte)');
         }
