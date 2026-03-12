@@ -141,6 +141,59 @@ async function refreshTaleosTabs() {
   }
 }
 
+let lastCollectedInstitutions = null;
+
+async function collectDeloitteInstitutions() {
+  const statusEl = document.getElementById('collect-status');
+  const copyBtn = document.getElementById('copy-institutions-btn');
+  if (statusEl) statusEl.textContent = 'Récupération en cours (≈ 30 s)…';
+  if (copyBtn) copyBtn.classList.add('hidden');
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      if (statusEl) statusEl.textContent = 'Aucun onglet actif.';
+      return;
+    }
+    if (!tab.url || (!tab.url.includes('myworkdayjobs.com') && !tab.url.includes('deloitte'))) {
+      if (statusEl) statusEl.textContent = 'Ouvrez une candidature Deloitte (étape 2 « Mon expérience ») dans cet onglet, puis réessayez.';
+      return;
+    }
+    let res;
+    try {
+      res = await chrome.tabs.sendMessage(tab.id, { action: 'collect_deloitte_institutions' });
+    } catch (e) {
+      if (/receiving end does not exist|Could not establish connection/i.test(e?.message || String(e))) {
+        if (statusEl) statusEl.textContent = 'Injection du script… Rafraîchissez la page si l’erreur persiste.';
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content/deloitte-careers-filler.js'] });
+        res = await chrome.tabs.sendMessage(tab.id, { action: 'collect_deloitte_institutions' });
+      } else {
+        throw e;
+      }
+    }
+    if (res?.error) {
+      if (statusEl) statusEl.textContent = res.error;
+      return;
+    }
+    const list = res?.list || [];
+    lastCollectedInstitutions = list;
+    if (statusEl) statusEl.textContent = list.length + ' établissement(s) récupéré(s). Copiez le JSON ci-dessous.';
+    if (copyBtn) copyBtn.classList.remove('hidden');
+  } catch (e) {
+    const msg = e?.message || String(e);
+    if (statusEl) statusEl.textContent = 'Erreur : ' + (msg.length > 60 ? msg.slice(0, 60) + '…' : msg);
+    if (copyBtn) copyBtn.classList.add('hidden');
+  }
+}
+
+function copyInstitutionsJson() {
+  if (!lastCollectedInstitutions || !lastCollectedInstitutions.length) return;
+  const json = JSON.stringify(lastCollectedInstitutions, null, 2);
+  navigator.clipboard.writeText(json).then(() => {
+    const statusEl = document.getElementById('collect-status');
+    if (statusEl) statusEl.textContent = 'JSON copié dans le presse-papiers. Collez-le dans data/deloitte-institutions.json du dépôt.';
+  }).catch(() => {});
+}
+
 async function init() {
   await setVersion();
   const doReload = () => { if (chrome?.runtime?.reload) chrome.runtime.reload(); };
@@ -148,6 +201,8 @@ async function init() {
   document.getElementById('reload-btn-login')?.addEventListener('click', doReload);
   document.getElementById('diagnostic-btn')?.addEventListener('click', runDiagnostic);
   document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
+  document.getElementById('collect-institutions-btn')?.addEventListener('click', collectDeloitteInstitutions);
+  document.getElementById('copy-institutions-btn')?.addEventListener('click', copyInstitutionsJson);
   setupLogout();
   runDiagnostic();
 
