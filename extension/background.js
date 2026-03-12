@@ -996,9 +996,10 @@ async function fetchProfile(uid, bankId, token) {
   }));
 
   const phone = String(profile.phone || '').trim().replace(/\s/g, '');
-  let phoneCountryCode = profile.phone_country_code || '+33';
+  // Indicatif pays : priorité à Firebase (phone_country_code ou phoneCountryCode), pas de défaut +33 si l'utilisateur a mis +44
+  let phoneCountryCode = (profile.phone_country_code || profile.phoneCountryCode || '').trim().replace(/\s/g, '');
   let phoneNumber = phone;
-  if (!profile.phone_country_code && phone) {
+  if (!phoneCountryCode && phone) {
     if (phone.startsWith('+')) {
       const match = phone.match(/^(\+\d{1,4})(.*)$/);
       if (match) {
@@ -1010,6 +1011,7 @@ async function fetchProfile(uid, bankId, token) {
       phoneNumber = phone.slice(1).replace(/\D/g, '');
     }
   }
+  if (!phoneCountryCode) phoneCountryCode = '+33';
 
   return {
     civility: profile.civility || '',

@@ -1,6 +1,19 @@
 /**
  * Taleos - Remplissage automatique Deloitte (Workday)
  * Flux: Connexion → Utiliser ma dernière candidature → Formulaire complet
+ *
+ * — Méthodologie Workday (étape 1 "Mes données personnelles") —
+ * 1. Validation des champs : Workday ne met à jour l'état React qu'après focus puis blur.
+ *    On simule le comportement utilisateur : pour chaque champ obligatoire, scroll en vue,
+ *    clic sur le champ (focus), puis clic sur un élément neutre (ex. titre "Mes données personnelles")
+ *    pour provoquer le blur. Voir workdayClickThenClickAway() et refreshWorkdayRequiredFields().
+ * 2. Menus déroulants (listbox) : toujours SÉLECTIONNER une option (ouvrir le bouton, cliquer
+ *    l'option) au lieu de remplir un input en dur. Ex. "Comment nous avez-vous connus" :
+ *    ouvrir le champ → choisir "Site Deloitte Careers" dans la liste ; "Type d'appareil téléphonique" :
+ *    ouvrir → "Mobile Personnel" ; "Indicatif de pays" : ouvrir → "France (+33)" ou "Royaume-Uni (+44)"
+ *    selon Firebase. Un simple fillInput() sans sélection ne valide pas côté Workday.
+ * 3. Indicatif pays téléphone : pris depuis Firebase (phone_country_code ou phoneCountryCode),
+ *    ex. +33 = France (+33), +44 = Royaume-Uni (+44). Pas de défaut +33 si l'utilisateur a saisi +44.
  */
 (function() {
   'use strict';
