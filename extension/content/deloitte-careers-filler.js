@@ -56,7 +56,6 @@
     else el.value = str;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.blur();
   }
 
   /**
