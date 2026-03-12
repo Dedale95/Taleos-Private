@@ -727,15 +727,8 @@
     }
 
     // Étape 5 : Remplir le formulaire de candidature (profil Firebase) — étape 1 "Mes données personnelles"
-    // Mapping Workday (étape 1 "Mes données personnelles") :
-    // - Comment nous avez-vous connus : input searchBox id="source--source" → remplir "Site Deloitte Careers" puis Enter
-    // - Déjà travaillé Deloitte : radios Oui/Non (value true/false), souvent opacity 0 → cliquer le label associé
-    // - Titre : bouton listbox name="legalName--title" → options "Monsieur" / "Madame"
-    // - Prénom/Nom : id="name--legalName--firstName" / "name--legalName--lastName"
-    // - Adresse : input par label "Nature et nom de la voie", Ville, Code postal
-    // - Type téléphone : bouton listbox phoneNumber--phoneType → "Mobile Personnel" / "Fixe Personnel"
-    // - Indicatif pays : combobox "Rechercher" → "France (+33)", "Royaume-Uni (+44)", etc.
-    // - Numéro téléphone : id="phoneNumber--phoneNumber"
+    // IDs exacts Workday (inspect) : name--legalName--firstName, name--legalName--lastName,
+    // address--addressLine1, address--city, address--postalCode
     let filled = false;
 
     log('📂 [STEP 5] Données Firebase utilisées pour le formulaire:', 5);
@@ -756,7 +749,44 @@
       5
     );
 
-    // ——— Comment nous avez-vous connus? → "Site Deloitte Careers" ———
+    // ——— Champs texte uniquement (IDs exacts Workday) ———
+    const firstnameEl = document.getElementById('name--legalName--firstName');
+    const lastnameEl = document.getElementById('name--legalName--lastName');
+    const addressLine1El = document.getElementById('address--addressLine1');
+    const cityEl = document.getElementById('address--city');
+    const postalCodeEl = document.getElementById('address--postalCode');
+    if (firstnameEl && profile.firstname) {
+      fillInput(firstnameEl, profile.firstname);
+      filled = true;
+      log('   ✏️  Prénom : ' + profile.firstname, 5);
+    }
+    if (lastnameEl && profile.lastname) {
+      fillInput(lastnameEl, profile.lastname);
+      filled = true;
+      log('   ✏️  Nom de famille : ' + profile.lastname, 5);
+    }
+    if (addressLine1El && profile.address) {
+      fillInput(addressLine1El, profile.address);
+      filled = true;
+      log('   ✏️  Nature et nom de la voie : ' + profile.address, 5);
+    }
+    if (cityEl && profile.city) {
+      fillInput(cityEl, profile.city);
+      filled = true;
+      log('   ✏️  Ville : ' + profile.city, 5);
+    }
+    if (postalCodeEl && profile.zipcode) {
+      fillInput(postalCodeEl, profile.zipcode);
+      filled = true;
+      log('   ✏️  Code postal : ' + profile.zipcode, 5);
+    }
+    if (!firstnameEl && !lastnameEl && url.includes('applyManually')) {
+      log('   ⏳ Champs texte non trouvés (formulaire pas encore rendu?) → retry dans 1s', 5);
+      setTimeout(runAutomation, 1000);
+      return;
+    }
+
+    // ——— Comment nous avez-vous connus? → "Site Deloitte Careers" (menus déroulants à traiter plus tard) ———
     // Workday : input searchBox id="source--source"
     log('   🔵 Comment nous avez-vous connus? → cible "Site Deloitte Careers" (Firebase)', 5);
     let hearAboutFilled = false;
@@ -942,39 +972,7 @@
       log('   ⏭️  Titre (préfixe) : pas de civility Firebase → Skip', 5);
     }
 
-    // ——— Prénom : id="name--legalName--firstName" (ne pas inverser avec nom) ———
-    const firstnameEl = document.getElementById('name--legalName--firstName') || document.querySelector('input[name="legalName--firstName"]');
-    if (firstnameEl && profile.firstname) {
-      log('   ✏️  Prénom : forcer "' + profile.firstname + '" dans id=name--legalName--firstName (Firebase)', 5);
-      fillInput(firstnameEl, profile.firstname);
-      filled = true;
-    }
-
-    // ——— Nom de famille : id="name--legalName--lastName" ———
-    const lastnameEl = document.getElementById('name--legalName--lastName') || document.querySelector('input[name="legalName--lastName"]');
-    if (lastnameEl && profile.lastname) {
-      log('   ✏️  Nom de famille : forcer "' + profile.lastname + '" dans id=name--legalName--lastName (Firebase)', 5);
-      fillInput(lastnameEl, profile.lastname);
-      filled = true;
-    }
-
-    // ——— Nature et nom de la voie ———
-    const addressEl = document.querySelector('input[id*="address"], input[name*="address"]') || findInputByLabel(['nature et nom de la voie', 'address', 'adresse', 'street']);
-    if (addressEl && profile.address) {
-      log('   ✏️  Adresse : forcer "' + profile.address + '" dans le champ adresse (Firebase)', 5);
-      fillInput(addressEl, profile.address);
-      filled = true;
-    }
-
-    // ——— Ville ———
-    const cityEl = findInputByLabel(['ville', 'city']);
-    if (cityEl && profile.city && fillInputIfNeeded(cityEl, profile.city, 'Ville')) filled = true;
-
-    // ——— Code postal ———
-    const zipEl = findInputByLabel(['code postal', 'postal code', 'zip']);
-    if (zipEl && profile.zipcode && fillInputIfNeeded(zipEl, profile.zipcode, 'Code postal')) filled = true;
-
-    // ——— Type d'appareil téléphonique : bouton listbox → Mobile personnel ———
+    // ——— Type d'appareil téléphonique : bouton listbox (menus à traiter plus tard) ———
     let phoneTypeBtn =
       document.getElementById('phoneNumber--phoneType') ||
       document.querySelector('button[name="phoneType"]') ||
@@ -1068,10 +1066,6 @@
     const phoneVal = (profile.phone_number || profile['phone-number'] || profile.phone || '').trim().replace(/\s/g, '');
     const phoneEl = document.getElementById('phoneNumber--phoneNumber') || document.querySelector('input[name="phoneNumber"][id*="phoneNumber"]') || document.querySelector('input[name="phoneNumber"]');
     if (phoneEl && phoneVal && fillInputIfNeeded(phoneEl, phoneVal, 'Numéro de téléphone')) filled = true;
-
-    // Après remplissage : clic sur chaque champ puis clic ailleurs (comme en manuel) pour que Workday valide.
-    setTimeout(refreshWorkdayRequiredFields, 800);
-    setTimeout(workdayClickThenClickAway, 1500);
 
     if (filled) {
       formFillRetryCount = 0;
