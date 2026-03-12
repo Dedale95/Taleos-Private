@@ -799,7 +799,12 @@
         hearField.click();
       } catch (_) {}
       fillInput(hearField, SITE_DELOITTE_CAREERS);
+      // Workday valide souvent la valeur sur Enter, même si on clique l'option
       setTimeout(function() {
+        try {
+          const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
+          hearField.dispatchEvent(enterEv);
+        } catch (_) {}
         const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="promptOption"]'))
           .find(function(o) {
             const txt = (o.textContent || o.getAttribute('aria-label') || '').trim();
@@ -1033,26 +1038,17 @@
           indicatifTextbox.focus();
           indicatifTextbox.click();
         } catch (_) {}
-        const filter = phoneCountryCode === '+44' ? 'Royaume' : phoneCountryCode;
+        const filter = phoneCountryCode === '+44' ? 'Royaume-Uni' : phoneCountryCode;
         fillInput(indicatifTextbox, filter);
+        // Sur Workday, taper le filtre puis appuyer sur Entrée suffit à valider l'indicatif
         setTimeout(function() {
-          const opt = Array.from(document.querySelectorAll('[role=\"option\"], [data-automation-id=\"promptOption\"]'))
-            .find(function(o) {
-              const t = (o.textContent || o.getAttribute('aria-label') || '').trim();
-              if (phoneCountryCode === '+44') {
-                return /Royaume-Uni\s*\(\+44\)/i.test(t);
-              }
-              if (phoneCountryCode === '+33') {
-                return /France\s*\(\+33\)/i.test(t);
-              }
-              return t.includes(phoneCountryCode);
-            });
-          if (opt && opt.offsetParent !== null) {
-            opt.click();
-            log('   ✏️  Indicatif de pays : Sélectionné ' + wantLabel + ' via textbox ARIA (Firebase)', 5);
+          try {
+            const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
+            indicatifTextbox.dispatchEvent(enterEv);
+            log('   ✏️  Indicatif de pays : filtre "' + filter + '" + Entrée (Firebase)', 5);
             filled = true;
-          } else {
-            log('   ⏭️  Indicatif de pays : aucune option trouvée pour ' + phoneCountryCode + ' après filtrage → Skip', 5);
+          } catch (_) {
+            log('   ⏭️  Indicatif de pays : échec envoi Entrée', 5);
           }
         }, 500);
       } else {
@@ -1066,6 +1062,11 @@
     const phoneVal = (profile.phone_number || profile['phone-number'] || profile.phone || '').trim().replace(/\s/g, '');
     const phoneEl = document.getElementById('phoneNumber--phoneNumber') || document.querySelector('input[name="phoneNumber"][id*="phoneNumber"]') || document.querySelector('input[name="phoneNumber"]');
     if (phoneEl && phoneVal && fillInputIfNeeded(phoneEl, phoneVal, 'Numéro de téléphone')) filled = true;
+
+    // Après remplissage, forcer la validation Workday : clic dans chaque champ texte puis clic en dehors
+    if (url.includes('apply/applyManually')) {
+      setTimeout(workdayClickThenClickAway, 800);
+    }
 
     if (filled) {
       formFillRetryCount = 0;
