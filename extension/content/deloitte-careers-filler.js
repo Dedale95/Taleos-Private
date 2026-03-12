@@ -58,6 +58,16 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function pressEnterSequence(el) {
+    if (!el) return;
+    try {
+      ['keydown', 'keypress', 'keyup'].forEach(function(type) {
+        const ev = new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
+        el.dispatchEvent(ev);
+      });
+    } catch (_) {}
+  }
+
   /**
    * Valider les champs Workday comme en manuel : clic sur la case puis clic ailleurs.
    * Uniquement les champs TEXTE (prénom, nom, adresse, ville, code postal, téléphone).
@@ -798,51 +808,28 @@
         hearField.click();
       } catch (_) {}
       fillInput(hearField, SITE_DELOITTE_CAREERS);
-      // Workday valide souvent la valeur sur Enter, même si on clique l'option
+      // Sur Workday Deloitte, taper puis appuyer sur Entrée suffit à valider ce champ
       setTimeout(function() {
-        try {
-          const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-          hearField.dispatchEvent(enterEv);
-        } catch (_) {}
-        const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="promptOption"]'))
-          .find(function(o) {
-            const txt = (o.textContent || o.getAttribute('aria-label') || '').trim();
-            return txt === SITE_DELOITTE_CAREERS;
-          });
-        if (opt && opt.offsetParent !== null) {
-          opt.click();
-          hearAboutFilled = true;
-          filled = true;
-          log('   ✏️  Comment nous avez-vous connus? : Sélectionné "Site Deloitte Careers" via id=source--source (Firebase)', 5);
-        }
-      }, 400);
+        pressEnterSequence(hearField);
+        log('   ✏️  Comment nous avez-vous connus? : "Site Deloitte Careers" + Entrée (Firebase)', 5);
+      }, 350);
+      hearAboutFilled = true;
+      filled = true;
     }
+    // Fallbacks éventuels (autres formulaires) : laisser en dernier recours
     if (!hearAboutFilled) {
-      const hearAboutSelect = findSelectByLabel(['comment nous avez-vous connus', 'how did you hear about us']);
-      if (hearAboutSelect) {
-        fillSelect(hearAboutSelect, SITE_DELOITTE_CAREERS);
-        hearAboutFilled = true;
-        filled = true;
-        log('   ✏️  Comment nous avez-vous connus? : Sélectionné "Site Deloitte Careers" via select (Firebase)', 5);
-      }
       const hearAboutInput = findInputByLabel(['comment nous avez-vous connus', 'how did you hear about us']) ||
         document.querySelector('input[aria-label*="Comment nous avez-vous connus"], input[placeholder*="Comment nous avez-vous connus"]');
-      if (hearAboutInput) {
+      if (hearAboutInput && hearAboutInput.offsetParent !== null) {
+        scrollIntoViewIfNeeded(hearAboutInput);
         fillInput(hearAboutInput, SITE_DELOITTE_CAREERS);
+        setTimeout(function() {
+          pressEnterSequence(hearAboutInput);
+        }, 350);
         hearAboutFilled = true;
         filled = true;
-        log('   ✏️  Comment nous avez-vous connus? : Rempli "Site Deloitte Careers" via input (fallback aria-label) (Firebase)', 5);
+        log('   ✏️  Comment nous avez-vous connus? : Rempli + Entrée via fallback input (Firebase)', 5);
       }
-    }
-    if (!hearAboutFilled && clickWorkdayOptionByLabelAndValue(['comment nous avez-vous connus', 'how did you hear about us'], SITE_DELOITTE_CAREERS)) {
-      filled = true;
-      log('   ✏️  Comment nous avez-vous connus? : Sélectionné via option Workday "Site Deloitte Careers" (Firebase)', 5);
-      setTimeout(function() {
-        try {
-          const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-          (document.activeElement || document.body).dispatchEvent(enterEv);
-        } catch (_) {}
-      }, 250);
     }
     if (!hearAboutFilled) {
       log('   ⏭️  Comment nous avez-vous connus? : champ non trouvé (retry possible)', 5);
@@ -1020,12 +1007,15 @@
         }
       } catch (_) {}
 
-      // 2) Textbox « Indicatif de pays » : on prend l'input Rechercher dans le même bloc que le chip France (+33)
+      // 2) Textbox « Indicatif de pays » : input Rechercher dans le formField qui contient le label "Indicatif de pays"
       let indicatifTextbox = null;
       try {
-        const francePrompt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="France (+33)"]');
-        const blocIndicatif = francePrompt ? (francePrompt.closest('section, div') || francePrompt.parentElement) : document;
-        indicatifTextbox = blocIndicatif && blocIndicatif.querySelector('input[placeholder="Rechercher"]');
+        const searchInputs = Array.from(document.querySelectorAll('input[placeholder="Rechercher"]'));
+        indicatifTextbox = searchInputs.find(function(inp) {
+          const field = inp.closest('[data-automation-id^="formField-"], section, div');
+          const txt = (field && field.textContent || '').toLowerCase();
+          return txt.includes('indicatif de pays');
+        }) || null;
       } catch (_) {}
       if (!indicatifTextbox) {
         indicatifTextbox = document.querySelector('[role="textbox"][aria-label^="Indicatif de pays"]') ||
@@ -1041,14 +1031,9 @@
         fillInput(indicatifTextbox, filter);
         // Sur Workday, taper le filtre puis appuyer sur Entrée suffit à valider l'indicatif
         setTimeout(function() {
-          try {
-            const enterEv = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-            indicatifTextbox.dispatchEvent(enterEv);
-            log('   ✏️  Indicatif de pays : filtre "' + filter + '" + Entrée (Firebase)', 5);
-            filled = true;
-          } catch (_) {
-            log('   ⏭️  Indicatif de pays : échec envoi Entrée', 5);
-          }
+          pressEnterSequence(indicatifTextbox);
+          log('   ✏️  Indicatif de pays : filtre "' + filter + '" + Entrée (Firebase)', 5);
+          filled = true;
         }, 500);
       } else {
         log('   ⏭️  Indicatif de pays : textbox ARIA non trouvée → Skip', 5);
