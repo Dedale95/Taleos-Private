@@ -1012,88 +1012,36 @@
       const wantLabel = phoneCountryCode === '+44' ? 'Royaume-Uni (+44)' : phoneCountryCode === '+33' ? 'France (+33)' : phoneCountryCode;
       log('   🔵 Indicatif de pays (téléphone) : Firebase phone_country_code=' + phoneCountryCode + ' → ' + wantLabel + ' (pour France mettre +33 dans Firebase)', 5);
 
-      // 1) Si +44, retirer le chip France (+33) existant
+      // Textbox « Indicatif de pays » : input Rechercher dans le formField qui contient le label "Indicatif de pays"
+      let indicatifTextbox = null;
       try {
-        const currentChip = Array.from(document.querySelectorAll('[role=\"option\"]'))
-          .find(function(o) {
-            const t = (o.textContent || '').trim();
-            return /France\s*\(\+33\)/i.test(t);
-          });
-        if (currentChip && currentChip.offsetParent !== null) {
-          scrollIntoViewIfNeeded(currentChip);
-          currentChip.click();
-          try {
-            const delEv = new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', keyCode: 46, which: 46, bubbles: true });
-            currentChip.dispatchEvent(delEv);
-          } catch (_) {}
-          log('   ✏️  Indicatif de pays : suppression du chip France (+33)', 5);
-        }
+        const searchInputs = Array.from(document.querySelectorAll('input[placeholder="Rechercher"]'));
+        indicatifTextbox = searchInputs.find(function (inp) {
+          const field = inp.closest('[data-automation-id^="formField-"], section, div');
+          const txt = (field && field.textContent || '').toLowerCase();
+          return txt.includes('indicatif de pays');
+        }) || null;
       } catch (_) {}
-
-      // 2) Ouvrir la liste d'indicatifs et cliquer l'option "Royaume-Uni (+44)"
-      // On garde la suppression du chip France (+33) ci-dessus, qui ouvre généralement la liste.
-      setTimeout(function() {
-        // Si la liste n'est pas ouverte, essayer de cliquer le bouton listbox à côté du label "Indicatif de pays"
-        const hasOpenOption = !!document.querySelector('[data-automation-id="promptOption"][data-automation-label="' + wantLabel + '"]');
-        if (!hasOpenOption) {
-          try {
-            const labelIndic = Array.from(document.querySelectorAll('label, span, div')).find(function(el) {
-              const t = (el.textContent || '').toLowerCase();
-              return t.includes('indicatif de pays');
-            });
-            const field = labelIndic && (labelIndic.closest('[data-automation-id^="formField-"], section, div') || labelIndic.parentElement);
-            const trigger = field && field.querySelector('button[aria-haspopup="listbox"], [role="combobox"]');
-            if (trigger && trigger.offsetParent !== null) trigger.click();
-          } catch (_) {}
-        }
-        setTimeout(function() {
-          let opt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="' + wantLabel + '"]');
-          if (!opt || !opt.offsetParent) {
-            // Si l'option n'est pas encore visible, essayer de scroller la liste virtualisée
-            const list = document.querySelector('[data-automation-id="activeListContainer"] .ReactVirtualized__Grid__innerScrollContainer') ||
-              document.querySelector('.ReactVirtualized__Grid__innerScrollContainer');
-            if (list) {
-              let tries = 0;
-              const maxTries = 12;
-              (function scrollAndFind() {
-                opt = document.querySelector('[data-automation-id="promptOption"][data-automation-label="' + wantLabel + '"]');
-                if (opt && opt.offsetParent) {
-                  const leaf = opt.closest('[data-automation-id="promptLeafNode"]') ||
-                    opt.closest('[role="menuitemradio"], [role="option"], li, div') || opt;
-                  try {
-                    leaf.click();
-                    log('   ✏️  Indicatif de pays : Sélectionné "' + wantLabel + '" via option radio après scroll (Firebase)', 5);
-                    filled = true;
-                  } catch (e) {
-                    log('   ⏭️  Indicatif de pays : échec clic option "' + wantLabel + '" après scroll (' + e.message + ')', 5);
-                  }
-                  return;
-                }
-                if (tries++ >= maxTries) {
-                  log('   ⏭️  Indicatif de pays : option "' + wantLabel + '" non visible après scroll', 5);
-                  return;
-                }
-                list.scrollTop += 260;
-                setTimeout(scrollAndFind, 180);
-              })();
-              return;
-            }
-          }
-          if (opt && opt.offsetParent) {
-            const leaf = opt.closest('[data-automation-id="promptLeafNode"]') ||
-              opt.closest('[role="menuitemradio"], [role="option"], li, div') || opt;
-            try {
-              leaf.click();
-              log('   ✏️  Indicatif de pays : Sélectionné "' + wantLabel + '" via option radio (Firebase)', 5);
-              filled = true;
-            } catch (e) {
-              log('   ⏭️  Indicatif de pays : échec clic option "' + wantLabel + '" (' + e.message + ')', 5);
-            }
-          } else {
-            log('   ⏭️  Indicatif de pays : option "' + wantLabel + '" non visible', 5);
-          }
+      if (!indicatifTextbox) {
+        indicatifTextbox = document.querySelector('[role="textbox"][aria-label^="Indicatif de pays"]') ||
+          document.querySelector('input[aria-label*="Indicatif de pays"]');
+      }
+      if (indicatifTextbox && indicatifTextbox.offsetParent !== null) {
+        scrollIntoViewIfNeeded(indicatifTextbox);
+        try {
+          indicatifTextbox.focus();
+          indicatifTextbox.click();
+        } catch (_) {}
+        // On tape directement le label complet attendu (France (+33) / Royaume-Uni (+44) / autre)
+        fillInput(indicatifTextbox, wantLabel);
+        setTimeout(function () {
+          pressEnterSequence(indicatifTextbox);
+          log('   ✏️  Indicatif de pays : "' + wantLabel + '" + Entrée (Firebase)', 5);
+          filled = true;
         }, 400);
-      }, 250);
+      } else {
+        log('   ⏭️  Indicatif de pays : textbox non trouvée → Skip', 5);
+      }
     } else {
       log('   ⏭️  Indicatif de pays : pas de phone_country_code Firebase → Skip', 5);
     }
