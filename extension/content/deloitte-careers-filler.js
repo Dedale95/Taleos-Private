@@ -1076,6 +1076,13 @@
         setTimeout(hideBanner, 2000);
         return;
       }
+      // Sur apply/applyManually : on NE relance PAS, on laisse l'utilisateur cliquer « Enregistrer et continuer »
+      if (url.includes('apply/applyManually')) {
+        log('Champs remplis sur applyManually → arrêt de l\'automatisation (pas de retry)', 5);
+        chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
+        setTimeout(hideBanner, 2000);
+        return;
+      }
       // Sur /apply (page d'entrée) on peut relancer une fois pour s'assurer que tout est bien pris en compte
       log('Champs remplis → réessai dans 2s', 5);
       setTimeout(runAutomation, 2000);
