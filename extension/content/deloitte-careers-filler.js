@@ -782,7 +782,22 @@
       }
     } catch (_) {}
 
-    // 2) Fallback : utiliser le champ de recherche interne s'il existe encore
+    // 2) Fallback : si rien trouvé, prendre le premier listbox du formulaire (c'est ce champ en haut de page)
+    if (!hearAboutFilled) {
+      try {
+        const firstListboxBtn = document.querySelector(
+          'form button[aria-haspopup="listbox"], form [role="combobox"]'
+        );
+        if (firstListboxBtn && firstListboxBtn.offsetParent !== null) {
+          if (clickWorkdayListboxOption(firstListboxBtn, SITE_DELOITTE_CAREERS, 'Comment nous avez-vous connus? (fallback premier listbox)')) {
+            hearAboutFilled = true;
+            filled = true;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3) Dernier fallback : utiliser le champ de recherche interne s'il existe encore
     const hearSearchBox = !hearAboutFilled && (
       document.querySelector('input[data-automation-id="searchBox"][id="source--source"]') ||
       findInputByLabel(['comment nous avez-vous connus', 'how did you hear about us']) ||
@@ -959,7 +974,9 @@
       const titleOption = /madame|mme|mrs|female/i.test(titleCivility) ? 'Madame' : 'Monsieur';
       const titleBtn =
         document.querySelector('button[aria-haspopup="listbox"][aria-label*="Titre (préfixe)"]') ||
-        document.querySelector('button[aria-haspopup="listbox"][name*="legalName--title"]');
+        document.querySelector('[role="combobox"][aria-label*="Titre (préfixe)"]') ||
+        document.querySelector('button[aria-haspopup="listbox"][name*="legalName--title"]') ||
+        document.querySelector('[role="combobox"][name*="legalName--title"]');
       if (titleBtn && titleBtn.offsetParent !== null) {
         scrollIntoViewIfNeeded(titleBtn);
         if (clickWorkdayListboxOption(titleBtn, titleOption, 'Titre (préfixe)')) filled = true;
@@ -995,7 +1012,9 @@
     // ——— Type d'appareil téléphonique : bouton listbox → Mobile Personnel ———
     const phoneTypeBtn = document.querySelector(
       'button[aria-haspopup="listbox"][aria-label*="Type d\'appareil téléphonique"], ' +
-      'button[aria-haspopup="listbox"][name*="phoneType"]'
+      '[role="combobox"][aria-label*="Type d\'appareil téléphonique"], ' +
+      'button[aria-haspopup="listbox"][name*="phoneType"], ' +
+      '[role="combobox"][name*="phoneType"]'
     );
     if (phoneTypeBtn && phoneTypeBtn.offsetParent !== null) {
       scrollIntoViewIfNeeded(phoneTypeBtn);
