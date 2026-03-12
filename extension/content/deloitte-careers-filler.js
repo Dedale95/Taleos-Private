@@ -46,6 +46,33 @@
     el.blur();
   }
 
+  /**
+   * Remplir un input en simulant une saisie caractère par caractère pour que
+   * Workday/React enregistre la valeur (validation "obligatoire" basée sur l'état interne).
+   */
+  function fillInputWorkdayLikeUser(el, value, label) {
+    if (!el || value == null || value === '') return;
+    const str = String(value).trim();
+    if (!str) return;
+    scrollIntoViewIfNeeded(el);
+    el.focus();
+    el.select();
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    function setVal(v) {
+      if (nativeSetter) nativeSetter.call(el, v);
+      else el.value = v;
+    }
+    setVal('');
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      setVal(str.slice(0, i + 1));
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: c }));
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.blur();
+    if (label) log('   ✏️  ' + label + ' : saisi comme utilisateur (Workday)', 5);
+  }
+
   /** Remplir seulement si vide ou différent de Firebase (log skip ou remplacer). Écrit la valeur telle quelle (avec espaces). */
   function fillInputIfNeeded(el, value, label) {
     if (!el) return false;
@@ -162,6 +189,36 @@
       el.blur();
       log('   🔁 ' + label + ' : champ actualisé par clic simulé (Workday validation)', 5);
     } catch (_) {}
+  }
+
+  /**
+   * Réappliquer les valeurs des champs texte en simulant une saisie caractère par caractère,
+   * pour que Workday/React enregistre l'état et accepte "Enregistrer et continuer".
+   */
+  function refreshWorkdayRequiredFieldsWithTyping(profile) {
+    if (!profile) return;
+    try {
+      const firstnameEl = document.getElementById('name--legalName--firstName') || document.querySelector('input[name="legalName--firstName"]');
+      const lastnameEl = document.getElementById('name--legalName--lastName') || document.querySelector('input[name="legalName--lastName"]');
+      const addressEl = document.querySelector('input[id*="address"], input[name*="address"]') || findInputByLabel(['nature et nom de la voie', 'address', 'adresse']);
+      const cityEl = findInputByLabel(['ville', 'city']);
+      const zipEl = findInputByLabel(['code postal', 'postal code', 'zip']);
+      const phoneEl = document.getElementById('phoneNumber--phoneNumber') || document.querySelector('input[name="phoneNumber"][id*="phoneNumber"]') || document.querySelector('input[name="phoneNumber"]');
+      const firstname = (profile.firstname || '').trim();
+      const lastname = (profile.lastname || '').trim();
+      const address = (profile.address || '').trim();
+      const city = (profile.city || '').trim();
+      const zipcode = (profile.zipcode || '').trim();
+      const phoneVal = (profile.phone_number || profile['phone-number'] || profile.phone || '').trim().replace(/\s/g, '');
+      if (firstnameEl && firstname) fillInputWorkdayLikeUser(firstnameEl, firstname, 'Prénom (saisie Workday)');
+      if (lastnameEl && lastname) fillInputWorkdayLikeUser(lastnameEl, lastname, 'Nom de famille (saisie Workday)');
+      if (addressEl && address) fillInputWorkdayLikeUser(addressEl, address, 'Adresse (saisie Workday)');
+      if (cityEl && city) fillInputWorkdayLikeUser(cityEl, city, 'Ville (saisie Workday)');
+      if (zipEl && zipcode) fillInputWorkdayLikeUser(zipEl, zipcode, 'Code postal (saisie Workday)');
+      if (phoneEl && phoneVal) fillInputWorkdayLikeUser(phoneEl, phoneVal, 'Numéro de téléphone (saisie Workday)');
+    } catch (e) {
+      log('   ❌ refreshWorkdayRequiredFieldsWithTyping: ' + (e && e.message), 5);
+    }
   }
 
   // Certains champs obligatoires gardent l'erreur tant qu'il n'y a pas eu de « vrai » clic / blur.
@@ -795,6 +852,8 @@
     // pour que Workday rafraîchisse ses messages d'erreur (comme si on cliquait dans chaque champ).
     setTimeout(refreshWorkdayRequiredFields, 800);
     setTimeout(refreshWorkdayRequiredFields, 1500);
+    // Réappliquer les valeurs en « saisie caractère par caractère » pour que React/Workday enregistre l'état.
+    setTimeout(function() { refreshWorkdayRequiredFieldsWithTyping(profile); }, 2200);
 
     if (filled) {
       formFillRetryCount = 0;
