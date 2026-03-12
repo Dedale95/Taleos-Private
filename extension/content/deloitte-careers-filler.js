@@ -1090,24 +1090,37 @@
         pairs.push(a + b);
       }
     }
+    const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
     const sendEnter = () => {
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      const el = document.activeElement || input;
+      for (const ev of ['keydown', 'keypress', 'keyup']) {
+        el.dispatchEvent(new KeyboardEvent(ev, opts));
+      }
+    };
+    const setValueNoBlur = (el, val) => {
+      el.focus();
+      const str = String(val == null ? '' : val).trim();
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (nativeSetter) nativeSetter.call(el, str);
+      else el.value = str;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
     };
     for (let i = 0; i < pairs.length; i++) {
       const pair = pairs[i];
       input.focus();
       input.click();
-      fillInput(input, '');
+      setValueNoBlur(input, '');
       await new Promise(r => setTimeout(r, 150));
-      fillInput(input, pair);
-      await new Promise(r => setTimeout(r, 350));
+      setValueNoBlur(input, pair);
+      await new Promise(r => setTimeout(r, 450));
       sendEnter();
       await new Promise(r => setTimeout(r, 750));
       collectVisibleOptions();
     }
     await new Promise(r => setTimeout(r, 200));
     input.focus();
-    fillInput(input, 'Autre');
+    setValueNoBlur(input, 'Autre');
     await new Promise(r => setTimeout(r, 400));
     sendEnter();
     await new Promise(r => setTimeout(r, 700));
