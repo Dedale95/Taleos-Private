@@ -598,6 +598,47 @@
             align-items: stretch; /* Uniformiser les hauteurs de cartes */
         }
 
+        .accordion-pagination {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .accordion-pagination-info {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .accordion-pagination-info strong { color: #333; font-weight: 600; }
+        .accordion-pagination-btns {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .accordion-pagination-btns button {
+            padding: 6px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .accordion-pagination-btns button:hover:not(:disabled):not(.active) {
+            border-color: #6b4ce6;
+            color: #6b4ce6;
+        }
+        .accordion-pagination-btns button.active {
+            background: linear-gradient(135deg, #6b4ce6 0%, #8b5cf6 100%);
+            color: #fff;
+            border-color: transparent;
+        }
+        .accordion-pagination-btns button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .accordion-pagination-btns button.ellipsis { border: none; background: transparent; cursor: default; }
+
         .job-card {
             background: white;
             border-radius: 16px;
@@ -1430,6 +1471,7 @@
         let isCreatingAccordion = false; // Flag pour éviter les rechargements pendant la création
         let accordionsLoaded = false; // Flag pour éviter les rechargements multiples
         let isLoadingAccordions = false; // Flag pour éviter les chargements simultanés
+        let accordionResultsPage = {}; // Page courante par accordéon (pagination des résultats)
 
         // Variables pour la gestion des candidatures (synchronisées avec offres.html)
         let currentAuthState = false;
@@ -2135,7 +2177,7 @@
                     <div class="accordion-content ${isExpanded ? 'expanded' : ''}">
                         <div class="accordion-body">
                             ${renderFilters(accordionId, accordion.filters)}
-                            ${isExpanded ? renderResults(accordionId, filteredJobs) : ''}
+                            ${isExpanded ? renderResults(accordionId, filteredJobs, 1) : ''}
                         </div>
                     </div>
                 </div>
@@ -3549,20 +3591,79 @@
     `;
         }
 
-        function renderResults(accordionId, jobs) {
-            if (jobs.length === 0) {
-                return '<div class="no-results">Aucune offre ne correspond aux filtres sélectionnés.</div>';
+        const ACCORDION_RESULTS_PER_PAGE = 25;
+
+        function buildAccordionPaginationButtons(accordionId, totalPages, currentPage) {
+            if (totalPages <= 1) return '';
+            const buttons = [];
+            buttons.push(`<button type="button" class="prev-next" ${currentPage <= 1 ? 'disabled' : ''} onclick="goToAccordionPage('${accordionId}', ${currentPage - 1})">Précédent</button>`);
+            const showPages = [];
+            if (totalPages <= 7) {
+                for (let p = 1; p <= totalPages; p++) showPages.push(p);
+            } else {
+                showPages.push(1);
+                if (currentPage > 3) showPages.push('ellipsis');
+                for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) {
+                    if (!showPages.includes(p)) showPages.push(p);
+                }
+                if (currentPage < totalPages - 2) showPages.push('ellipsis');
+                if (totalPages > 1) showPages.push(totalPages);
             }
+            showPages.forEach(p => {
+                if (p === 'ellipsis') buttons.push(`<button type="button" class="ellipsis" disabled>…</button>`);
+                else buttons.push(`<button type="button" class="${p === currentPage ? 'active' : ''}" onclick="goToAccordionPage('${accordionId}', ${p})">${p}</button>`);
+            });
+            buttons.push(`<button type="button" class="prev-next" ${currentPage >= totalPages ? 'disabled' : ''} onclick="goToAccordionPage('${accordionId}', ${currentPage + 1})">Suivant</button>`);
+            return buttons.join('');
+        }
+
+        function goToAccordionPage(accordionId, page) {
+            const accordion = accordions.find(a => a.id === accordionId);
+            if (!accordion) return;
+            accordionResultsPage[accordionId] = page;
+            const filteredJobs = applyFiltersToJobs(accordion.filters);
+            const contentEl = document.querySelector(`[data-accordion-id="${accordionId}"] .accordion-content`);
+            if (!contentEl) return;
+            const resultsEl = contentEl.querySelector('.accordion-results');
+            if (resultsEl) resultsEl.outerHTML = renderResults(accordionId, filteredJobs, page);
+        }
+
+        function renderResults(accordionId, jobs, page) {
+            page = typeof page === 'number' ? page : (accordionResultsPage[accordionId] || 1);
+            if (jobs.length === 0) {
+                return '<div class="accordion-results"><div class="no-results">Aucune offre ne correspond aux filtres sélectionnés.</div></div>';
+            }
+
+            const total = jobs.length;
+            const perPage = ACCORDION_RESULTS_PER_PAGE;
+            const totalPages = Math.max(1, Math.ceil(total / perPage));
+            page = Math.max(1, Math.min(page, totalPages));
+            accordionResultsPage[accordionId] = page;
+
+            const start = (page - 1) * perPage;
+            const end = Math.min(start + perPage, total);
+            const pageJobs = jobs.slice(start, end);
+
+            const paginationHtml = totalPages > 1 ? `
+                <div class="accordion-pagination">
+                    <div class="accordion-pagination-info">
+                        Affichage de <strong>${start + 1}-${end}</strong> sur <strong>${total}</strong> offres
+                    </div>
+                    <div class="accordion-pagination-btns">
+                        ${buildAccordionPaginationButtons(accordionId, totalPages, page)}
+                    </div>
+                </div>
+            ` : '';
 
             return `
                 <div class="accordion-results">
                     <div class="accordion-results-header">
-                        <div class="accordion-results-title">Résultats (${jobs.length} offres)</div>
+                        <div class="accordion-results-title">Résultats (${total} offres)</div>
                     </div>
                     <div class="jobs-grid">
-                        ${jobs.slice(0, 50).map(job => renderJobCard(job)).join('')}
+                        ${pageJobs.map(job => renderJobCard(job)).join('')}
                     </div>
-                    ${jobs.length > 50 ? `<div style="text-align: center; margin-top: 20px; color: #666;">... et ${jobs.length - 50} autres offres</div>` : ''}
+                    ${paginationHtml}
                 </div>
             `;
         }
@@ -3794,17 +3895,17 @@
                 countEl.textContent = `${filteredJobs.length} offres`;
             }
 
-            // Mettre à jour les résultats si l'accordéon est ouvert
+            // Mettre à jour les résultats si l'accordéon est ouvert (retour page 1 quand les filtres changent)
             const contentEl = document.querySelector(`[data-accordion-id="${accordionId}"] .accordion-content`);
             if (contentEl && contentEl.classList.contains('expanded')) {
+                accordionResultsPage[accordionId] = 1;
                 const resultsEl = contentEl.querySelector('.accordion-results');
                 if (resultsEl) {
-                    resultsEl.outerHTML = renderResults(accordionId, filteredJobs);
+                    resultsEl.outerHTML = renderResults(accordionId, filteredJobs, 1);
                 } else {
-                    // Insérer les résultats si ils n'existent pas encore
                     const bodyEl = contentEl.querySelector('.accordion-body');
                     if (bodyEl) {
-                        bodyEl.insertAdjacentHTML('beforeend', renderResults(accordionId, filteredJobs));
+                        bodyEl.insertAdjacentHTML('beforeend', renderResults(accordionId, filteredJobs, 1));
                     }
                 }
             }
