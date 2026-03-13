@@ -144,10 +144,8 @@ async function refreshTaleosTabs() {
 async function init() {
   await setVersion();
   const doReload = async () => {
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      try { await chrome.tabs.reload(tab.id); } catch (_) {}
-    }
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.id) chrome.tabs.reload(activeTab.id).catch(() => {});
     if (chrome?.runtime?.reload) chrome.runtime.reload();
   };
   document.getElementById('reload-btn')?.addEventListener('click', doReload);

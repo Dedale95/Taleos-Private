@@ -560,7 +560,7 @@
     log('📋 Profil Firebase (Études) :', 5);
     log('   Établissement: ' + (establishmentVal || '—') + '  |  Diplôme: ' + (profile.education_level || '—') + '  |  Année fin: ' + (yearEnd || '—'), 5);
 
-    // ——— Établissement ou université : simulateTyping → wait results → click option ———
+    // ——— Établissement ou université : simulateTyping → wait results → double Enter ———
     var estabInput = document.querySelector('input[data-automation-id="searchBox"][id*="school"]') ||
       document.querySelector('input[id*="school"][placeholder="Rechercher"]') ||
       findInputByLabel(['établissement ou université', 'institution']);
@@ -568,47 +568,14 @@
       scrollIntoViewIfNeeded(estabInput);
       log('   ⌨️  Établissement → frappe "' + establishmentVal + '"…', 5);
       simulateTyping(estabInput, establishmentVal, function() {
-        log('   ⌨️  Établissement → frappe terminée, attente résultats…', 5);
-        var estabTarget = establishmentVal.toLowerCase();
-        var estabAttempt = 0;
-        function trySelectEstablishment() {
-          estabAttempt++;
-          var options = Array.from(document.querySelectorAll(
-            '[data-automation-id="promptOption"], [role="option"], [data-automation-id="menuItem"]'
-          )).filter(function(o) {
-            if (!o.offsetParent) return false;
-            var isChip = !!o.closest('[data-automation-id="selectedItem"]');
-            if (isChip) return false;
-            var txt = (o.textContent || '').trim().toLowerCase();
-            return txt.length > 0 && txt !== 'aucun article.' && txt !== 'no items.';
-          });
-          var match = options.find(function(o) {
-            var txt = (o.textContent || o.getAttribute('data-automation-label') || '').trim().toLowerCase();
-            return txt === estabTarget || txt.includes(estabTarget);
-          });
-          if (!match) {
-            match = options.find(function(o) {
-              var txt = (o.textContent || o.getAttribute('data-automation-label') || '').trim().toLowerCase();
-              return estabTarget.includes(txt) && txt.length >= 3;
-            });
-          }
-          if (match) {
-            var clickTarget = match.closest('[data-automation-id="menuItem"], [role="option"], li') || match;
-            clickTarget.click();
-            log('   ✅ Établissement → ' + (match.textContent || '').trim() + ' (sélectionné)', 5);
-          } else if (options.length === 1) {
-            var only = options[0].closest('[data-automation-id="menuItem"], [role="option"], li') || options[0];
-            only.click();
-            log('   ✅ Établissement → ' + (options[0].textContent || '').trim() + ' (seul résultat)', 5);
-          } else if (estabAttempt < 5) {
-            log('   ⏳ Établissement → attente résultats (' + options.length + ' options visibles), retry ' + estabAttempt + '/5', 5);
-            setTimeout(trySelectEstablishment, 1000);
-          } else {
+        log('   ⌨️  Établissement → frappe terminée, attente résultats puis double Enter…', 5);
+        setTimeout(function() {
+          pressEnterSequence(estabInput);
+          setTimeout(function() {
             pressEnterSequence(estabInput);
-            log('   ⏭️  Établissement → Enter fallback (aucune option après ' + estabAttempt + ' tentatives)', 5);
-          }
-        }
-        setTimeout(trySelectEstablishment, 1500);
+            log('   ✅ Établissement → ' + establishmentVal + ' (double Enter)', 5);
+          }, 400);
+        }, 1500);
       });
     } else if (!establishmentVal) {
       log('   ⏭️  Établissement → pas de valeur Firebase', 5);
