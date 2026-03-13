@@ -1597,7 +1597,11 @@
             "rennes": "Bretagne", "brest": "Bretagne", "saint-gregoire": "Bretagne", "saint-grégoire": "Bretagne",
             "orleans": "Centre-Val de Loire", "orléans": "Centre-Val de Loire", "tours": "Centre-Val de Loire",
             "rouen": "Normandie", "caen": "Normandie", "dijon": "Bourgogne-Franche-Comté",
-            "londres": "Londres", "london": "Londres", "new york": "New York", "singapour": "Singapour"
+            "londres": "Londres", "london": "Londres", "new york": "New York", "singapour": "Singapour",
+            "millénaire 4": "Île-de-France", "millenaire 4": "Île-de-France"
+        };
+        const CITY_TO_COUNTRY_FILTRES = {
+            'bruxelles': 'Belgique', 'brussels': 'Belgique', 'zaventem': 'Belgique'
         };
 
         function getCityRegion(city, country) {
@@ -1605,6 +1609,7 @@
             if (!city || !String(city).trim()) return "Autres régions françaises";
             const normalized = normalizeCityForLookup(city);
             if (!normalized) return "Autres régions françaises";
+            if (CITY_TO_COUNTRY_FILTRES[normalized] || CITY_TO_COUNTRY_FILTRES[city.trim().toLowerCase()]) return null;
             const regionByKey = FRENCH_REGIONS_LOOKUP[normalized] || FRENCH_REGIONS_LOOKUP[normalized.replace(/-/g, ' ')];
             if (regionByKey) return regionByKey;
             if (cityToRegion[normalized]) return cityToRegion[normalized];
@@ -2641,21 +2646,24 @@
             'Europe': [
                 'France', 'Allemagne', 'Luxembourg', 'Roumanie', 'Pologne', 'Italie',
                 'Royaume-Uni', 'Suisse', 'Portugal', 'Espagne', 'Suède', 'Irlande',
-                'Belgique', 'Pays-Bas', 'Autriche', 'Monaco', 'République Tchèque'
+                'Belgique', 'Pays-Bas', 'Autriche', 'Monaco', 'République Tchèque',
+                'Ukraine', 'Hongrie', 'Bulgarie', 'Slovaquie', 'Norvège', 'Jersey'
             ],
             'Asie': [
                 'Inde', 'Malaisie', 'Hong-Kong', 'Singapour', 'Japon', 'Chine',
-                'Corée du Sud', 'Taiwan', 'Thaïlande', 'Émirats Arabes Unis'
+                'Corée du Sud', 'Taïwan', 'Thaïlande', 'Émirats Arabes Unis',
+                'Philippines', 'Vietnam'
             ],
             'Afrique': [
                 'Maroc', 'Côte D\'Ivoire', 'Tunisie', 'Cameroun', 'Gabon',
-                'République Démocratique Du Congo', 'Bénin', 'République Du Kenya'
+                'RD Congo', 'Bénin', 'Kenya', 'Algérie', 'Afrique du Sud'
             ],
             'Amériques': [
-                'États-Unis', 'Canada', 'Mexique'
+                'États-Unis', 'Canada', 'Mexique', 'Colombie', 'Brésil',
+                'Argentine', 'Chili', 'Pérou'
             ],
             'Océanie / Pacifique': [
-                'Australie', 'Vanuatu', 'Polynésie Française'
+                'Australie', 'Vanuatu', 'Polynésie Française', 'Nouvelle-Zélande'
             ]
         };
 

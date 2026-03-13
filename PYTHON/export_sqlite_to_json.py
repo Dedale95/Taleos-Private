@@ -227,12 +227,15 @@ def fix_location(loc):
     # Cas comme \"- - France\" ou \"- France\" → on garde uniquement le pays
     if not city or city == '-':
         return normalize_country(country)
-    # Corriger pays erroné pour villes connues hors France (ex: Tunis - France → Tunisie)
+    # Corriger pays erroné pour villes connues hors France (ex: Tunis - France → Tunisie, Bruxelles - France → Belgique)
     if country.lower() == 'france' and city:
         correct_country = get_country_from_city(city)
         if correct_country:
             return f"{city} - {normalize_country(correct_country)}"
-    # Toujours normaliser le nom du pays pour cohérence (France, Royaume-Uni, etc.)
+    # Deutschlandweit = "partout en Allemagne" → garder uniquement le pays
+    if city.lower().strip() == 'deutschlandweit' and country.lower() in ('allemagne', 'germany'):
+        return normalize_country(country)
+    # Toujours normaliser le nom du pays pour cohérence (France, Royaume-Uni, Taïwan, etc.)
     return f"{city} - {normalize_country(country)}"
 
 

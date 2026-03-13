@@ -1541,6 +1541,7 @@
             if (/^\d+\s/i.test(t) && t.length < 25) return true;
             if (/provincia\s+di|e\s+provincia|e\s+valtellina/i.test(t)) return true;
             if (/allee|allée|boulevard|central\s+boulevard/i.test(t) && /\d/.test(t)) return true;
+            if (/^deutschlandweit$/i.test(t)) return true;  // "Partout en Allemagne" → compter sous Allemagne
             return false;
         }
 
@@ -1565,12 +1566,20 @@
         };
 
         const CITY_TO_COUNTRY = {
-            'paris': 'France', 'lyon': 'France', 'marseille': 'France', 'lille': 'France'
+            'paris': 'France', 'lyon': 'France', 'marseille': 'France', 'lille': 'France',
+            'bruxelles': 'Belgique', 'brussels': 'Belgique', 'zaventem': 'Belgique', 'grimbergen': 'Belgique',
+            'londres': 'Royaume-Uni', 'london': 'Royaume-Uni', 'madrid': 'Espagne', 'barcelone': 'Espagne',
+            'lisbonne': 'Portugal', 'lisbon': 'Portugal', 'amsterdam': 'Pays-Bas', 'luxembourg': 'Luxembourg',
+            'kiev': 'Ukraine', 'kyiv': 'Ukraine', 'kharkiv': 'Ukraine', 'bogota': 'Colombie', 'medellin': 'Colombie',
+            'alger': 'Algérie', 'oran': 'Algérie', 'manille': 'Philippines', 'manila': 'Philippines'
         };
 
         const COUNTRY_NORMALIZATION = {
             'république du kenya': 'Kenya', 'republic of kenya': 'Kenya', 'kenya': 'Kenya',
-            'république démocratique du congo': 'RD Congo', 'rd congo': 'RD Congo', 'congo (rdc)': 'RD Congo'
+            'république démocratique du congo': 'RD Congo', 'rd congo': 'RD Congo', 'congo (rdc)': 'RD Congo',
+            'taiwan': 'Taïwan', 'taïwan': 'Taïwan',
+            'hong kong': 'Hong-Kong', 'hong-kong': 'Hong-Kong',
+            'corée du sud': 'Corée du Sud', 'corée Du Sud': 'Corée du Sud', 'corée du sud (ce lien s\'ouvre dans un nouvel onglet)': 'Corée du Sud'
         };
 
         const ITALY_CITY_TO_REGION = {
@@ -1642,6 +1651,7 @@
             "charenton-le-pont": "Île-de-France", "charenton le pont": "Île-de-France",
             "fontenay-sous-bois": "Île-de-France", "fontenay sous bois": "Île-de-France",
             "argenteuil": "Île-de-France", "montreuil": "Île-de-France", "pantin": "Île-de-France",
+            "millénaire 4": "Île-de-France", "millenaire 4": "Île-de-France",
             "aubervilliers": "Île-de-France", "drancy": "Île-de-France", "bobigny": "Île-de-France",
             "saint-ouen": "Île-de-France", "colombes": "Île-de-France", "asnieres": "Île-de-France",
             "rueil-malmaison": "Île-de-France", "suresnes": "Île-de-France", "clamart": "Île-de-France",
@@ -1695,7 +1705,7 @@
             "frankfurt": "Francfort", "munich": "Munich", "milan": "Milan", "milano": "Milan",
             "luxembourg": "Luxembourg", "bruxelles": "Bruxelles", "brussels": "Bruxelles",
             "geneve": "Genève", "genève": "Genève", "zurich": "Zurich",
-            "montreal": "Auvergne-Rhône-Alpes", "montréal": "Auvergne-Rhône-Alpes",
+            "montreal": "Montréal", "montréal": "Montréal",
             "montréal-la-cluse": "Auvergne-Rhône-Alpes", "montreal-la-cluse": "Auvergne-Rhône-Alpes",
             "casablanca": "Casablanca", "dublin": "Dublin",
             "madrid": "Madrid", "barcelone": "Barcelone", "barcelona": "Barcelone", "amsterdam": "Amsterdam"
@@ -1706,6 +1716,9 @@
             if (!city || !String(city).trim()) return "Autres régions françaises";
             const normalized = normalizeCityForLookup(city);
             if (!normalized) return "Autres régions françaises";
+            // Bruxelles, Luxembourg, etc. : ville connue hors France → ne pas l'ajouter comme région française
+            const cityCountry = CITY_TO_COUNTRY[normalized] || CITY_TO_COUNTRY[city.trim().toLowerCase()];
+            if (cityCountry && cityCountry !== 'France') return null;
             // Si la donnée contient déjà le nom de la région (ex: "Ile-De-France")
             const regionByKey = FRENCH_REGIONS_LOOKUP[normalized] || FRENCH_REGIONS_LOOKUP[normalized.replace(/-/g, ' ')];
             if (regionByKey) return regionByKey;
@@ -2091,7 +2104,19 @@
                                 const country = parts[1] ? String(parts[1]).trim() : '';
                                 
                                 if (country && country.length > 0) {
-                                    const countryNorm = normalizeCountryForFilter(country) || (String(country).toLowerCase().trim() === 'france' ? 'France' : String(country).trim());
+                                    let countryNorm = normalizeCountryForFilter(country) || (String(country).toLowerCase().trim() === 'france' ? 'France' : String(country).trim());
+                                    // Corriger pays erroné : Bruxelles, Zaventem → Belgique (pas France)
+                                    if (cityPart && countryNorm === 'France') {
+                                        const cityPartsCheck = cityPart.split(/[\/,]|\s+or\s+/i);
+                                        for (const cp of cityPartsCheck) {
+                                            const c = cp.trim().toLowerCase();
+                                            const cityCountry = CITY_TO_COUNTRY[c] || CITY_TO_COUNTRY[normalizeCityForLookup(cp)];
+                                            if (cityCountry && cityCountry !== 'France') {
+                                                countryNorm = cityCountry;
+                                                break;
+                                            }
+                                        }
+                                    }
                                     job.cleanCountries.push(countryNorm);
 
                                     // Traiter les villes avec try/catch pour éviter les erreurs
@@ -2896,21 +2921,24 @@
             'Europe': [
                 'France', 'Allemagne', 'Luxembourg', 'Roumanie', 'Pologne', 'Italie',
                 'Royaume-Uni', 'Suisse', 'Portugal', 'Espagne', 'Suède', 'Irlande',
-                'Belgique', 'Pays-Bas', 'Autriche', 'Monaco', 'République Tchèque'
+                'Belgique', 'Pays-Bas', 'Autriche', 'Monaco', 'République Tchèque',
+                'Ukraine', 'Hongrie', 'Bulgarie', 'Slovaquie', 'Norvège', 'Jersey'
             ],
             'Asie': [
                 'Inde', 'Malaisie', 'Hong-Kong', 'Singapour', 'Japon', 'Chine',
-                'Corée du Sud', 'Taiwan', 'Thaïlande', 'Émirats Arabes Unis'
+                'Corée du Sud', 'Taïwan', 'Thaïlande', 'Émirats Arabes Unis',
+                'Philippines', 'Vietnam'
             ],
             'Afrique': [
                 'Maroc', 'Côte D\'Ivoire', 'Tunisie', 'Cameroun', 'Gabon',
-                'RD Congo', 'Bénin', 'Kenya'
+                'RD Congo', 'Bénin', 'Kenya', 'Algérie', 'Afrique du Sud'
             ],
             'Amériques': [
-                'États-Unis', 'Canada', 'Mexique'
+                'États-Unis', 'Canada', 'Mexique', 'Colombie', 'Brésil',
+                'Argentine', 'Chili', 'Pérou'
             ],
             'Océanie / Pacifique': [
-                'Australie', 'Vanuatu', 'Polynésie Française'
+                'Australie', 'Vanuatu', 'Polynésie Française', 'Nouvelle-Zélande'
             ]
         };
 
@@ -3053,8 +3081,10 @@
                     };
 
                     if (hasRegions) {
+                        let sumRegions = 0;
                         regionsForCountry.forEach(region => {
                             const rCnt = (regionCounts && regionCounts[region]) || 0;
+                            sumRegions += rCnt;
                             if (hideDisabled && rCnt === 0 && !checkedRegions.has(region)) return;
                             let displayLabel = region.startsWith('__AUTRES__') ? 'Autres' : region;
                             if (region === 'Bistrița-Năsăud' || region === 'Bistrita-Nasaud') displayLabel = 'Bistrița-Năsăud (județ)';
@@ -3077,6 +3107,17 @@
                             labelEl.appendChild(sp);
                             countryChildren.appendChild(labelEl);
                         });
+                        const gap = countryCnt - sumRegions;
+                        if (gap > 0) {
+                            const labelEl = document.createElement('label');
+                            labelEl.className = 'location-region-item location-non-specifie';
+                            labelEl.style.opacity = '0.85';
+                            const sp = document.createElement('span');
+                            sp.textContent = `Non spécifié (${gap})`;
+                            sp.style.marginLeft = '22px';
+                            labelEl.appendChild(sp);
+                            countryChildren.appendChild(labelEl);
+                        }
                     }
 
                     const allRegionsChecked = regionsForCountry.length === 0 || regionsForCountry.every(r => checkedRegions.has(r));

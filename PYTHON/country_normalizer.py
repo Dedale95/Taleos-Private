@@ -157,7 +157,8 @@ COUNTRY_MAPPING = {
     'japan': 'Japon',
     'south korea': 'Corée du Sud',
     'korea': 'Corée du Sud',
-    'taiwan': 'Taiwan',
+    'taiwan': 'Taïwan',
+    'taïwan': 'Taïwan',
     'singapore': 'Singapour',
     'malaysia': 'Malaisie',
     'vietnam': 'Vietnam',
@@ -196,6 +197,8 @@ COUNTRY_MAPPING = {
     'allemagne': 'Allemagne',
     'hong-kong': 'Hong-Kong',
     'hong kong': 'Hong-Kong',
+    'corée du sud': 'Corée du Sud',
+    'corée Du Sud': 'Corée du Sud',
 }
 
 def normalize_country(country_raw):
