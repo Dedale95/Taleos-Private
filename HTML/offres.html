@@ -2286,7 +2286,7 @@
             
             // hideDisabled=true pour Pays, Régions, Famille de métiers (masque les options sans résultats)
             // Passer les valeurs restaurées pour pré-cocher les checkboxes
-            populateCheckboxFilter('countryFilter', sortedCountries, new Set(), counts.countries, true, restoredFilters?.countries);
+            populateCheckboxFilter('countryFilter', sortedCountries, new Set(), counts.countries, true, restoredFilters?.countries, restoredFilters?.continentExpanded);
             populateCheckboxFilter('regionFilter', sortedRegions, new Set(), counts.regions, true, restoredFilters?.regions);
             populateCheckboxFilter('familyFilter', Array.from(sets.families).sort(), new Set(), counts.families, true, restoredFilters?.families);
             
@@ -2311,13 +2311,15 @@
             populateCheckboxFilter('educationFilter', Array.from(sets.educations).sort(), new Set(), counts.educations, false, restoredFilters?.educations);
             
             // Appliquer les filtres restaurés après avoir créé tous les checkboxes
+            const hasRestoredCompanies = (restoredFilters?.companies && restoredFilters.companies.length > 0) ||
+                (restoredFilters?.companiesExpanded && restoredFilters.companiesExpanded.length > 0);
             if (restoredFilters && (searchKeywords.size > 0 || 
                 (restoredFilters.countries && restoredFilters.countries.length > 0) ||
                 (restoredFilters.regions && restoredFilters.regions.length > 0) ||
                 (restoredFilters.contracts && restoredFilters.contracts.length > 0) ||
                 (restoredFilters.experiences && restoredFilters.experiences.length > 0) ||
                 (restoredFilters.families && restoredFilters.families.length > 0) ||
-                (restoredFilters.companies && restoredFilters.companies.length > 0) ||
+                hasRestoredCompanies ||
                 (restoredFilters.educations && restoredFilters.educations.length > 0))) {
                 // Appliquer les filtres restaurés après un court délai pour que le DOM soit prêt
                 setTimeout(() => {
@@ -2451,7 +2453,7 @@
                 const childCheckboxes = [];
                 bpceBrands.forEach(c => {
                     const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0) return;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
                     const disabled = disabledValues.has(c);
                     const label = document.createElement('label');
                     const cb = document.createElement('input');
@@ -2527,7 +2529,7 @@
                 const childCheckboxes = [];
                 caSubs.forEach(c => {
                     const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0) return;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
                     const disabled = disabledValues.has(c);
                     const label = document.createElement('label');
                     const cb = document.createElement('input');
@@ -2602,7 +2604,7 @@
                 const childCheckboxes = [];
                 cmSubs.forEach(c => {
                     const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0) return;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
                     const disabled = disabledValues.has(c);
                     const label = document.createElement('label');
                     const cb = document.createElement('input');
@@ -2631,7 +2633,7 @@
 
             others.forEach(c => {
                 const cnt = counts[c] || 0;
-                if (hideDisabled && cnt === 0) return;
+                if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
                 const disabled = disabledValues.has(c);
                 const label = document.createElement('label');
                 label.className = 'company-filter-other';
@@ -2675,10 +2677,11 @@
             ]
         };
 
-        function populateCountryFilterWithContinents(values, counts, disabledValues, hideDisabled, restoredCheckedValues) {
+        function populateCountryFilterWithContinents(values, counts, disabledValues, hideDisabled, restoredCheckedValues, restoredContinentExpanded) {
             const container = document.getElementById('countryFilter');
             if (!container) return;
             const checkedValues = restoredCheckedValues ? new Set(restoredCheckedValues) : new Set(getCheckedValues('countryFilter'));
+            const continentExpanded = restoredContinentExpanded || {};
             container.innerHTML = '';
 
             const continentMap = {};
@@ -2714,9 +2717,12 @@
                 expandSpan.textContent = '▶';
                 expandSpan.title = 'Cliquer pour afficher/masquer les pays de ce continent';
 
+                const isExpanded = continentExpanded[label] === true;
                 const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children';
+                childrenDiv.className = 'company-group-children' + (isExpanded ? ' visible' : '');
                 childrenDiv.setAttribute('data-group', `continent-${label}`);
+                if (isExpanded) expandSpan.classList.add('expanded');
+                childrenDiv.onclick = (e) => e.stopPropagation();
 
                 groupCheckbox.onchange = () => {
                     const shouldCheck = groupCheckbox.checked;
@@ -2733,6 +2739,8 @@
                     e.stopPropagation();
                     childrenDiv.classList.toggle('visible');
                     expandSpan.classList.toggle('expanded');
+                    continentExpanded[label] = childrenDiv.classList.contains('visible');
+                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
                 };
 
                 groupDiv.appendChild(groupLabel);
@@ -2742,7 +2750,7 @@
                 countries.forEach(c => {
                     countriesAssigned.add(c);
                     const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0) return;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
                     const disabled = disabledValues.has(c);
                     const labelEl = document.createElement('label');
                     const cb = document.createElement('input');
@@ -2798,9 +2806,9 @@
             });
         }
 
-        function populateCheckboxFilter(id, values, disabledValues = new Set(), counts = {}, hideDisabled = false, restoredCheckedValues = null) {
+        function populateCheckboxFilter(id, values, disabledValues = new Set(), counts = {}, hideDisabled = false, restoredCheckedValues = null, restoredContinentExpanded = null) {
             if (id === 'countryFilter') {
-                return populateCountryFilterWithContinents(values, counts, disabledValues, hideDisabled, restoredCheckedValues);
+                return populateCountryFilterWithContinents(values, counts, disabledValues, hideDisabled, restoredCheckedValues, restoredContinentExpanded);
             }
             if (id === 'companyFilter') {
                 return populateCompanyFilterWithGroup(values, counts, disabledValues, hideDisabled, restoredCheckedValues);
@@ -2848,6 +2856,15 @@
             });
         }
 
+        function getContinentExpandedState() {
+            const state = {};
+            Object.keys(CONTINENT_GROUPS).forEach(label => {
+                const el = document.querySelector(`.company-group-children[data-group="continent-${label}"]`);
+                if (el) state[label] = el.classList.contains('visible');
+            });
+            return state;
+        }
+
         // Sauvegarder les filtres dans localStorage ET Firestore (si connecté)
         async function saveFilters() {
             const filters = {
@@ -2865,6 +2882,7 @@
                 companyGroupCAExpanded: companyGroupCAExpanded,
                 companyGroupBPCEExpanded: companyGroupBPCEExpanded,
                 companyGroupCMExpanded: companyGroupCMExpanded,
+                continentExpanded: getContinentExpandedState(),
                 savedAt: new Date().toISOString()
             };
             
@@ -2892,10 +2910,11 @@
         }
 
         // Restaurer les filtres depuis Firestore (si connecté) ou localStorage
+        // Utilise la source la plus récente (savedAt) pour éviter les données obsolètes
         async function restoreFilters() {
-            let filters = null;
+            let filtersFirestore = null;
+            let filtersLocal = null;
             
-            // Priorité 1 : Firestore si l'utilisateur est connecté
             if (firebase.auth && firebase.firestore) {
                 const auth = firebase.auth();
                 const currentUser = auth.currentUser;
@@ -2907,28 +2926,24 @@
                             .collection('user_preferences')
                             .doc('offres_filters')
                             .get();
-                        
-                        if (doc.exists) {
-                            filters = doc.data();
-                            console.log('✅ Filtres restaurés depuis Firestore');
-                        }
+                        if (doc.exists) filtersFirestore = doc.data();
                     } catch (error) {
                         console.error('Erreur lors de la restauration Firestore des filtres:', error);
                     }
                 }
             }
             
-            // Priorité 2 : localStorage si Firestore n'a rien retourné
-            if (!filters) {
-                try {
-                    const savedFilters = localStorage.getItem('offresFilters');
-                    if (savedFilters) {
-                        filters = JSON.parse(savedFilters);
-                        console.log('✅ Filtres restaurés depuis localStorage');
-                    }
-                } catch (error) {
-                    console.error('Erreur lors de la restauration localStorage des filtres:', error);
-                }
+            try {
+                const savedFilters = localStorage.getItem('offresFilters');
+                if (savedFilters) filtersLocal = JSON.parse(savedFilters);
+            } catch (error) {
+                console.error('Erreur lors de la restauration localStorage des filtres:', error);
+            }
+            
+            const ts = (f) => (f && f.savedAt ? new Date(f.savedAt).getTime() : 0);
+            const filters = (ts(filtersFirestore) >= ts(filtersLocal) ? filtersFirestore : filtersLocal) || filtersFirestore || filtersLocal;
+            if (filters) {
+                console.log('✅ Filtres restaurés depuis', ts(filtersFirestore) >= ts(filtersLocal) && filtersFirestore ? 'Firestore' : 'localStorage');
             }
             
             if (!filters) return null;
@@ -3103,7 +3118,7 @@
             
             // Mettre à jour avec hideDisabled=true pour Pays/Régions (masque les 0)
             populateCheckboxFilter('countryFilter', sortedAllCountries,
-                new Set([...allCountries].filter(c => !availableCountries.has(c) && !selectedCountries.includes(c))), countryCounts, true);
+                new Set([...allCountries].filter(c => !availableCountries.has(c) && !selectedCountries.includes(c))), countryCounts, true, selectedCountries, getContinentExpandedState());
             populateCheckboxFilter('regionFilter', sortedAllRegions,
                 new Set([...allRegions].filter(r => !availableRegions.has(r) && !selectedRegions.includes(r))), regionCounts, true);
 
@@ -3163,7 +3178,7 @@
             populateCheckboxFilter('familyFilter', sortedAllFamilies,
                 new Set([...allFamilies].filter(f => !availableFamilies.has(f) && !selectedFamilies.includes(f))), familyCounts, true);
             populateCheckboxFilter('companyFilter', Array.from(allCompanies).sort(),
-                new Set([...allCompanies].filter(c => !availableCompanies.has(c) && !selectedCompanies.includes(c))), companyCounts, true);
+                new Set([...allCompanies].filter(c => !availableCompanies.has(c) && !selectedCompanies.includes(c))), companyCounts, true, selectedCompanies);
             populateCheckboxFilter('educationFilter', Array.from(allEducations).sort(),
                 new Set([...allEducations].filter(e => !availableEducations.has(e) && !selectedEducations.includes(e))), educationCounts, false);
 

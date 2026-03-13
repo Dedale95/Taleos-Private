@@ -2604,6 +2604,7 @@
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'company-group-children';
                 childrenDiv.setAttribute('data-group', `continent-${label}`);
+                childrenDiv.onclick = (e) => e.stopPropagation();
 
                 groupCheckbox.onchange = () => {
                     const shouldCheck = groupCheckbox.checked;
