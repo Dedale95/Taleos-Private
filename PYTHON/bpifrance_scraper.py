@@ -71,6 +71,39 @@ CONTRACT_MAPPING = {
     "v.i.e": "VIE",
 }
 
+# ================= BPI criteres (famille de métier) → nom affiché =================
+# Mapping des slugs ?criteres=XXX vers les familles Taleos (harmonisé job_family_classifier)
+BPI_CRITERES_TO_JOB_FAMILY = {
+    "reseau-developpement-commercial-et-relation-client": "Commercial / Relations Clients",
+    "reseau-bancaire": "Commercial / Relations Clients",
+    "investissement-capital-developpement": "Financement et Investissement",
+    "capital-investissement": "Financement et Investissement",
+    "investissement": "Financement et Investissement",
+    "conformite-controle-permanent": "Conformité / Sécurité financière",
+    "conduite-conformite": "Conformité / Sécurité financière",
+    "conseil": "Conseil",
+    "developpement-durable-rse": "Développement durable et RSE",
+    "digital-it": "IT, Digital et Data",
+    "finances": "Finances / Comptabilité / Contrôle de gestion",
+    "innovation": "Innovation",
+    "inspection-generale-audit": "Risques / Contrôles permanents",
+    "inspection-audit": "Risques / Contrôles permanents",
+    "international": "International",
+    "juridique": "Juridique",
+    "marketing-communication-relations-publiques": "Marketing et Communication",
+    "ressources-humaines": "Ressources Humaines",
+    "risques": "Risques / Contrôles permanents",
+    "strategie-etudes": "Stratégie et études",
+}
+
+
+def criteres_to_job_family(criteres_slug: Optional[str]) -> Optional[str]:
+    """Convertit le slug criteres BPI en famille de métier Taleos."""
+    if not criteres_slug:
+        return None
+    slug = criteres_slug.strip().lower()
+    return BPI_CRITERES_TO_JOB_FAMILY.get(slug)
+
 
 def normalize_contract(raw: Optional[str]) -> Optional[str]:
     if not raw:
@@ -281,11 +314,24 @@ def extract_education_level(text: str) -> Optional[str]:
 
 
 def extract_experience_level(text: str, contract_type: Optional[str]) -> Optional[str]:
+    """Extrait le niveau d'expérience attendu depuis le texte de l'offre."""
     if contract_type in ['Stage', 'VIE', 'Alternance / Apprentissage']:
         return "0 - 2 ans"
     if not text:
         return None
     text_lower = text.lower()
+    # X ans d'expérience (priorité pour précision)
+    years_m = re.search(r"(\d+)\s*ans\s*d['\u2019]expérience", text_lower)
+    if years_m:
+        y = int(years_m.group(1))
+        if y <= 2:
+            return "0 - 2 ans"
+        if y <= 5:
+            return "3 - 5 ans"
+        if y <= 10:
+            return "6 - 10 ans"
+        return "11 ans et plus"
+    # Patterns textuels
     patterns = [
         (r'(?:plus de|more than|over)\s*(?:10|11|15|20)\s*(?:ans|years?)', "11 ans et plus"),
         (r'(?:10|11|12|15)\+?\s*(?:ans|years?)', "11 ans et plus"),
@@ -294,6 +340,7 @@ def extract_experience_level(text: str, contract_type: Optional[str]) -> Optiona
         (r'(?:3|4|5)\s*(?:-|à|to)\s*(?:5|6|7)\s*(?:ans|years?)', "3 - 5 ans"),
         (r'(?:0|1|2)\s*(?:-|à|to)\s*(?:2|3)\s*(?:ans|years?)', "0 - 2 ans"),
         (r'junior|débutant|beginner|entry|jeune diplômé|stagiaire|alternant', "0 - 2 ans"),
+        (r'première expérience|premier poste|première expérience réussie', "0 - 2 ans"),
     ]
     for pattern, level in patterns:
         if re.search(pattern, text_lower):
@@ -411,7 +458,7 @@ async def fetch_listing_page(context: BrowserContext, page_num: int, sem: asynci
 # FETCH JOB DETAIL (description complète)
 # =========================================================
 async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Semaphore) -> None:
-    """Enrichit un job avec la description depuis la page détail."""
+    """Enrichit un job avec la description et les tags explicites depuis la page détail."""
     async with sem:
         page = await context.new_page()
         try:
@@ -420,27 +467,72 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
 
-            # Titre (au cas où pas extrait correctement en liste)
+            # Titre
             h1 = soup.select_one("h1")
             if h1:
                 job["job_title"] = h1.get_text(strip=True)
 
-            # Métadonnées header: "cdi • temps-plein • Paris (Haussmann)"
-            header_meta = soup.select_one(".entry-header .meta, .job-meta, .offer-meta, [class*='meta']")
-            if header_meta:
-                meta_text = header_meta.get_text(strip=True).lower()
-                if " • " in meta_text:
-                    parts = meta_text.split(" • ")
-                    if not job.get("contract_type") and parts:
-                        job["contract_type"] = normalize_contract(parts[0])
-                    if not job.get("location") and len(parts) > 1:
-                        loc_raw = " ".join(parts[1:])
-                        job["location"] = build_location(loc_raw)
+            # === TAGS EXPLICITES (type contrat) ===
+            # Li de la zone métadonnées (avant "Ces offres peuvent aussi vous intéresser")
+            ces_offres_h2 = soup.find("h2", string=re.compile(r"Ces offres", re.I))
+            for li in soup.find_all("li"):
+                if ces_offres_h2 and li.find_previous("h2", string=re.compile(r"Ces offres", re.I)):
+                    continue  # li après "Ces offres", ignorer
+                txt = li.get_text(strip=True)
+                if not txt or len(txt) > 50:
+                    continue
+                txt_lower = txt.lower()
+                if txt_lower in ("cdi", "cdd", "stage", "vie", "v.i.e"):
+                    job["contract_type"] = normalize_contract(txt)
+                    break
+                if txt_lower == "alternance":
+                    job["contract_type"] = "Alternance / Apprentissage"
+                    break
 
-            # Description: contenu principal (missions, profil, etc.)
+            # Localisation: "Vos futurs bureaux : Paris (Haussmann)" ou header "cdi • Paris (Haussmann)"
+            for h3 in soup.select("h3"):
+                bureau_text = h3.get_text(strip=True)
+                if "bureau" in bureau_text.lower() and ":" in bureau_text:
+                    loc_match = re.search(r":\s*(.+)", bureau_text)
+                    if loc_match:
+                        job["location"] = build_location(loc_match.group(1).strip())
+                        break
+            if not job.get("location"):
+                header_meta = soup.select_one(".entry-header .meta, .job-meta, [class*='meta']")
+                if header_meta:
+                    meta_text = header_meta.get_text(strip=True)
+                    if " • " in meta_text:
+                        parts = meta_text.split(" • ")
+                        if len(parts) > 1:
+                            loc_raw = " ".join(parts[1:])  # après le contrat
+                            job["location"] = build_location(loc_raw)
+
+            # Fallback header si pas encore rempli
+            if not job.get("contract_type") or not job.get("location"):
+                header_meta = soup.select_one(".entry-header .meta, .job-meta, [class*='meta']")
+                if header_meta:
+                    meta_text = header_meta.get_text(strip=True).lower()
+                    if " • " in meta_text:
+                        parts = meta_text.split(" • ")
+                        if not job.get("contract_type") and parts:
+                            job["contract_type"] = normalize_contract(parts[0])
+                        if not job.get("location") and len(parts) > 1:
+                            job["location"] = build_location(" ".join(parts[1:]))
+
+            # === FAMILLE DE MÉTIER: lien "Voir plus d'offres" → ?criteres=XXX ===
+            voir_plus = soup.select_one('a[href*="criteres="]')
+            if voir_plus:
+                href = voir_plus.get("href", "")
+                criteres_m = re.search(r"criteres=([a-z0-9\-]+)", href, re.I)
+                if criteres_m:
+                    slug = criteres_m.group(1).strip().lower()
+                    job_family_from_tag = criteres_to_job_family(slug)
+                    if job_family_from_tag:
+                        job["job_family"] = job_family_from_tag
+
+            # Description: contenu principal
             main = soup.select_one("article .entry-content, .job-description, .offer-content, [class*='content']")
             if main:
-                # Exclure les blocs "Ces offres peuvent aussi vous intéresser" et similaires
                 for skip in main.select(".related-jobs, .similar-offers, [class*='related']"):
                     skip.decompose()
                 desc_text = main.get_text(separator="\n", strip=True)
@@ -450,9 +542,10 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
             else:
                 job["job_description"] = ""
 
-            # Job family, education, experience
+            # Fallback job_family par classifier si pas de tag criteres
             desc = job.get("job_description", "")
-            job["job_family"] = classify_job_family(job.get("job_title", ""), desc) if desc else None
+            if not job.get("job_family") and desc:
+                job["job_family"] = classify_job_family(job.get("job_title", ""), desc)
             job["education_level"] = extract_education_level(desc)
             job["experience_level"] = extract_experience_level(desc, job.get("contract_type"))
 
