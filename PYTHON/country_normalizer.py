@@ -81,6 +81,8 @@ CITY_TO_COUNTRY = {
     'montréal': 'Canada',
     'montreal': 'Canada',
     'toronto': 'Canada',
+    'quebec': 'Canada',
+    'québec': 'Canada',
     'vancouver': 'Canada',
     'singapour': 'Singapour',
     'singapore': 'Singapour',
@@ -199,6 +201,12 @@ COUNTRY_MAPPING = {
     'hong kong': 'Hong-Kong',
     'corée du sud': 'Corée du Sud',
     'corée Du Sud': 'Corée du Sud',
+    'algerie': 'Algérie',
+    'algérie': 'Algérie',
+    'algeria': 'Algérie',
+    'deutschlandweit': 'Allemagne',
+    'millénaire 4': 'France',
+    'millenaire 4': 'France',
 }
 
 def normalize_country(country_raw):

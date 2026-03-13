@@ -218,6 +218,12 @@ def fix_location(loc):
     if ' - ' not in loc:
         if 'grandcamp maisy' in loc_lower:
             return 'Grandcamp Maisy - France'
+        if 'millénaire 4' in loc_lower or 'millenaire 4' in loc_lower:
+            return loc.strip() + ' - France'
+        if loc_lower.strip() == 'deutschlandweit':
+            return normalize_country('Allemagne')
+        if loc_lower.strip() in ('montréal', 'montreal'):
+            return loc.strip() + ' - Canada'
         return loc
     parts = loc.split(' - ', 1)
     city = (parts[0] or '').strip()

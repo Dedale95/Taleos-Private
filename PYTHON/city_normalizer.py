@@ -90,6 +90,7 @@ CITY_MAPPING = {
     'warsaw': 'Varsovie',
     'bucuresti': 'Bucarest',
     'bucharest': 'Bucarest',
+    'seoul': 'Séoul',
     'prague': 'Prague',
     'budapest': 'Budapest',
     'casablanca': 'Casablanca',
