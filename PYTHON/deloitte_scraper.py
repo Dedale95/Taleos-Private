@@ -120,6 +120,23 @@ class JobDatabase:
                 return s[:10] if len(s) >= 10 else s
             return None
 
+    def backfill_publication_dates(self):
+        """Remplit publication_date pour les offres sans date : utilise first_seen (date du 1er scrape).
+        Deloitte n'affiche pas la date de parution, donc on utilise la date à laquelle on a scrapé l'offre."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE jobs 
+                SET publication_date = date(first_seen)
+                WHERE (publication_date IS NULL OR TRIM(COALESCE(publication_date,'')) = '')
+                  AND first_seen IS NOT NULL
+            """)
+            conn.execute("""
+                UPDATE jobs 
+                SET publication_date = date('now')
+                WHERE publication_date IS NULL OR TRIM(COALESCE(publication_date,'')) = ''
+            """)
+            conn.commit()
+
     def mark_as_expired(self, urls: Set[str]):
         """Marque des offres comme expirées"""
         if not urls:
@@ -509,6 +526,10 @@ async def main():
     # Initialiser la base de données
     db = JobDatabase(config.DB_PATH)
     logging.info(f"Base de données initialisée: {config.DB_PATH}")
+
+    # Backfill publication_date pour les offres sans date (Deloitte ne fournit pas la date)
+    db.backfill_publication_dates()
+    logging.info("✓ Backfill publication_date (first_seen) pour offres sans date")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=config.HEADLESS)
