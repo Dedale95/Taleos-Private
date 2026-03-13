@@ -205,6 +205,7 @@ def fix_location(loc):
     if not loc:
         return loc
     loc = loc.strip()
+    loc = re.sub(r'\s*\(?\s*Ce\s+[Ll]ien\s+[Ss]\'[Oo]uvre\s+[Dd]ans\s+[Uu]n\s+[Nn]ouvel\s+[Oo]nglet\s*\)?', '', loc, flags=re.IGNORECASE).strip()
     if not loc:
         return loc
     if loc.upper().startswith('N/A') and (' - ' in loc or '-' in loc):

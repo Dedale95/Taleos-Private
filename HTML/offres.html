@@ -1530,6 +1530,7 @@
             if (!s || typeof s !== 'string') return true;
             const t = s.trim().toLowerCase();
             if (t.length < 2) return true;
+            if (/ce\s+lien\s+s'ouvre\s+dans\s+un\s+nouvel\s+onglet/.test(t)) return true;
             if (/\d{1,2}\s*(th|st|nd|rd)\s*floor/i.test(t)) return true;
             if (/\d+\s*(allée|allee|rue|avenue|boulevard|blvd|floor|fl)/i.test(t)) return true;
             if (/\b(gmbh|kg|&|co\.|sarl|sas)\b/i.test(t)) return true;
@@ -2076,7 +2077,9 @@
                         job.cleanCountries = [];
 
                         if (job && job.location && typeof job.location === 'string') {
-                            const loc = job.location.trim();
+                            let loc = job.location.trim();
+                            loc = loc.replace(/\s*\(?\s*Ce\s+[Ll]ien\s+[Ss]'[Oo]uvre\s+[Dd]ans\s+[Uu]n\s+[Nn]ouvel\s+[Oo]nglet\s*\)?/gi, '').trim();
+                            job.location = loc;
                             if (/^N\/A\s*-\s*/i.test(loc)) {
                                 job.location = loc.replace(/^N\/A\s*-\s*/i, '').trim();
                             }
