@@ -543,19 +543,44 @@
 
   /** Étape 2 : upload du CV depuis Firebase si profil a cv_storage_path. */
   async function uploadCvInStep2(profile) {
-    if (!profile || !profile.cv_storage_path) return;
-    const fileInput = document.querySelector('input[type="file"][id*="uploadedFile"]') ||
-      document.querySelector('input[type="file"][id*="file"]') ||
-      document.querySelector('input[type="file"]') ||
-      document.querySelector('section[aria-label*="CV"] input[type="file"]');
-    if (!fileInput) {
-      log('   ⏭️  CV : input file non trouvé', 5);
+    if (!profile || !profile.cv_storage_path) {
+      log('   ⏭️  CV → pas de cv_storage_path Firebase', 5);
       return;
     }
-    const cvName = (profile.cv_filename || (profile.cv_storage_path || '').split('/').pop()) || 'cv.pdf';
+
+    // Workday masque le vrai input[type=file] ; on le cherche en priorité par la drop zone
+    var dropZone = document.querySelector('[data-automation-id="file-upload-drop-zone"]');
+    var fileInput = null;
+
+    if (dropZone) {
+      fileInput = dropZone.querySelector('input[type="file"]');
+      if (!fileInput) {
+        // L'input peut être un frère de la drop zone ou plus haut dans l'arbre
+        var parent = dropZone.closest('[data-automation-id*="attachment"], [data-automation-id*="resume"], section, div');
+        if (parent) fileInput = parent.querySelector('input[type="file"]');
+      }
+    }
+
+    if (!fileInput) {
+      fileInput = document.querySelector('input[type="file"][id*="resumeAttachments"]') ||
+        document.querySelector('input[type="file"][id*="uploadedFile"]') ||
+        document.querySelector('input[type="file"][id*="file"]') ||
+        document.querySelector('input[type="file"]');
+    }
+
+    if (!fileInput) {
+      log('   ⏭️  CV → input file non trouvé', 5);
+      return;
+    }
+
+    var cvName = (profile.cv_filename || (profile.cv_storage_path || '').split('/').pop()) || 'cv.pdf';
     scrollIntoViewIfNeeded(fileInput);
-    const ok = await setFileInputFromStorage(fileInput, profile.cv_storage_path, cvName);
-    if (ok) log('   ✏️  CV : uploadé depuis Firebase', 5);
+    var ok = await setFileInputFromStorage(fileInput, profile.cv_storage_path, cvName);
+    if (ok) {
+      log('   ✅ CV → ' + cvName + ' uploadé depuis Firebase', 5);
+    } else {
+      log('   ❌ CV → échec upload', 5);
+    }
   }
 
   async function notifyOfferUnavailable(jobId, jobTitle) {
