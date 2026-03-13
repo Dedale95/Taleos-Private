@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from country_normalizer import get_country_from_city, normalize_country
+from experience_extractor import extract_experience_level
 
 # Configuration des chemins
 PYTHON_DIR = Path(__file__).parent
@@ -111,6 +112,17 @@ def read_from_db(db_path, company_name, live_only=True):
                             job[col] = job[col]  # Garder tel quel pour l'instant
                     except:
                         pass  # Garder la valeur originale si le parsing échoue
+            
+            # Enrichir experience_level si vide : ré-extraction depuis la description (patterns à jour)
+            if not job.get('experience_level'):
+                combined = " ".join(filter(None, [
+                    job.get('job_description') or '',
+                    job.get('company_description') or ''
+                ]))
+                if combined:
+                    extracted = extract_experience_level(combined, job.get('contract_type'))
+                    if extracted:
+                        job['experience_level'] = extracted
             
             jobs.append(job)
         
