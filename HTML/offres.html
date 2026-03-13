@@ -2038,6 +2038,9 @@
                                             try {
                                                 const region = getCityRegion(city, country);
                                                 if (region) job.cleanRegions.push(region);
+                                                else if (countryNorm !== 'France' && city && city.trim()) {
+                                                    job.cleanRegions.push(city.trim());
+                                                }
                                             } catch (e) {
                                                 console.warn(`Erreur getCityRegion pour "${city}", "${country}":`, e);
                                             }
@@ -2787,7 +2790,7 @@
                     countriesAssigned.add(country);
                     const countryCnt = counts[country] || 0;
                     const regionsForCountry = (countryToRegions && countryToRegions[country]) ? Array.from(countryToRegions[country]).sort((a, b) => (regionCounts[b] || 0) - (regionCounts[a] || 0)) : [];
-                    const hasRegions = regionsForCountry.length > 0;
+                    const hasRegions = regionsForCountry.length > 1;
                     const isCountryExpanded = countryExpanded[country] === true;
 
                     const countryHeader = document.createElement('div');
@@ -2811,7 +2814,7 @@
                     const countryExpand = document.createElement('span');
                     countryExpand.className = 'company-group-expand';
                     countryExpand.textContent = '▶';
-                    countryExpand.title = 'Cliquer pour afficher/masquer les régions';
+                    countryExpand.title = 'Cliquer pour afficher/masquer les régions ou villes';
                     if (!hasRegions) countryExpand.style.visibility = 'hidden';
 
                     const countryChildren = document.createElement('div');
@@ -2835,27 +2838,29 @@
                         saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
                     };
 
-                    regionsForCountry.forEach(region => {
-                        const rCnt = (regionCounts && regionCounts[region]) || 0;
-                        if (hideDisabled && rCnt === 0 && !checkedRegions.has(region)) return;
-                        const labelEl = document.createElement('label');
-                        labelEl.className = 'location-region-item';
-                        const cb = document.createElement('input');
-                        cb.type = 'checkbox';
-                        cb.value = region;
-                        cb.setAttribute('data-location-type', 'region');
-                        cb.checked = checkedRegions.has(region);
-                        cb.onchange = () => {
-                            countryCb.checked = allCheckboxesIn(countryChildren).every(cb2 => cb2.checked);
-                            contCb.checked = allCheckboxesIn(contChildren).every(cb2 => cb2.checked);
-                            triggerUpdate();
-                        };
-                        labelEl.appendChild(cb);
-                        const sp = document.createElement('span');
-                        sp.textContent = rCnt > 0 ? `${region} (${rCnt})` : region;
-                        labelEl.appendChild(sp);
-                        countryChildren.appendChild(labelEl);
-                    });
+                    if (hasRegions) {
+                        regionsForCountry.forEach(region => {
+                            const rCnt = (regionCounts && regionCounts[region]) || 0;
+                            if (hideDisabled && rCnt === 0 && !checkedRegions.has(region)) return;
+                            const labelEl = document.createElement('label');
+                            labelEl.className = 'location-region-item';
+                            const cb = document.createElement('input');
+                            cb.type = 'checkbox';
+                            cb.value = region;
+                            cb.setAttribute('data-location-type', 'region');
+                            cb.checked = checkedRegions.has(region);
+                            cb.onchange = () => {
+                                countryCb.checked = allCheckboxesIn(countryChildren).every(cb2 => cb2.checked);
+                                contCb.checked = allCheckboxesIn(contChildren).every(cb2 => cb2.checked);
+                                triggerUpdate();
+                            };
+                            labelEl.appendChild(cb);
+                            const sp = document.createElement('span');
+                            sp.textContent = rCnt > 0 ? `${region} (${rCnt})` : region;
+                            labelEl.appendChild(sp);
+                            countryChildren.appendChild(labelEl);
+                        });
+                    }
 
                     const allRegionsChecked = regionsForCountry.length === 0 || regionsForCountry.every(r => checkedRegions.has(r));
                     if (checkedCountries.has(country) || (regionsForCountry.length > 0 && allRegionsChecked)) {
@@ -2869,7 +2874,7 @@
                     countryHeader.appendChild(countryLabel);
                     countryHeader.appendChild(countryExpand);
                     contChildren.appendChild(countryHeader);
-                    contChildren.appendChild(countryChildren);
+                    if (hasRegions) contChildren.appendChild(countryChildren);
                 });
 
                 const allCountriesOrRegionsChecked = countries.every(c => {
