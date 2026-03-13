@@ -144,6 +144,21 @@ def normalize_job_family(raw_family: str) -> str:
     return raw_family.strip()
 
 
+def normalize_contract_type(raw_contract: str) -> str:
+    """
+    Normalise certains types de contrat pour rester sur :
+    Stage / Alternance / VIE / CDD / CDI.
+    Le gros est déjà fait dans les scrapers, ici on ajoute un filet de sécurité.
+    """
+    if not raw_contract:
+        return raw_contract
+    s = str(raw_contract).strip()
+    norm = _normalize_text(s)
+    if "auxiliaire de vacances" in norm:
+        return "Stage"
+    return s
+
+
 def normalize_experience_level(raw_exp: str) -> str:
     """
     Normalise les niveaux d'expérience pour n'exposer que :
@@ -245,6 +260,10 @@ def read_from_db(db_path, company_name, live_only=True):
             # Corriger les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)
             if job.get('location'):
                 job['location'] = fix_location(job['location'])
+
+            # Normaliser le type de contrat (filet de sécurité)
+            if job.get('contract_type'):
+                job['contract_type'] = normalize_contract_type(job['contract_type'])
             
             # Normaliser la famille de métier pour éviter la prolifération de libellés exotiques
             if job.get('job_family'):
