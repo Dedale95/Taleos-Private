@@ -2041,64 +2041,73 @@
                     return job;
                 };
 
-                // Traiter par batch de 10 avec setTimeout pour vraiment éviter le débordement de stack
-                const batchSize = 10; // Réduire à 10 pour plus de sécurité
-                
-                const processAllBatches = async () => {
-                    for (let start = 0; start < data.length; start += batchSize) {
-                        const end = Math.min(start + batchSize, data.length);
-                        
-                        // Traiter le batch
-                        for (let i = start; i < end; i++) {
-                            try {
-                                const processedJob = processJob(data[i]);
-                                allJobs.push(processedJob);
-                            } catch (error) {
-                                console.error(`Erreur lors du traitement du job ${i}:`, error);
-                                // Ajouter quand même le job avec des valeurs par défaut
-                                if (data[i]) {
-                                    data[i].cleanRegions = data[i].cleanRegions || [];
-                                    data[i].cleanCountries = data[i].cleanCountries || [];
-                                    allJobs.push(data[i]);
-                                }
-                            }
-                        }
-                        
-                        // Mettre à jour le message de progression
-                        if (start % 500 === 0 && jobsContainer) {
-                            const progress = Math.floor((start / data.length) * 100);
-                            jobsContainer.innerHTML = '<div class="no-results"><h3>⏳ Traitement des données...</h3><p>' + start + ' / ' + data.length + ' offres traitées (' + progress + '%)</p></div>';
-                        }
-                        
-                        // Laisser le navigateur respirer entre chaque batch (même les petits)
-                        if (start + batchSize < data.length) {
-                            await new Promise(resolve => setTimeout(resolve, 1)); // 1ms entre chaque batch
+                const INITIAL_BATCH = 280;
+                const BACKGROUND_BATCH = 150;
+
+                const pushProcessed = (job, i) => {
+                    try {
+                        allJobs.push(processJob(job));
+                    } catch (error) {
+                        if (data[i]) {
+                            data[i].cleanRegions = data[i].cleanRegions || [];
+                            data[i].cleanCountries = data[i].cleanCountries || [];
+                            allJobs.push(data[i]);
                         }
                     }
                 };
-                
-                // Démarrer le traitement par batch
-                await processAllBatches();
 
-                console.log(`✅ Traitement terminé : ${allJobs.length} offres normalisées`);
-
-                // Afficher message de finalisation
-                if (jobsContainer) {
-                    jobsContainer.innerHTML = '<div class="no-results"><h3>⚙️ Initialisation des filtres...</h3><p>Préparation de l\'interface...</p></div>';
+                // Premier batch : traitement synchrone pour affichage immédiat
+                allJobs = [];
+                const firstEnd = Math.min(INITIAL_BATCH, data.length);
+                for (let i = 0; i < firstEnd; i++) {
+                    pushProcessed(data[i], i);
                 }
+
+                filteredJobs = [...allJobs];
+                document.getElementById('filteredJobs').textContent = allJobs.length;
+                const quickCountries = new Set();
+                allJobs.forEach(job => {
+                    if (job.cleanCountries) job.cleanCountries.forEach(c => quickCountries.add(c));
+                });
+                document.getElementById('countries').textContent = quickCountries.size;
 
                 await initializeFilters();
-                filteredJobs = [...allJobs];
-                
-                // Message avant le rendu
-                if (jobsContainer) {
-                    jobsContainer.innerHTML = '<div class="no-results"><h3>🎨 Affichage des offres...</h3><p>Rendu de ' + filteredJobs.length + ' offres...</p></div>';
-                }
-                
                 await renderJobs();
                 updateStats();
-                
-                console.log(`✅ Affichage terminé : ${filteredJobs.length} offres affichées`);
+                console.log(`✅ Premier affichage : ${allJobs.length} offres (total ${totalCount})`);
+
+                if (firstEnd >= totalCount) {
+                    return;
+                }
+
+                // Bannière "chargement en arrière-plan"
+                const banner = document.createElement('div');
+                banner.id = 'backgroundLoadBanner';
+                banner.style.cssText = 'position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#6b4ce6 0%,#8b5cf6 100%);color:#fff;padding:10px 16px;border-radius:8px;margin-bottom:16px;font-size:0.9rem;box-shadow:0 2px 8px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+                banner.innerHTML = '<span class="banner-spinner" style="display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;"></span><span class="banner-text">Chargement des offres en arrière-plan : ' + firstEnd + ' / ' + totalCount + '</span>';
+                const container = document.getElementById('jobsContainer');
+                if (container && container.firstChild) {
+                    container.insertBefore(banner, container.firstChild);
+                } else {
+                    container.appendChild(banner);
+                }
+
+                (async function runBackgroundLoad() {
+                    for (let start = firstEnd; start < totalCount; start += BACKGROUND_BATCH) {
+                        await new Promise(r => setTimeout(r, 0));
+                        const end = Math.min(start + BACKGROUND_BATCH, totalCount);
+                        for (let i = start; i < end; i++) {
+                            pushProcessed(data[i], i);
+                        }
+                        const textEl = banner.querySelector('.banner-text');
+                        if (textEl) textEl.textContent = 'Chargement des offres en arrière-plan : ' + allJobs.length + ' / ' + totalCount;
+                    }
+                    banner.remove();
+                    await initializeFilters();
+                    await applyFilters();
+                    updateStats();
+                    console.log(`✅ Chargement complet : ${allJobs.length} offres`);
+                })();
             } catch (error) {
                 console.error('Erreur lors du traitement:', error);
                 const jobsContainer = document.getElementById('jobsContainer');
