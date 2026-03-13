@@ -1600,12 +1600,13 @@
                                         job.company_name = job.company_name.replace(/\s*\([A-Z&]+\)\s*$/g, '').trim();
                                     }
                                     
-                                    // Harmonisation des types de contrat
+                                    // Harmonisation des types de contrat : une seule entrée "Alternance" pour tout ce qui est alternance/apprentissage
                                     if (job && job.contract_type && typeof job.contract_type === 'string') {
-                                        const contractLower = job.contract_type.toLowerCase();
-                                        if (contractLower === 'alternance' || contractLower === 'alternance / apprentissage' || contractLower === 'apprentissage') {
-                                            job.contract_type = 'Alternance';
-                                        }
+                                        const c = job.contract_type.trim();
+                                        const contractLower = c.toLowerCase();
+                                        const isAlternance = contractLower === 'alternance' || contractLower === 'alternance / apprentissage' || contractLower === 'apprentissage' ||
+                                            contractLower.includes("contrat d'apprentissage") || contractLower.includes('contrat de professionnalisation') || contractLower.includes('contrat en alternance');
+                                        if (isAlternance) job.contract_type = 'Alternance';
                                     }
                                     
                                     // Harmonisation des niveaux d'études (identique à offres.html)
