@@ -16,6 +16,7 @@ BNP_DB = PYTHON_DIR / "bnp_paribas_jobs.db"
 BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 CREDIT_MUTUEL_DB = PYTHON_DIR / "credit_mutuel_jobs.db"
+ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 
 def main():
     print("=" * 55)
@@ -32,6 +33,7 @@ def main():
         ("BPCE", BPCE_DB),
         ("Bpifrance", BPIFRANCE_DB),
         ("Crédit Mutuel", CREDIT_MUTUEL_DB),
+        ("ODDO BHF", ODDO_BHF_DB),
     ]
 
     total_live = 0

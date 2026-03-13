@@ -2229,10 +2229,17 @@
         function isCreditMutuelSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
-            return n.includes('crédit mutuel') || n.includes('credit mutuel') ||
-                ['cic', 'cofidis', 'euro information', 'euro-information', 'caisse fédérale', 'caisse federale',
-                 'becm', 'bfcm', 'monext', 'acm', 'assurances du credit mutuel', 'lyonnaise de banque',
-                 'credit mutuel factoring', 'credit mutuel leasing', 'ccs', 'synergie'].some(s => n.includes(s));
+            const cmPatterns = [
+                'crédit mutuel', 'credit mutuel', 'cic', 'cofidis', 'euro information', 'euro-information',
+                'caisse fédérale', 'caisse federale', 'caisse regionale', 'caisse régionale',
+                'caisse de credit mutuel', 'caisse de crédit mutuel', 'becm', 'bfcm', 'monext', 'acm',
+                'assurances du credit mutuel', 'lyonnaise de banque', 'credit mutuel factoring',
+                'credit mutuel leasing', 'credit mutuel gestion', 'credit mutuel asset management',
+                'ccs', 'synergie', 'ccm ', ' ccm', 'cmlaco', 'banque transatlantique', 'banque européenne',
+                'banque europeenne', 'creatis', 'factofrance', 'groupe la française', 'la française',
+                'monabanq', 'afedim', 'credit mutuel caution', 'credit mutuel amenagement', 'confederation nationale'
+            ];
+            return cmPatterns.some(s => n.includes(s)) || /^ccm\s/.test(n) || /\sccm$/.test(n);
         }
 
         function populateCompanyFilterAccordionWithGroup(accordionId, values, counts, disabledValues, hideDisabled, checkedValues) {
@@ -2910,7 +2917,8 @@
                 'euro-information': 'images/logos/euro_information.png',
                 'caisse fédérale du crédit mutuel': 'images/logos/credit_mutuel.png',
                 'caisse federale du credit mutuel': 'images/logos/credit_mutuel.png',
-                'lyonnaise de banque': 'images/logos/lyonnaise_banque.png'
+                'lyonnaise de banque': 'images/logos/lyonnaise_banque.png',
+                'oddo_bhf': 'images/logos/oddo_bhf.png'
             };
             
             // Rechercher le logo dans le mapping

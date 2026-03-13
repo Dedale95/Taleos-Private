@@ -36,6 +36,7 @@ BNP_DB = PYTHON_DIR / "bnp_paribas_jobs.db"
 BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 CREDIT_MUTUEL_DB = PYTHON_DIR / "credit_mutuel_jobs.db"
+ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 
 def fix_location(loc):
     """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie, N/A - Luxembourg → Luxembourg).
@@ -151,8 +152,9 @@ def main():
         ("BPCE", BPCE_DB),
         ("Bpifrance", BPIFRANCE_DB),
         ("Crédit Mutuel", CREDIT_MUTUEL_DB),
+        ("ODDO BHF", ODDO_BHF_DB),
     ]
-    
+
     for name, db_path in sources_info:
         print(f"📁 Lecture de {name} depuis {db_path.name}...")
         jobs = read_from_db(db_path, name, live_only=True)

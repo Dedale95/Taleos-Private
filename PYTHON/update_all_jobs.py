@@ -31,6 +31,7 @@ BNP_DB = PYTHON_DIR / "bnp_paribas_jobs.db"
 BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 CREDIT_MUTUEL_DB = PYTHON_DIR / "credit_mutuel_jobs.db"
+ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 
 def run_script(script_name, cwd=PYTHON_DIR, timeout=3600):
     print(f"🚀 Lancement de {script_name}...")
@@ -214,6 +215,7 @@ def merge_from_databases():
         ("BPCE", BPCE_DB),
         ("Bpifrance", BPIFRANCE_DB),
         ("Crédit Mutuel", CREDIT_MUTUEL_DB),
+        ("ODDO BHF", ODDO_BHF_DB),
     ]
     
     for name, db_path in sources_info:
@@ -278,6 +280,9 @@ if __name__ == "__main__":
     # 7. Scraper Crédit Mutuel
     run_script("credit_mutuel_scraper.py")
 
+    # 7b. Scraper ODDO BHF
+    run_script("oddo_bhf_scraper.py")
+
     # 8. Fusion des données depuis les bases SQLite
     merge_from_databases()
 
@@ -305,7 +310,7 @@ if __name__ == "__main__":
         total_expired = 0
         print(f"   {'Entité':<22} │ {'Live':>6} │ {'Expired':>7}")
         print("   " + "-" * 40)
-        for name, db_path in [("Crédit Agricole", CA_DB), ("Société Générale", SG_DB), ("Deloitte", DELOITTE_DB), ("BNP Paribas", BNP_DB), ("BPCE", BPCE_DB), ("Bpifrance", BPIFRANCE_DB), ("Crédit Mutuel", CREDIT_MUTUEL_DB)]:
+        for name, db_path in [("Crédit Agricole", CA_DB), ("Société Générale", SG_DB), ("Deloitte", DELOITTE_DB), ("BNP Paribas", BNP_DB), ("BPCE", BPCE_DB), ("Bpifrance", BPIFRANCE_DB), ("Crédit Mutuel", CREDIT_MUTUEL_DB), ("ODDO BHF", ODDO_BHF_DB)]:
             if db_path.exists():
                 conn = sqlite3.connect(db_path)
                 row = conn.execute("""

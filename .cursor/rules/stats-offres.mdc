@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Stats offres d'emploi
 
-Quand tu rapportes les comptages d'offres (Crédit Agricole, Société Générale, Deloitte, BNP Paribas) :
+Quand tu rapportes les comptages d'offres (Crédit Agricole, Société Générale, Deloitte, BNP Paribas, ODDO BHF) :
 
 1. **Toujours faire le split Live / Expired** — ne jamais donner uniquement le total.
 2. Le total "exporté" ou "affiché sur le site" = uniquement les offres **Live**.
