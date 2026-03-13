@@ -29,6 +29,7 @@ try:
     from job_family_classifier import classify_job_family
     from experience_extractor import extract_experience_level
     from credit_mutuel_job_family_mapping import map_credit_mutuel_family
+    from credit_mutuel_company_mapping import normalize_company_name
 except ImportError:
     import sys
     sys.path.append(str(Path(__file__).parent))
@@ -37,6 +38,7 @@ except ImportError:
     from job_family_classifier import classify_job_family
     from experience_extractor import extract_experience_level
     from credit_mutuel_job_family_mapping import map_credit_mutuel_family
+    from credit_mutuel_company_mapping import normalize_company_name
 
 # ================= Logging =================
 logging.basicConfig(
@@ -49,8 +51,11 @@ BASE_URL = "https://recrutement.creditmutuel.fr"
 LISTING_URL = f"{BASE_URL}/fr/nos_offres.html"
 
 # ================= Config =================
+# Types de contrat (tc) pour récupérer toutes les offres par sous-ensemble
+TC_VALUES = list(range(11))  # 0-10: VIE, Reconversion, Pro, Stage, Apprentissage, Alternance, etc., CDD, CDI
+
 class Config:
-    MAX_LOAD_MORE_ROUNDS = 70  # Clics sur "Afficher plus" (~15 offres/round)
+    MAX_LOAD_MORE_ROUNDS = 100  # Clics sur "Afficher plus" par page tc
     PAGE_TIMEOUT = 45000
     WAIT_AFTER_CLICK = 2
     HEADLESS = True
@@ -242,65 +247,68 @@ class JobDatabase:
 
 
 # =========================================================
-# COLLECT JOB URLS (Playwright - load more)
+# COLLECT JOB URLS (Playwright - par type de contrat + load more)
 # =========================================================
+async def _collect_urls_for_page(page, url: str) -> Set[str]:
+    """Charge une page, clique sur Afficher plus jusqu'à épuisement, retourne les IDs."""
+    await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until='domcontentloaded')
+    await asyncio.sleep(2)
+    await page.evaluate("document.getElementById('cookieLB')?.remove()")
+    await asyncio.sleep(0.3)
+
+    all_ids = set()
+    for _ in range(config.MAX_LOAD_MORE_ROUNDS):
+        ids = await page.evaluate("""
+            () => {
+                const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
+                const s = new Set();
+                links.forEach(a => {
+                    const m = a.href.match(/annonce=(\\d+)/);
+                    if (m) s.add(m[1]);
+                });
+                return Array.from(s);
+            }
+        """)
+        prev = len(all_ids)
+        all_ids.update(ids)
+        if len(all_ids) == prev:
+            break
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await asyncio.sleep(0.2)
+        clicked = await page.evaluate("""
+            () => {
+                const btns = Array.from(document.querySelectorAll('a.ei_btn'));
+                const loadMore = btns.find(a => a.textContent && a.textContent.includes('Afficher plus'));
+                if (loadMore) { loadMore.scrollIntoView(); loadMore.click(); return true; }
+                return false;
+            }
+        """)
+        if not clicked:
+            break
+        await asyncio.sleep(config.WAIT_AFTER_CLICK)
+
+    return all_ids
+
+
 async def collect_all_job_urls() -> List[str]:
-    """Collecte toutes les URLs d'offres en cliquant sur 'Afficher plus'."""
+    """Collecte toutes les URLs en itérant par type de contrat (tc=0..10) puis fusion."""
+    all_ids = set()
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=config.HEADLESS)
         page = await browser.new_page()
-        await page.goto(LISTING_URL, timeout=config.PAGE_TIMEOUT, wait_until='domcontentloaded')
-        await asyncio.sleep(3)
 
-        # Fermer bannière cookies
-        await page.evaluate("document.getElementById('cookieLB')?.remove()")
-        await asyncio.sleep(0.5)
-
-        all_ids = set()
-        for round_num in range(config.MAX_LOAD_MORE_ROUNDS):
-            # Compter les liens actuels
-            ids = await page.evaluate("""
-                () => {
-                    const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
-                    const s = new Set();
-                    links.forEach(a => {
-                        const m = a.href.match(/annonce=(\\d+)/);
-                        if (m) s.add(m[1]);
-                    });
-                    return Array.from(s);
-                }
-            """)
-            prev_count = len(all_ids)
+        for tc in TC_VALUES:
+            url = f"{LISTING_URL}?tc={tc}"
+            ids = await _collect_urls_for_page(page, url)
+            new = ids - all_ids
             all_ids.update(ids)
-
-            if len(all_ids) == prev_count:
-                logging.info(f"Plus de nouvelles offres après {round_num} clics")
-                break
-
-            # Scroll + clic Afficher plus
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(0.3)
-            clicked = await page.evaluate("""
-                () => {
-                    const btns = Array.from(document.querySelectorAll('a.ei_btn'));
-                    const loadMore = btns.find(a => a.textContent && a.textContent.includes('Afficher plus'));
-                    if (loadMore) {
-                        loadMore.scrollIntoView();
-                        loadMore.click();
-                        return true;
-                    }
-                    return false;
-                }
-            """)
-            if not clicked:
-                break
-            await asyncio.sleep(config.WAIT_AFTER_CLICK)
+            logging.info(f"tc={tc}: +{len(new)} offres (total {len(all_ids)})")
 
         await browser.close()
 
-        urls = [f"{BASE_URL}/fr/offre.html?annonce={aid}" for aid in all_ids]
-        logging.info(f"Collecté {len(urls)} URLs d'offres")
-        return urls
+    urls = [f"{BASE_URL}/fr/offre.html?annonce={aid}" for aid in all_ids]
+    logging.info(f"Collecté {len(urls)} URLs d'offres (dédupliquées)")
+    return urls
 
 
 # =========================================================
@@ -346,6 +354,13 @@ def scrape_job_detail(url: str, session: requests.Session) -> Optional[Dict]:
             "company_name": "Crédit Mutuel",
             "company_description": "",
         }
+
+        # Filiale depuis .rhec_detailoffre .ei_subtitle (CIC, Cofidis, Euro Information, etc.)
+        company_el = soup.select_one(".rhec_detailoffre .ei_subtitle")
+        if company_el:
+            raw_company = company_el.get_text(strip=True)
+            if raw_company and "retour" not in raw_company.lower() and len(raw_company) > 3:
+                job["company_name"] = normalize_company_name(raw_company)
 
         # job_id depuis URL
         m = re.search(r'annonce=(\d+)', url)

@@ -2135,6 +2135,11 @@
             } else {
                 companyGroupBPCEExpanded = localStorage.getItem('companyGroupBPCEExpanded') === 'true';
             }
+            if (restoredFilters?.companyGroupCMExpanded !== undefined) {
+                companyGroupCMExpanded = restoredFilters.companyGroupCMExpanded;
+            } else {
+                companyGroupCMExpanded = localStorage.getItem('companyGroupCMExpanded') === 'true';
+            }
             
             const sets = {
                 regions: new Set(), countries: new Set(), contracts: new Set(),
@@ -2284,8 +2289,10 @@
 
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
         const BPCE_GROUP_KEY = '__BPCE_GROUP__';
+        const CREDIT_MUTUEL_GROUP_KEY = '__CM_GROUP__';
         let companyGroupCAExpanded = false;
         let companyGroupBPCEExpanded = false;
+        let companyGroupCMExpanded = false;
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -2299,6 +2306,14 @@
             return ['natixis', 'caisse d\'épargne', 'caisse d\'epargne', 'banque populaire', 'bpce',
                 'crédit coopératif', 'credit cooperatif', 'banque palatine', 'oney', 'aew',
                 'mirova', 'ostrum', 'crédit foncier', 'credit foncier', 'capitole finance', 'casden'].some(s => n.includes(s));
+        }
+        function isCreditMutuelSubsidiary(name) {
+            if (!name || typeof name !== 'string') return false;
+            const n = name.toLowerCase();
+            return n.includes('crédit mutuel') || n.includes('credit mutuel') ||
+                ['cic', 'cofidis', 'euro information', 'euro-information', 'caisse fédérale', 'caisse federale',
+                 'becm', 'bfcm', 'monext', 'acm', 'assurances du credit mutuel', 'lyonnaise de banque',
+                 'credit mutuel factoring', 'credit mutuel leasing', 'ccs', 'synergie'].some(s => n.includes(s));
         }
 
         function getSelectedCompanies() {
@@ -2314,6 +2329,10 @@
                 const bpceBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-bpce-brand]')).map(cb => cb.value);
                 result = result.filter(v => v !== BPCE_GROUP_KEY).concat(bpceBrands);
             }
+            if (checked.includes(CREDIT_MUTUEL_GROUP_KEY)) {
+                const cmSubs = Array.from(container.querySelectorAll('input[type="checkbox"][data-cm-subsidiary]')).map(cb => cb.value);
+                result = result.filter(v => v !== CREDIT_MUTUEL_GROUP_KEY).concat(cmSubs);
+            }
             return [...new Set(result)];
         }
 
@@ -2322,13 +2341,16 @@
             const checkedValues = restoredCheckedValues ? new Set(restoredCheckedValues) : new Set(getSelectedCompanies());
             const prevCA = container.querySelector('.company-group-children[data-group="ca"]');
             const prevBPCE = container.querySelector('.company-group-children[data-group="bpce"]');
+            const prevCM = container.querySelector('.company-group-children[data-group="cm"]');
             if (prevCA) companyGroupCAExpanded = prevCA.classList.contains('visible');
             if (prevBPCE) companyGroupBPCEExpanded = prevBPCE.classList.contains('visible');
+            if (prevCM) companyGroupCMExpanded = prevCM.classList.contains('visible');
             container.innerHTML = '';
 
             const caSubs = companies.filter(c => isCreditAgricoleSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const bpceBrands = companies.filter(c => isBPCEBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const others = companies.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const cmSubs = companies.filter(c => isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const others = companies.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
 
             const bpceGroupChecked = checkedValues.has(BPCE_GROUP_KEY) || bpceBrands.every(c => checkedValues.has(c));
             const bpceGroupCount = bpceBrands.reduce((s, c) => s + (counts[c] || 0), 0);
@@ -2479,6 +2501,80 @@
                 container.appendChild(childrenDiv);
             }
 
+            const cmGroupChecked = checkedValues.has(CREDIT_MUTUEL_GROUP_KEY) || cmSubs.every(c => checkedValues.has(c));
+            const cmGroupCount = cmSubs.reduce((s, c) => s + (counts[c] || 0), 0);
+            if (cmSubs.length > 0) {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'company-group-header';
+                const expandSpan = document.createElement('span');
+                expandSpan.className = 'company-group-expand';
+                expandSpan.textContent = '▶';
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'company-group-children' + (companyGroupCMExpanded ? ' visible' : '');
+                childrenDiv.setAttribute('data-group', 'cm');
+                if (companyGroupCMExpanded) expandSpan.classList.add('expanded');
+                expandSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    childrenDiv.classList.toggle('visible');
+                    expandSpan.classList.toggle('expanded');
+                    companyGroupCMExpanded = childrenDiv.classList.contains('visible');
+                    localStorage.setItem('companyGroupCMExpanded', companyGroupCMExpanded);
+                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
+                };
+                const groupLabel = document.createElement('label');
+                groupLabel.style.display = 'flex';
+                groupLabel.style.alignItems = 'center';
+                groupLabel.style.flex = '1';
+                groupLabel.style.cursor = 'pointer';
+                const groupCb = document.createElement('input');
+                groupCb.type = 'checkbox';
+                groupCb.value = CREDIT_MUTUEL_GROUP_KEY;
+                groupCb.checked = cmGroupChecked;
+                groupCb.onchange = () => {
+                    cmSubs.forEach(c => {
+                        const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-cm-subsidiary]`);
+                        if (subCb && !subCb.disabled) subCb.checked = groupCb.checked;
+                    });
+                    updateActiveFiltersBadge();
+                    applyFilters();
+                };
+                groupLabel.appendChild(groupCb);
+                const span = document.createElement('span');
+                span.textContent = `Groupe Crédit Mutuel (${cmGroupCount})`;
+                groupLabel.appendChild(span);
+                groupDiv.appendChild(expandSpan);
+                groupDiv.appendChild(groupLabel);
+                container.appendChild(groupDiv);
+                const childCheckboxes = [];
+                cmSubs.forEach(c => {
+                    const cnt = counts[c] || 0;
+                    if (hideDisabled && cnt === 0) return;
+                    const disabled = disabledValues.has(c);
+                    const label = document.createElement('label');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = c;
+                    cb.setAttribute('data-cm-subsidiary', '1');
+                    cb.checked = checkedValues.has(c) || cmGroupChecked;
+                    cb.disabled = disabled;
+                    childCheckboxes.push(cb);
+                    label.appendChild(cb);
+                    const sp = document.createElement('span');
+                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
+                    label.appendChild(sp);
+                    if (disabled) label.classList.add('disabled');
+                    childrenDiv.appendChild(label);
+                });
+                childCheckboxes.forEach(cb => {
+                    cb.onchange = () => {
+                        groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                        updateActiveFiltersBadge();
+                        applyFilters();
+                    };
+                });
+                container.appendChild(childrenDiv);
+            }
+
             others.forEach(c => {
                 const cnt = counts[c] || 0;
                 if (hideDisabled && cnt === 0) return;
@@ -2563,6 +2659,7 @@
                 educations: getCheckedValues('educationFilter'),
                 companyGroupCAExpanded: companyGroupCAExpanded,
                 companyGroupBPCEExpanded: companyGroupBPCEExpanded,
+                companyGroupCMExpanded: companyGroupCMExpanded,
                 savedAt: new Date().toISOString()
             };
             
@@ -3127,7 +3224,14 @@
                 'capitole_finance': 'images/logos/caisse_epargne.svg',
                 'bpifrance': 'images/logos/bpifrance.svg',
                 'credit_mutuel': 'images/logos/credit_mutuel.png',
-                'crédit_mutuel': 'images/logos/credit_mutuel.png'
+                'crédit_mutuel': 'images/logos/credit_mutuel.png',
+                'cic': 'images/logos/cic.png',
+                'cofidis': 'images/logos/cofidis.png',
+                'euro information': 'images/logos/euro_information.png',
+                'euro-information': 'images/logos/euro_information.png',
+                'caisse fédérale du crédit mutuel': 'images/logos/credit_mutuel.png',
+                'caisse federale du credit mutuel': 'images/logos/credit_mutuel.png',
+                'lyonnaise de banque': 'images/logos/lyonnaise_banque.png'
             };
             
             // Rechercher le logo dans le mapping

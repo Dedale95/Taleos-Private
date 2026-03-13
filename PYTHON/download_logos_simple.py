@@ -63,6 +63,15 @@ LOGO_URLS = {
         "https://logo.clearbit.com/creditmutuel.fr?size=128",
         "https://upload.wikimedia.org/wikipedia/fr/2/2a/Logo_Cr%C3%A9dit_Mutuel.svg",
     ],
+    "cic": [
+        "https://logo.clearbit.com/cic.fr?size=128",
+    ],
+    "cofidis": [
+        "https://logo.clearbit.com/cofidis.fr?size=128",
+    ],
+    "euro_information": [
+        "https://logo.clearbit.com/euro-information.com?size=128",
+    ],
 }
 
 def download_logo(url: str, filename: str) -> bool:
