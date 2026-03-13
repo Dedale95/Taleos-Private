@@ -18,6 +18,7 @@ Recherche par mots-clés :
 import re
 import sqlite3
 import json
+import unicodedata
 from pathlib import Path
 from datetime import datetime
 from country_normalizer import get_country_from_city, normalize_country
@@ -37,6 +38,110 @@ BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 CREDIT_MUTUEL_DB = PYTHON_DIR / "credit_mutuel_jobs.db"
 ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
+
+
+def _normalize_text(s: str) -> str:
+    """Normalise une string pour les comparaisons (minuscules, sans accents)."""
+    if not s:
+        return ""
+    s = str(s)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.lower()
+
+
+def normalize_job_family(raw_family: str) -> str:
+    """
+    Normalise les familles de métier hétérogènes (surtout Deloitte / BPCE / Bpifrance)
+    vers un jeu de catégories canonique utilisé par le site.
+    """
+    if not raw_family:
+        return raw_family
+
+    norm = _normalize_text(raw_family)
+
+    # Commercial / Relation client (y compris \"expertise commercial et accompagnement réseau\")
+    if "relation client" in norm or "expertise commercial" in norm or "commercial" in norm:
+        return "Commercial / Relations Clients"
+
+    # IT / Digital / Data
+    if "informatiq" in norm or "technologie" in norm or "technologies" in norm or "data" in norm or "digital" in norm:
+        return "IT, Digital et Data"
+
+    # Financement / Investissement / Banque de financement
+    if "financement" in norm or "banque de financement" in norm:
+        return "Financement et Investissement"
+
+    # Ressources humaines
+    if "ressources humaines" in norm or "ressourceshumaines" in norm or "rh" in norm:
+        return "Ressources Humaines"
+
+    # Finance / Comptabilité
+    if "comptabilite" in norm or "comptabilité" in norm or "finance" in norm:
+        return "Finances / Comptabilité / Contrôle de gestion"
+
+    # Risques / Contrôles permanents / maîtrise des risques
+    if "risque" in norm and ("controle" in norm or "contrôle" in norm or "permanent" in norm):
+        return "Risques / Contrôles permanents"
+
+    # Conformité / Sécurité financière
+    if "conformite" in norm or "conformité" in norm or "securite financiere" in norm:
+        return "Conformité / Sécurité financière"
+
+    # Inspection / Audit
+    if "inspection" in norm or "audit" in norm:
+        return "Inspection / Audit"
+
+    # Immobilier / bâtiments / sécurité des bâtiments
+    if "immobilier" in norm or "batiment" in norm or "bâtiment" in norm or "securite et batiments" in norm:
+        return "Immobilier"
+
+    # Assurances
+    if "assurance" in norm:
+        return "Assurances"
+
+    # Juridique / fiscalité / contentieux
+    if "juridique" in norm or "fiscalite" in norm or "fiscalité" in norm or "contentieux" in norm:
+        return "Juridique"
+
+    # Marketing / Communication
+    if "marketing" in norm or "communication" in norm:
+        return "Marketing et Communication"
+
+    # Organisation / Qualité
+    if "organisation" in norm or "qualite" in norm or "qualité" in norm or "projets" in norm or "etudes" in norm or "études" in norm:
+        # On laisse \"Analysesétudes et projets\" se regrouper ici
+        return "Organisation / Qualité"
+
+    # Gestion des opérations / support
+    if "gestion des operations" in norm or "maitrise des operations" in norm or "support" in norm:
+        return "Gestion des opérations"
+
+    # Gestion d'actifs
+    if "gestion d actifs" in norm or "gestion d'actifs" in norm or "gestion d actifs" in norm:
+        return "Gestion d'Actifs"
+
+    # Direction générale / management transverse
+    if "direction generale" in norm or "management" in norm:
+        return "Direction générale"
+
+    # Développement durable / RSE
+    if "developpement durable" in norm or "rse" in norm:
+        return "Autres"
+
+    # International
+    if "international" in norm:
+        return "Autres"
+
+    # Achat
+    if "achat" in norm:
+        return "Autres"
+
+    # Restauration / hôtellerie ou autres familles exotiques
+    if "restauration" in norm or "hotellerie" in norm or "hôtellerie" in norm:
+        return "Autres"
+
+    return raw_family.strip()
 
 def fix_location(loc):
     """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie, N/A - Luxembourg → Luxembourg).
@@ -99,6 +204,10 @@ def read_from_db(db_path, company_name, live_only=True):
             # Corriger les locations incorrectes (ex: Tunis - France → Tunis - Tunisie)
             if job.get('location'):
                 job['location'] = fix_location(job['location'])
+            
+            # Normaliser la famille de métier pour éviter la prolifération de libellés exotiques
+            if job.get('job_family'):
+                job['job_family'] = normalize_job_family(job['job_family'])
             
             # Convertir les JSON strings en listes pour technical_skills et behavioral_skills
             for col in ['technical_skills', 'behavioral_skills']:
