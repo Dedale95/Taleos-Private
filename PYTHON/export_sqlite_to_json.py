@@ -143,6 +143,47 @@ def normalize_job_family(raw_family: str) -> str:
 
     return raw_family.strip()
 
+
+def normalize_experience_level(raw_exp: str) -> str:
+    """
+    Normalise les niveaux d'expérience pour n'exposer que :
+    - '0 - 2 ans'
+    - '3 - 5 ans'
+    - '6 - 10 ans'
+    - '11 ans et plus'
+    Les libellés composés type 'Etudiant, Jeune diplômé, Junior, Confirmé' sont mappés.
+    """
+    if not raw_exp:
+        return raw_exp
+
+    norm = _normalize_text(raw_exp)
+
+    # Mappages directs
+    if "0 - 2 ans" in raw_exp:
+        return "0 - 2 ans"
+    if "3 - 5 ans" in raw_exp:
+        return "3 - 5 ans"
+    if "6 - 10 ans" in raw_exp:
+        return "6 - 10 ans"
+    if "11 ans et plus" in raw_exp or "11 ans" in raw_exp or "plus de 10 ans" in norm:
+        return "11 ans et plus"
+
+    # Libellés textuels (Etudiant / Junior / Confirmé / Senior / Expert...)
+    # On découpe sur virgules
+    tokens = [t.strip() for t in re.split(r"[,/]", norm) if t.strip()]
+    # Hiérarchie : Expert/Senior/Confirmé > Junior > Etudiant
+    if any(t in ("expert", "senior") for t in tokens):
+        return "11 ans et plus"
+    if "confirme" in tokens or "confirmé" in norm:
+        # Confirmé sans autre précision → 6-10 ans
+        return "6 - 10 ans"
+    if "junior" in tokens:
+        return "0 - 2 ans"
+    if "etudiant" in tokens or "etudiant" in norm:
+        return "0 - 2 ans"
+
+    return raw_exp.strip()
+
 def fix_location(loc):
     """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie, N/A - Luxembourg → Luxembourg).
     Normalise toujours le pays en sortie (ex: France, Royaume-Uni) pour cohérence site/filtres."""
@@ -208,6 +249,10 @@ def read_from_db(db_path, company_name, live_only=True):
             # Normaliser la famille de métier pour éviter la prolifération de libellés exotiques
             if job.get('job_family'):
                 job['job_family'] = normalize_job_family(job['job_family'])
+
+            # Normaliser le niveau d'expérience pour rester sur 4 catégories canoniques
+            if job.get('experience_level'):
+                job['experience_level'] = normalize_experience_level(job['experience_level'])
             
             # Convertir les JSON strings en listes pour technical_skills et behavioral_skills
             for col in ['technical_skills', 'behavioral_skills']:
@@ -234,7 +279,7 @@ def read_from_db(db_path, company_name, live_only=True):
                     combined, job.get('contract_type'), job.get('job_title')
                 )
                 if extracted:
-                    job['experience_level'] = extracted
+                    job['experience_level'] = normalize_experience_level(extracted)
             
             jobs.append(job)
         
