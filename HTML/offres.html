@@ -1555,14 +1555,6 @@
             'quebec': 'Québec', 'québec': 'Québec',
             'bucarest': 'Bucarest', 'bucharest': 'Bucarest',
             'bistrita-nasaud': 'Bistrița-Năsăud', 'bistrita': 'Bistrița-Năsăud',
-            'parma': 'Parme', 'parme': 'Parme',
-            'pavia': 'Pavie', 'pavie': 'Pavie',
-            'fidenza': 'Fidenza',
-            'lazio': 'Latium', 'latium': 'Latium',
-            'emilie-romagne': 'Émilie-Romagne', 'émilie-romagne': 'Émilie-Romagne',
-            'venetie': 'Vénétie', 'vénétie': 'Vénétie',
-            'spezia': 'La Spezia', 'la spezia': 'La Spezia',
-            'sondrio': 'Sondrio', 'piacenza': 'Plaisance', 'plaisance': 'Plaisance',
             'chennai': 'Chennai', 'madras': 'Chennai',
             'chengalpattu': 'Chengalpattu',
             'shanghai': 'Shanghai',
@@ -1579,6 +1571,40 @@
             'république du kenya': 'Kenya', 'republic of kenya': 'Kenya', 'kenya': 'Kenya',
             'république démocratique du congo': 'RD Congo', 'rd congo': 'RD Congo', 'congo (rdc)': 'RD Congo'
         };
+
+        const ITALY_CITY_TO_REGION = {
+            'milan': 'Lombardie', 'milano': 'Lombardie', 'parma': 'Émilie-Romagne', 'parme': 'Émilie-Romagne',
+            'pavia': 'Lombardie', 'pavie': 'Lombardie', 'fidenza': 'Émilie-Romagne', 'rome': 'Latium',
+            'roma': 'Latium', 'lazio': 'Latium', 'latium': 'Latium', 'venetie': 'Vénétie', 'vénétie': 'Vénétie',
+            'émilie-romagne': 'Émilie-Romagne', 'emilie-romagne': 'Émilie-Romagne',
+            'la spezia': 'Ligurie', 'spezia': 'Ligurie', 'sondrio': 'Lombardie',
+            'piacenza': 'Émilie-Romagne', 'plaisance': 'Émilie-Romagne'
+        };
+
+        const CITY_TO_PARENT_REGION = {
+            'chicago': 'Illinois', 'illinois': null,
+            'new york': 'New York', 'new jersey': null, 'iselin': 'New Jersey',
+            'texas': null, 'houston': 'Texas', 'dallas': 'Texas',
+            'fidenza': 'Émilie-Romagne', 'parma': 'Émilie-Romagne', 'parme': 'Émilie-Romagne',
+            'milan': 'Lombardie', 'milano': 'Lombardie', 'pavia': 'Lombardie', 'pavie': 'Lombardie',
+            'lazio': null, 'latium': null, 'émilie-romagne': null, 'vénétie': null,
+            'la spezia': 'Ligurie', 'spezia': 'Ligurie', 'sondrio': 'Lombardie',
+            'plaisance': 'Émilie-Romagne', 'piacenza': 'Émilie-Romagne'
+        };
+
+        function deduplicateRegionLevel(regions, countries) {
+            const regs = [...regions];
+            const toRemove = new Set();
+            regs.forEach(r => {
+                const t = r.toLowerCase().trim();
+                const parent = CITY_TO_PARENT_REGION[t] || CITY_TO_PARENT_REGION[t.replace(/\s+/g, '-')];
+                if (parent) {
+                    const parentInRegs = regs.find(x => x.toLowerCase() === parent.toLowerCase());
+                    if (parentInRegs) toRemove.add(parentInRegs);
+                }
+            });
+            return regs.filter(r => !toRemove.has(r));
+        }
 
         function normalizeCountryForFilter(c) {
             if (!c) return c;
@@ -2117,8 +2143,13 @@
                                                     if (isJunkLocation(city)) return;
                                                     const cityCountry = CITY_TO_COUNTRY[city.trim().toLowerCase()] || CITY_TO_COUNTRY[normalizeCityForLookup(city)];
                                                     if (cityCountry && cityCountry !== countryNorm) return;
-                                                    const norm = normalizeCityForFilter(city, country);
-                                                    if (norm) job.cleanRegions.push(norm);
+                                                    let toAdd = null;
+                                                    if (countryNorm === 'Italie') {
+                                                        const t = normalizeCityForLookup(city) || city.trim().toLowerCase();
+                                                        toAdd = ITALY_CITY_TO_REGION[t] || ITALY_CITY_TO_REGION[t.replace(/\s+/g, '-')];
+                                                    }
+                                                    if (!toAdd) toAdd = normalizeCityForFilter(city, country);
+                                                    if (toAdd) job.cleanRegions.push(toAdd);
                                                 }
                                             } catch (e) {
                                                 console.warn(`Erreur getCityRegion pour "${city}", "${country}":`, e);
@@ -2155,7 +2186,7 @@
                             if (countryOnly) {
                                 const cNorm = normalizeCountryForFilter(countryOnly) || (countryOnly.toLowerCase() === 'france' ? 'France' : countryOnly);
                                 job.cleanCountries = [cNorm];
-                                job.cleanRegions = cNorm === 'France' ? ["Autres régions françaises"] : [];
+                                job.cleanRegions = cNorm === 'France' ? ["Autres régions françaises"] : ["__AUTRES__" + cNorm];
                             }
                         }
                     } catch (e) {
@@ -2163,6 +2194,16 @@
                         // Initialiser au minimum pour éviter les erreurs suivantes
                         job.cleanRegions = job.cleanRegions || [];
                         job.cleanCountries = job.cleanCountries || [];
+                    }
+                    if (job.cleanCountries && job.cleanCountries.length > 0 && (!job.cleanRegions || job.cleanRegions.length === 0)) {
+                        const c = job.cleanCountries[0];
+                        job.cleanRegions = [c === 'France' ? 'Autres régions françaises' : '__AUTRES__' + c];
+                    }
+                    if (job.cleanCountries && job.cleanCountries.includes('France') && (!job.cleanRegions || job.cleanRegions.length === 0)) {
+                        job.cleanRegions = ['Autres régions françaises'];
+                    }
+                    if (job.cleanRegions && job.cleanCountries) {
+                        job.cleanRegions = deduplicateRegionLevel(job.cleanRegions, job.cleanCountries);
                     }
                     return job;
                 };
@@ -2921,6 +2962,9 @@
                         regionsForCountry.forEach(region => {
                             const rCnt = (regionCounts && regionCounts[region]) || 0;
                             if (hideDisabled && rCnt === 0 && !checkedRegions.has(region)) return;
+                            let displayLabel = region.startsWith('__AUTRES__') ? 'Autres' : region;
+                            if (region === 'Bistrița-Năsăud' || region === 'Bistrita-Nasaud') displayLabel = 'Bistrița-Năsăud (județ)';
+                            if ((region === 'Québec' || region === 'Quebec') && country === 'Canada') displayLabel = 'Québec (ville)';
                             const labelEl = document.createElement('label');
                             labelEl.className = 'location-region-item';
                             const cb = document.createElement('input');
@@ -2935,7 +2979,7 @@
                             };
                             labelEl.appendChild(cb);
                             const sp = document.createElement('span');
-                            sp.textContent = rCnt > 0 ? `${region} (${rCnt})` : region;
+                            sp.textContent = rCnt > 0 ? `${displayLabel} (${rCnt})` : displayLabel;
                             labelEl.appendChild(sp);
                             countryChildren.appendChild(labelEl);
                         });
@@ -2947,7 +2991,8 @@
                     }
 
                     const countryText = document.createElement('span');
-                    countryText.textContent = countryCnt > 0 ? `${country} (${countryCnt})` : country;
+                    const countryLabel_ = country === 'Polynésie Française' ? country + ' (DOM-TOM)' : country;
+                    countryText.textContent = countryCnt > 0 ? `${countryLabel_} (${countryCnt})` : countryLabel_;
                     countryLabel.appendChild(countryText);
 
                     countryHeader.appendChild(countryLabel);
