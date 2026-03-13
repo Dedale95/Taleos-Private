@@ -38,6 +38,27 @@ LOGO_URLS = {
     "bpce": [
         "https://upload.wikimedia.org/wikipedia/fr/0/0a/Groupe_BPCE_%28logo%29.svg",
     ],
+    "caisse_epargne": [
+        "https://upload.wikimedia.org/wikipedia/fr/9/92/Logo_Caisse_d%27%C3%89pargne_-_2021.svg",
+    ],
+    "banque_populaire": [
+        "https://upload.wikimedia.org/wikipedia/fr/4/49/Logo_Banque_Populaire_2018.svg",
+    ],
+    "natixis": [
+        "https://upload.wikimedia.org/wikipedia/commons/1/14/Natixis.svg",
+    ],
+    "credit_cooperatif": [
+        "https://upload.wikimedia.org/wikipedia/fr/2/2e/Logo_Cr%C3%A9dit_Coop%C3%A9ratif.svg",
+    ],
+    "oney": [
+        "https://upload.wikimedia.org/wikipedia/fr/3/38/Logo_Oney.svg",
+    ],
+    "banque_palatine": [
+        "https://newsroom-en.groupebpce.fr/download-image/5e71068180564a383b693bf5",
+    ],
+    "credit_foncier": [
+        "https://upload.wikimedia.org/wikipedia/fr/8/87/Cr%C3%A9dit_foncier.svg",
+    ],
 }
 
 def download_logo(url: str, filename: str) -> bool:

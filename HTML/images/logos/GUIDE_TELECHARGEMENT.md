@@ -22,9 +22,17 @@ Les APIs automatiques ne fonctionnent plus (Clearbit discontinué) et nécessite
 2. Renommez en : `deloitte.png` ou `deloitte_france.png`
 3. Placez dans : `HTML/images/logos/deloitte.png`
 
-### 4. Groupe BPCE
-- Fichier : `bpce.svg` (téléchargé depuis Wikimedia Commons)
-- Ou exécuter : `python PYTHON/download_logos_simple.py`
+### 4. Groupe BPCE et marques
+- **bpce.svg** – Groupe BPCE (Wikimedia)
+- **caisse_epargne.svg** – Caisse d'Épargne (Wikimedia)
+- **banque_populaire.svg** – Banque Populaire (Wikimedia)
+- **natixis.svg** – Natixis (Wikimedia Commons)
+- **credit_cooperatif.svg** – Crédit Coopératif (Wikimedia)
+- **oney.svg** – Oney (Wikimedia)
+- **banque_palatine.png** – Banque Palatine (Newsroom BPCE)
+- **credit_foncier.svg** – Crédit Foncier (Wikimedia)
+- AEW, Mirova, Ostrum, Casden, Capitole Finance : utilisent bpce.svg
+- Exécuter : `python PYTHON/download_logos_simple.py`
 
 ### 5. Autres entreprises
 Suivez la même méthode pour :
