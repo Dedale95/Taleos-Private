@@ -26,12 +26,14 @@ try:
     from city_normalizer import normalize_city
     from country_normalizer import normalize_country, get_country_from_city
     from job_family_classifier import classify_job_family
+    from experience_extractor import extract_experience_level
 except ImportError:
     import sys
     sys.path.append(str(Path(__file__).parent))
     from city_normalizer import normalize_city
     from country_normalizer import normalize_country, get_country_from_city
     from job_family_classifier import classify_job_family
+    from experience_extractor import extract_experience_level
 
 # ================= Logging =================
 logging.basicConfig(
@@ -306,41 +308,6 @@ def extract_education_level(text: str) -> Optional[str]:
         (r'bac\s*\+\s*3|bachelor|licence|l3', "Bac + 3 / L3"),
         (r'bac\s*\+\s*2|l2|bts|dut', "Bac + 2 / L2"),
         (r'\bbac\b(?!\s*\+)', "Bac"),
-    ]
-    for pattern, level in patterns:
-        if re.search(pattern, text_lower):
-            return level
-    return None
-
-
-def extract_experience_level(text: str, contract_type: Optional[str]) -> Optional[str]:
-    """Extrait le niveau d'expérience attendu depuis le texte de l'offre."""
-    if contract_type in ['Stage', 'VIE', 'Alternance / Apprentissage']:
-        return "0 - 2 ans"
-    if not text:
-        return None
-    text_lower = text.lower()
-    # X ans d'expérience (priorité pour précision)
-    years_m = re.search(r"(\d+)\s*ans\s*d['\u2019]expérience", text_lower)
-    if years_m:
-        y = int(years_m.group(1))
-        if y <= 2:
-            return "0 - 2 ans"
-        if y <= 5:
-            return "3 - 5 ans"
-        if y <= 10:
-            return "6 - 10 ans"
-        return "11 ans et plus"
-    # Patterns textuels
-    patterns = [
-        (r'(?:plus de|more than|over)\s*(?:10|11|15|20)\s*(?:ans|years?)', "11 ans et plus"),
-        (r'(?:10|11|12|15)\+?\s*(?:ans|years?)', "11 ans et plus"),
-        (r'senior|confirmé|confirmed', "11 ans et plus"),
-        (r'(?:6|7|8|9|10)\s*(?:-|à|to)\s*(?:10|11|12)\s*(?:ans|years?)', "6 - 10 ans"),
-        (r'(?:3|4|5)\s*(?:-|à|to)\s*(?:5|6|7)\s*(?:ans|years?)', "3 - 5 ans"),
-        (r'(?:0|1|2)\s*(?:-|à|to)\s*(?:2|3)\s*(?:ans|years?)', "0 - 2 ans"),
-        (r'junior|débutant|beginner|entry|jeune diplômé|stagiaire|alternant', "0 - 2 ans"),
-        (r'première expérience|premier poste|première expérience réussie', "0 - 2 ans"),
     ]
     for pattern, level in patterns:
         if re.search(pattern, text_lower):

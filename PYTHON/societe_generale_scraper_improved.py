@@ -22,6 +22,7 @@ from datetime import datetime
 from city_normalizer import normalize_city
 from country_normalizer import normalize_country
 from job_family_classifier import classify_job_family
+from experience_extractor import extract_experience_level
 
 # ================= Logging =================
 logging.basicConfig(
@@ -477,31 +478,8 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
                     education_level = level
                     break
             
-            # Extract experience level
-            experience_level = None
-            
-            # RÈGLE PRIORITAIRE : Stage, VIE, Alternance → toujours 0-2 ans
-            if contract_type in ['Stage', 'VIE', 'Alternance / Apprentissage']:
-                experience_level = "0 - 2 ans"
-            else:
-                # Experience mapping to match CA format (pour autres contrats)
-                experience_patterns = [
-                    (r'(?:more than|plus de|over)\s*(?:10|11|15|20)\s*(?:years?|ans)', "11 ans et plus"),
-                    (r'(?:10|11|12|13|14|15)\+?\s*(?:years?|ans)', "11 ans et plus"),
-                    (r'senior|confirmed|confirmé', "11 ans et plus"),
-                    (r'(?:6|7|8|9|10)\s*(?:-|to|à)\s*(?:10|11|12)\s*(?:years?|ans)', "6 - 10 ans"),
-                    (r'(?:5|6|7|8|9|10)\+?\s*(?:years?|ans)', "6 - 10 ans"),
-                    (r'(?:3|4|5)\s*(?:-|to|à)\s*(?:5|6|7)\s*(?:years?|ans)', "3 - 5 ans"),
-                    (r'(?:2|3|4)\s*(?:-|to|à)\s*(?:4|5)\s*(?:years?|ans)', "3 - 5 ans"),
-                    (r'(?:0|1|2)\s*(?:-|to|à)\s*(?:2|3)\s*(?:years?|ans)', "0 - 2 ans"),
-                    (r'junior|débutant|beginner|entry', "0 - 2 ans"),
-                    (r'less than 2|moins de 2', "0 - 2 ans"),
-                ]
-                
-                for pattern, level in experience_patterns:
-                    if re.search(pattern, text_lower):
-                        experience_level = level
-                        break
+            # Extract experience level (module partagé)
+            experience_level = extract_experience_level(soup.get_text(), contract_type)
 
             # Extract sections for description and skills
             description_parts = []

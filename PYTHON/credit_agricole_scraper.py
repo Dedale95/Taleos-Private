@@ -29,12 +29,14 @@ from urllib3.util.retry import Retry
 try:
     from city_normalizer import normalize_city
     from country_normalizer import normalize_country
+    from experience_extractor import extract_experience_level
 except ImportError:
     # Fallback pour exécution directe
     import sys
     sys.path.append(str(Path(__file__).parent))
     from city_normalizer import normalize_city
     from country_normalizer import normalize_country
+    from experience_extractor import extract_experience_level
 
 # ============================================================================
 # CONFIGURATION
@@ -665,6 +667,17 @@ class JobDetailScraper:
             company_desc = soup.find("div", class_="accordion-item-content")
             if company_desc:
                 job["company_description"] = self.clean_text(company_desc.get_text())
+
+            # Fallback : si expérience non trouvée dans dt/dd, extraire depuis company_description ou job_description
+            if not job.get("experience_level"):
+                combined = " ".join(filter(None, [
+                    job.get("company_description", ""),
+                    job.get("job_description", "")
+                ]))
+                if combined:
+                    job["experience_level"] = extract_experience_level(
+                        combined, job.get("contract_type")
+                    )
 
             return job
 

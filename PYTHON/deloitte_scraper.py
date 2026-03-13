@@ -23,6 +23,7 @@ from datetime import datetime
 from city_normalizer import normalize_city
 from country_normalizer import normalize_country, get_country_from_city
 from job_family_classifier import classify_job_family
+from experience_extractor import extract_experience_level
 
 # ================= Logging =================
 logging.basicConfig(
@@ -457,21 +458,11 @@ async def fetch_job_experience(context: BrowserContext, job: Dict, sem: asyncio.
             # 2. Extract Experience and Education from the full page text (scoped if possible)
             text_lower = description_text.lower()
 
-            # Experience level mapping - utiliser d'abord la séniorité extraite de l'en-tête
-            experience_level = seniority  # Utiliser la séniorité extraite de l'en-tête si disponible
-            
-            # Si pas de séniorité trouvée dans l'en-tête, chercher dans le texte de la description
+            # Experience level : séniorité header prioritaire, sinon module partagé sur le texte complet
+            experience_level = seniority
             if not experience_level:
-                if "jeune diplômé" in text_lower or "stagiaire" in text_lower or "alternant" in text_lower:
-                    experience_level = "0 - 2 ans"
-                elif re.search(r'(\d+)\s*ans\s*d\'expérience', text_lower):
-                    years_match = re.search(r'(\d+)\s*ans', text_lower)
-                    if years_match:
-                        years = int(years_match.group(1))
-                        if years <= 2: experience_level = "0 - 2 ans"
-                        elif years <= 5: experience_level = "3 - 5 ans"
-                        elif years <= 10: experience_level = "6 - 10 ans"
-                        else: experience_level = "11 ans et plus"
+                full_text = soup.get_text() if soup else description_text
+                experience_level = extract_experience_level(full_text, job.get("contract_type"))
             
             # Education level mapping
             education_level = None

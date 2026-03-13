@@ -24,12 +24,14 @@ try:
     from city_normalizer import normalize_city
     from country_normalizer import normalize_country, get_country_from_city
     from job_family_classifier import classify_job_family
+    from experience_extractor import extract_experience_level
 except ImportError:
     import sys
     sys.path.append(str(Path(__file__).parent))
     from city_normalizer import normalize_city
     from country_normalizer import normalize_country, get_country_from_city
     from job_family_classifier import classify_job_family
+    from experience_extractor import extract_experience_level
 
 # ================= Logging =================
 logging.basicConfig(
@@ -541,24 +543,9 @@ async def fetch_job_details(
                         job["education_level"] = level
                         break
 
-            # Experience level
-            ct = job.get("contract_type", "")
-            if ct in ('Stage', 'VIE', 'Alternance / Apprentissage', 'Job étudiant'):
-                job["experience_level"] = "0 - 2 ans"
-            elif desc_lower:
-                experience_patterns = [
-                    (r'(?:more than|plus de|over)\s*(?:10|11|15|20)\s*(?:years?|ans)', "11 ans et plus"),
-                    (r'(?:10|11|12|13|14|15)\+?\s*(?:years?|ans)', "11 ans et plus"),
-                    (r'(?:6|7|8|9|10)\s*(?:-|to|à)\s*(?:10|11|12)\s*(?:years?|ans)', "6 - 10 ans"),
-                    (r'(?:5|6|7|8|9|10)\+?\s*(?:years?|ans)', "6 - 10 ans"),
-                    (r'(?:3|4|5)\s*(?:-|to|à)\s*(?:5|6|7)\s*(?:years?|ans)', "3 - 5 ans"),
-                    (r'(?:0|1|2)\s*(?:-|to|à)\s*(?:2|3)\s*(?:years?|ans)', "0 - 2 ans"),
-                    (r'junior|débutant|beginner|entry.level', "0 - 2 ans"),
-                ]
-                for pattern, level in experience_patterns:
-                    if re.search(pattern, desc_lower):
-                        job["experience_level"] = level
-                        break
+            # Experience level (module partagé)
+            desc = job.get("job_description") or ""
+            job["experience_level"] = extract_experience_level(desc, job.get("contract_type"))
 
             # Job family classification
             job["job_family"] = classify_job_family(
