@@ -391,14 +391,14 @@
             grid-template-columns: 1.8fr 1.1fr 1.4fr;
         }
 
-        /* Deuxième ligne : Contrat, Expérience, Famille */
+        /* Deuxième ligne : Expérience, Niveau d'étude, (espace) */
         .filter-row:nth-of-type(2) {
-            grid-template-columns: 0.9fr 1.5fr 1.6fr;
+            grid-template-columns: 1fr 1fr 1fr;
         }
 
-        /* Troisième ligne : Entreprise, Éducation */
+        /* Troisième ligne : Type de contrat, Famille de métier, Entreprise */
         .filter-row:nth-of-type(3) {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
         }
 
         .filter-group {
@@ -2628,26 +2628,27 @@
                     </div>
                     <div class="filter-row">
                         <div class="filter-group">
-                            <label>📄 Type de contrat</label>
-                            <div class="filter-checkbox-container" id="contractFilter-${accordionId}"></div>
-                        </div>
-                        <div class="filter-group">
                             <label>💼 Expérience</label>
                             <div class="filter-checkbox-container" id="experienceFilter-${accordionId}"></div>
+                        </div>
+                        <div class="filter-group">
+                            <label>🎓 Niveau d'étude</label>
+                            <div class="filter-checkbox-container" id="educationFilter-${accordionId}"></div>
+                        </div>
+                        <div class="filter-group"></div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label>📄 Type de contrat</label>
+                            <div class="filter-checkbox-container" id="contractFilter-${accordionId}"></div>
                         </div>
                         <div class="filter-group">
                             <label>🎯 Famille de métier</label>
                             <div class="filter-checkbox-container" id="familyFilter-${accordionId}"></div>
                         </div>
-                    </div>
-                    <div class="filter-row">
                         <div class="filter-group">
                             <label>🏢 Entreprise</label>
                             <div class="filter-checkbox-container" id="companyFilter-${accordionId}"></div>
-                        </div>
-                        <div class="filter-group">
-                            <label>🎓 Niveau d'étude</label>
-                            <div class="filter-checkbox-container" id="educationFilter-${accordionId}"></div>
                         </div>
                     </div>
                     <div class="filter-row-reset">
