@@ -45,7 +45,8 @@ SEARCH_URL = f"{BASE_URL}/emploi-carriere/toutes-offres-emploi"
 
 # ================= Config =================
 class Config:
-    MAX_CONCURRENT_PAGES = 5
+    MAX_CONCURRENT_LISTING = 12   # Pages de liste (légères)
+    MAX_CONCURRENT_DETAILS = 12   # Pages détail (augmenté pour ~2600 offres)
     PAGE_TIMEOUT = 30000
     WAIT_TIMEOUT = 10000
     HEADLESS = True
@@ -367,7 +368,7 @@ async def get_total_pages(context: BrowserContext) -> int:
     except:
         pass
 
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)  # Cookie banner + rendu
     html = await page.content()
     soup = BeautifulSoup(html, "html.parser")
     await page.close()
@@ -400,7 +401,7 @@ async def fetch_listing_page(
         try:
             url = f"{SEARCH_URL}?q=&page={page_num}"
             await navigate_with_retry(page, url)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.4)  # Légère pause pour le rendu (domcontentloaded suffit)
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
@@ -445,7 +446,7 @@ async def fetch_job_details(
         page = await context.new_page()
         try:
             await navigate_with_retry(page, job["job_url"])
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.4)  # Légère pause pour le rendu
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
@@ -601,7 +602,7 @@ async def main():
         logging.info("\n📋 ÉTAPE 1: Collection des liens d'offres")
         total_pages = await get_total_pages(context)
 
-        sem_pages = asyncio.Semaphore(config.MAX_CONCURRENT_PAGES)
+        sem_pages = asyncio.Semaphore(config.MAX_CONCURRENT_LISTING)
         page_tasks = [
             fetch_listing_page(context, p, sem_pages)
             for p in range(1, total_pages + 1)
@@ -645,7 +646,7 @@ async def main():
             new_jobs = [j for j in unique_jobs if j["job_url"] in new_urls]
             logging.info(f"\n🚀 ÉTAPE 4: Scraping de {len(new_jobs)} nouvelles offres")
 
-            sem_jobs = asyncio.Semaphore(config.MAX_CONCURRENT_PAGES)
+            sem_jobs = asyncio.Semaphore(config.MAX_CONCURRENT_DETAILS)
             job_tasks = [
                 fetch_job_details(context, job, sem_jobs) for job in new_jobs
             ]
