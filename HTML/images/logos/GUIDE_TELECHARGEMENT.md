@@ -36,7 +36,21 @@ Les APIs automatiques ne fonctionnent plus (Clearbit discontinué) et nécessite
 - Capitole Finance : caisse_epargne.svg
 - Exécuter : `python PYTHON/download_logos_simple.py`
 
-### 5. Autres entreprises
+### 5. Groupe Crédit Mutuel (logos déjà téléchargés)
+- **CIC** → `cic.svg` (Wikimedia)
+- **Cofidis** → `cofidis.svg` (Wikimedia)
+- **Lyonnaise de Banque** → utilise `cic.svg`
+- **Banque Transatlantique** → `banque_transatlantique.jpg` (Wikimedia)
+
+### 6. Groupe Crédit Mutuel – logos à ajouter manuellement
+Télécharger depuis les sites officiels ou Google Images :
+- **Euro Information** → `euro_information.svg` (www.e-i.com, section presse)
+- **AFEDIM** → `afedim.svg` (www.afedim.fr)
+- **Creatis** → `creatis.svg` (www.creatis.fr)
+- **FactoFrance** → `factofrance.svg` (www.factofrance.com)
+- **Monabanq** → `monabanq.svg` (www.monabanq.com, galerie médias)
+
+### 7. Autres entreprises
 Suivez la même méthode pour :
 - **CACEIS** → `caceis.png`
 - **LCL** → `lcl.png`

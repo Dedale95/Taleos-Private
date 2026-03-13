@@ -64,13 +64,32 @@ LOGO_URLS = {
         "https://logo.clearbit.com/creditmutuel.fr?size=128",
     ],
     "cic": [
-        "https://logo.clearbit.com/cic.fr?size=128",
+        "https://upload.wikimedia.org/wikipedia/commons/0/08/Cr%C3%A9dit_Industriel_et_Commercial_Logo.svg",
     ],
     "cofidis": [
-        "https://logo.clearbit.com/cofidis.fr?size=128",
+        "https://upload.wikimedia.org/wikipedia/commons/2/28/Logo_Cofidis.svg",
     ],
     "euro_information": [
-        "https://logo.clearbit.com/euro-information.com?size=128",
+        "https://www.e-i.com/var/euro_information/storage/images/media/logo-euro-information.svg",
+    ],
+    "banque_transatlantique": [
+        "https://upload.wikimedia.org/wikipedia/commons/1/1c/Logo_CIC_Banque_Transatlantique.jpg",
+    ],
+    "monabanq": [
+        "https://www.monabanq.com/var/monabanq/storage/images/media/logo-monabanq.svg",
+        "https://logo.clearbit.com/monabanq.com?size=128",
+    ],
+    "creatis": [
+        "https://www.creatis.fr/var/creatis/storage/images/media/logo-creatis.svg",
+        "https://logo.clearbit.com/creatis.fr?size=128",
+    ],
+    "factofrance": [
+        "https://www.factofrance.com/var/factofrance/storage/images/media/logo-factofrance.svg",
+        "https://logo.clearbit.com/factofrance.com?size=128",
+    ],
+    "afedim": [
+        "https://www.afedim.fr/var/afedim/storage/images/media/logo-afedim.svg",
+        "https://logo.clearbit.com/afedim.fr?size=128",
     ],
 }
 
