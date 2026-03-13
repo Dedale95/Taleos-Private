@@ -485,6 +485,9 @@
             cursor: pointer;
             border-radius: 6px;
         }
+        .company-group-header:hover .company-group-expand {
+            background: rgba(102, 126, 234, 0.12);
+        }
         .company-group-expand:hover {
             background: rgba(102, 126, 234, 0.15);
         }
@@ -2399,6 +2402,7 @@
                 const expandSpan = document.createElement('span');
                 expandSpan.className = 'company-group-expand';
                 expandSpan.textContent = '▶';
+                expandSpan.title = 'Cliquer pour afficher/masquer les filiales du groupe';
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'company-group-children' + (companyGroupBPCEExpanded ? ' visible' : '');
                 childrenDiv.setAttribute('data-group', 'bpce');
