@@ -168,7 +168,7 @@ def normalize_experience_level(raw_exp: str) -> str:
     if "11 ans et plus" in raw_exp or "11 ans" in raw_exp or "plus de 10 ans" in norm:
         return "11 ans et plus"
 
-    # Libellés textuels (Etudiant / Junior / Confirmé / Senior / Expert...)
+    # Libellés textuels (Étudiant / Jeune diplômé / Junior / Confirmé / Senior / Expert...)
     # On découpe sur virgules
     tokens = [t.strip() for t in re.split(r"[,/]", norm) if t.strip()]
     # Hiérarchie : Expert/Senior/Confirmé > Junior > Etudiant
@@ -179,7 +179,7 @@ def normalize_experience_level(raw_exp: str) -> str:
         return "6 - 10 ans"
     if "junior" in tokens:
         return "0 - 2 ans"
-    if "etudiant" in tokens or "etudiant" in norm:
+    if "etudiant" in tokens or "etudiant" in norm or "jeune diplome" in norm:
         return "0 - 2 ans"
 
     return raw_exp.strip()
