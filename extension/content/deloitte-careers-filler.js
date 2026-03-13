@@ -72,6 +72,44 @@
   }
 
   /**
+   * Simule la frappe clavier caractère par caractère (pour les champs search Workday
+   * qui ne réagissent pas au nativeSetter). Chaque caractère : keydown → set value → input → keyup.
+   */
+  function simulateTyping(el, text, onComplete) {
+    if (!el || !text) { if (onComplete) onComplete(); return; }
+    var str = String(text).trim();
+    if (!str) { if (onComplete) onComplete(); return; }
+    el.focus();
+    el.click();
+    var nativeDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    var nativeSet = nativeDesc && nativeDesc.set;
+    var tracker = el._valueTracker;
+    if (tracker) tracker.setValue(el.value || '');
+    if (nativeSet) nativeSet.call(el, '');
+    else el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    var i = 0;
+    function next() {
+      if (i >= str.length) {
+        if (onComplete) setTimeout(onComplete, 100);
+        return;
+      }
+      var ch = str[i++];
+      var cur = el.value || '';
+      var val = cur + ch;
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      var trk = el._valueTracker;
+      if (trk) trk.setValue(cur);
+      if (nativeSet) nativeSet.call(el, val);
+      else el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+      setTimeout(next, 50);
+    }
+    next();
+  }
+
+  /**
    * Clic sur "Enregistrer et continuer" (pageFooterNextButton) puis relance runAutomation
    * pour détecter l'étape suivante après transition Workday.
    */
@@ -411,56 +449,56 @@
     log('📋 Profil Firebase (Études) :', 5);
     log('   Établissement: ' + (establishmentVal || '—') + '  |  Diplôme: ' + (profile.education_level || '—') + '  |  Année fin: ' + (yearEnd || '—'), 5);
 
-    // ——— Établissement ou université : fill search → wait results → click option ———
+    // ——— Établissement ou université : simulateTyping → wait results → click option ———
     var estabInput = document.querySelector('input[data-automation-id="searchBox"][id*="school"]') ||
       document.querySelector('input[id*="school"][placeholder="Rechercher"]') ||
       findInputByLabel(['établissement ou université', 'institution']);
     if (estabInput && estabInput.offsetParent !== null && establishmentVal) {
       scrollIntoViewIfNeeded(estabInput);
-      try {
-        estabInput.focus();
-        estabInput.click();
-      } catch (_) {}
-      fillInput(estabInput, establishmentVal);
-
-      var estabTarget = establishmentVal.toLowerCase();
-      var estabAttempt = 0;
-      function trySelectEstablishment() {
-        estabAttempt++;
-        var options = Array.from(document.querySelectorAll(
-          '[data-automation-id="promptOption"], [role="option"], [data-automation-id="menuItem"]'
-        )).filter(function(o) {
-          if (!o.offsetParent) return false;
-          var isChip = !!o.closest('[data-automation-id="selectedItem"]');
-          return !isChip;
-        });
-        var match = options.find(function(o) {
-          var txt = (o.textContent || o.getAttribute('data-automation-label') || '').trim().toLowerCase();
-          return txt === estabTarget || txt.includes(estabTarget);
-        });
-        if (!match) {
-          match = options.find(function(o) {
-            var txt = (o.textContent || o.getAttribute('data-automation-label') || '').trim().toLowerCase();
-            return estabTarget.includes(txt) && txt.length >= 3;
+      log('   ⌨️  Établissement → frappe "' + establishmentVal + '"…', 5);
+      simulateTyping(estabInput, establishmentVal, function() {
+        log('   ⌨️  Établissement → frappe terminée, attente résultats…', 5);
+        var estabTarget = establishmentVal.toLowerCase();
+        var estabAttempt = 0;
+        function trySelectEstablishment() {
+          estabAttempt++;
+          var options = Array.from(document.querySelectorAll(
+            '[data-automation-id="promptOption"], [role="option"], [data-automation-id="menuItem"]'
+          )).filter(function(o) {
+            if (!o.offsetParent) return false;
+            var isChip = !!o.closest('[data-automation-id="selectedItem"]');
+            if (isChip) return false;
+            var txt = (o.textContent || '').trim().toLowerCase();
+            return txt.length > 0 && txt !== 'aucun article.' && txt !== 'no items.';
           });
+          var match = options.find(function(o) {
+            var txt = (o.textContent || o.getAttribute('data-automation-label') || '').trim().toLowerCase();
+            return txt === estabTarget || txt.includes(estabTarget);
+          });
+          if (!match) {
+            match = options.find(function(o) {
+              var txt = (o.textContent || o.getAttribute('data-automation-label') || '').trim().toLowerCase();
+              return estabTarget.includes(txt) && txt.length >= 3;
+            });
+          }
+          if (match) {
+            var clickTarget = match.closest('[data-automation-id="menuItem"], [role="option"], li') || match;
+            clickTarget.click();
+            log('   ✅ Établissement → ' + (match.textContent || '').trim() + ' (sélectionné)', 5);
+          } else if (options.length === 1) {
+            var only = options[0].closest('[data-automation-id="menuItem"], [role="option"], li') || options[0];
+            only.click();
+            log('   ✅ Établissement → ' + (options[0].textContent || '').trim() + ' (seul résultat)', 5);
+          } else if (estabAttempt < 5) {
+            log('   ⏳ Établissement → attente résultats (' + options.length + ' options visibles), retry ' + estabAttempt + '/5', 5);
+            setTimeout(trySelectEstablishment, 1000);
+          } else {
+            pressEnterSequence(estabInput);
+            log('   ⏭️  Établissement → Enter fallback (aucune option après ' + estabAttempt + ' tentatives)', 5);
+          }
         }
-        if (match) {
-          var clickTarget = match.closest('[data-automation-id="menuItem"], [role="option"], li') || match;
-          clickTarget.click();
-          log('   ✅ Établissement → ' + (match.textContent || '').trim() + ' (sélectionné)', 5);
-        } else if (options.length === 1) {
-          var only = options[0].closest('[data-automation-id="menuItem"], [role="option"], li') || options[0];
-          only.click();
-          log('   ✅ Établissement → ' + (options[0].textContent || '').trim() + ' (seul résultat)', 5);
-        } else if (estabAttempt < 5) {
-          log('   ⏳ Établissement → résultats pas encore affichés (' + options.length + ' options), retry ' + estabAttempt + '/5', 5);
-          setTimeout(trySelectEstablishment, 1000);
-        } else {
-          pressEnterSequence(estabInput);
-          log('   ⏭️  Établissement → Enter fallback (aucune option après ' + estabAttempt + ' tentatives)', 5);
-        }
-      }
-      setTimeout(trySelectEstablishment, 1500);
+        setTimeout(trySelectEstablishment, 1500);
+      });
     } else if (!establishmentVal) {
       log('   ⏭️  Établissement → pas de valeur Firebase', 5);
     } else {
@@ -890,10 +928,10 @@
       fillWorkdayStep2Education(profile);
       uploadCvInStep2(profile).then(function () {
         setTimeout(refreshWorkdayRequiredFields, 800);
-        clickNextAndContinue(4000);
+        clickNextAndContinue(7000);
       }).catch(function () {
         setTimeout(refreshWorkdayRequiredFields, 800);
-        clickNextAndContinue(4000);
+        clickNextAndContinue(7000);
       });
       return;
     }
