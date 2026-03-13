@@ -1490,47 +1490,81 @@
         let currentPage = 1;
         let itemsPerPage = 25;
 
+        // Normalisation pour la recherche : enlève accents et met en minuscules (clés cohérentes)
+        function normalizeCityForLookup(s) {
+            if (!s || typeof s !== 'string') return '';
+            const t = s.trim().toLowerCase().replace(/\s+/g, ' ');
+            const acc = { 'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e', 'à': 'a', 'â': 'a', 'ä': 'a', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ô': 'o', 'ö': 'o', 'î': 'i', 'ï': 'i', 'ç': 'c', 'œ': 'oe', 'æ': 'ae' };
+            return t.split('').map(c => acc[c] || c).join('');
+        }
+
+        // Régions françaises reconnues (quand la "ville" est en fait le nom de région dans les données)
+        const FRENCH_REGIONS_LOOKUP = {
+            'ile-de-france': 'Île-de-France', 'île-de-france': 'Île-de-France',
+            'auvergne-rhone-alpes': 'Auvergne-Rhône-Alpes', 'auvergne-rhône-alpes': 'Auvergne-Rhône-Alpes',
+            'occitanie': 'Occitanie', 'provence-alpes-cote-dazur': "Provence-Alpes-Côte d'Azur",
+            'pays de la loire': 'Pays de la Loire', 'hauts-de-france': 'Hauts-de-France',
+            'grand est': 'Grand Est', 'nouvelle-aquitaine': 'Nouvelle-Aquitaine',
+            'bretagne': 'Bretagne', 'centre-val de loire': 'Centre-Val de Loire',
+            'normandie': 'Normandie', 'bourgogne-franche-comte': 'Bourgogne-Franche-Comté'
+        };
+
         const cityToRegion = {
-            // Île-de-France
+            // Île-de-France (noms normalisés sans accent pour la clé)
             "paris": "Île-de-France", "montrouge": "Île-de-France", "villejuif": "Île-de-France",
-            "massy": "Île-de-France", "guyancourt": "Île-de-France", "la défense": "Île-de-France",
-            "la defense": "Île-de-France", "paris la défense": "Île-de-France", "paris la defense": "Île-de-France",
+            "massy": "Île-de-France", "guyancourt": "Île-de-France", "la defense": "Île-de-France", "la défense": "Île-de-France",
+            "paris la defense": "Île-de-France", "paris la défense": "Île-de-France",
             "puteaux": "Île-de-France", "courbevoie": "Île-de-France",
             "nanterre": "Île-de-France", "boulogne-billancourt": "Île-de-France",
             "issy-les-moulineaux": "Île-de-France", "levallois-perret": "Île-de-France",
-            "neuilly-sur-seine": "Île-de-France", "saint-denis": "Île-de-France",
+            "neuilly-sur-seine": "Île-de-France", "saint-denis": "Île-de-France", "st-denis": "Île-de-France",
             "saint-quentin-en-yvelines": "Île-de-France", "saint quentin en yvelines": "Île-de-France",
-            "région parisienne": "Île-de-France", "cergy": "Île-de-France", "evry": "Île-de-France",
+            "region parisienne": "Île-de-France", "région parisienne": "Île-de-France",
+            "cergy": "Île-de-France", "evry": "Île-de-France", "évry": "Île-de-France",
             "versailles": "Île-de-France", "st denis": "Île-de-France", "issy": "Île-de-France",
             "charenton-le-pont": "Île-de-France", "charenton le pont": "Île-de-France",
+            "fontenay-sous-bois": "Île-de-France", "fontenay sous bois": "Île-de-France",
+            "argenteuil": "Île-de-France", "montreuil": "Île-de-France", "pantin": "Île-de-France",
+            "aubervilliers": "Île-de-France", "drancy": "Île-de-France", "bobigny": "Île-de-France",
+            "saint-ouen": "Île-de-France", "colombes": "Île-de-France", "asnieres": "Île-de-France",
+            "rueil-malmaison": "Île-de-France", "suresnes": "Île-de-France", "clamart": "Île-de-France",
+            "meudon": "Île-de-France", "vanves": "Île-de-France", "malakoff": "Île-de-France",
+            "vincennes": "Île-de-France", "saint-mande": "Île-de-France", "nogent-sur-marne": "Île-de-France",
+            "creteil": "Île-de-France", "vitry-sur-seine": "Île-de-France", "ivry-sur-seine": "Île-de-France",
+            "alfortville": "Île-de-France", "maisons-alfort": "Île-de-France", "cdg": "Île-de-France",
 
             // Auvergne-Rhône-Alpes
             "lyon": "Auvergne-Rhône-Alpes", "grenoble": "Auvergne-Rhône-Alpes", "valence": "Auvergne-Rhône-Alpes",
             "saint-etienne": "Auvergne-Rhône-Alpes", "saint-étienne": "Auvergne-Rhône-Alpes",
+            "villeurbanne": "Auvergne-Rhône-Alpes", "annecy": "Auvergne-Rhône-Alpes", "clermont-ferrand": "Auvergne-Rhône-Alpes",
 
             // Occitanie
-            "toulouse": "Occitanie", "montpellier": "Occitanie",
+            "toulouse": "Occitanie", "montpellier": "Occitanie", "balma": "Occitanie", "nimes": "Occitanie",
 
             // Provence-Alpes-Côte d'Azur
-            "marseille": "Provence-Alpes-Côte d'Azur", "nice": "Provence-Alpes-Côte d'Azur", "aix-en-provence": "Provence-Alpes-Côte d'Azur",
+            "marseille": "Provence-Alpes-Côte d'Azur", "nice": "Provence-Alpes-Côte d'Azur",
+            "aix-en-provence": "Provence-Alpes-Côte d'Azur", "aix en provence": "Provence-Alpes-Côte d'Azur",
 
             // Pays de la Loire
-            "nantes": "Pays de la Loire", "angers": "Pays de la Loire",
+            "nantes": "Pays de la Loire", "angers": "Pays de la Loire", "saint-herblain": "Pays de la Loire",
+            "orvault": "Pays de la Loire",
 
             // Hauts-de-France
             "lille": "Hauts-de-France", "roubaix": "Hauts-de-France", "reims": "Hauts-de-France", "amiens": "Hauts-de-France",
+            "croix": "Hauts-de-France", "tourcoing": "Hauts-de-France",
 
             // Grand Est
             "strasbourg": "Grand Est", "nancy": "Grand Est", "metz": "Grand Est",
 
             // Nouvelle-Aquitaine
             "bordeaux": "Nouvelle-Aquitaine", "limoges": "Nouvelle-Aquitaine", "poitiers": "Nouvelle-Aquitaine",
+            "merignac": "Nouvelle-Aquitaine", "mérignac": "Nouvelle-Aquitaine",
 
             // Bretagne
-            "rennes": "Bretagne", "brest": "Bretagne",
+            "rennes": "Bretagne", "brest": "Bretagne", "saint-gregoire": "Bretagne", "saint-grégoire": "Bretagne",
 
             // Centre-Val de Loire
-            "orléans": "Centre-Val de Loire", "orleans": "Centre-Val de Loire", "tours": "Centre-Val de Loire",
+            "orleans": "Centre-Val de Loire", "orléans": "Centre-Val de Loire", "tours": "Centre-Val de Loire",
 
             // Normandie
             "rouen": "Normandie", "caen": "Normandie",
@@ -1543,16 +1577,22 @@
             "singapour": "Singapour", "singapore": "Singapour", "tokyo": "Tokyo", "francfort": "Francfort",
             "frankfurt": "Francfort", "munich": "Munich", "milan": "Milan", "milano": "Milan",
             "luxembourg": "Luxembourg", "bruxelles": "Bruxelles", "brussels": "Bruxelles",
-            "genève": "Genève", "geneve": "Genève", "zurich": "Zurich", "zürich": "Zurich",
-            "montréal": "Montréal", "montreal": "Montréal", "casablanca": "Casablanca", "dublin": "Dublin",
+            "geneve": "Genève", "genève": "Genève", "zurich": "Zurich",
+            "montreal": "Montréal", "montréal": "Montréal", "casablanca": "Casablanca", "dublin": "Dublin",
             "madrid": "Madrid", "barcelone": "Barcelone", "barcelona": "Barcelone", "amsterdam": "Amsterdam"
         };
 
         function getCityRegion(city, country) {
-            if (!country || String(country).toLowerCase() !== "france") return null; // Le filtre Région ne concerne que les régions françaises
-            if (!city) return "Autres régions françaises";
-            const normalizedCity = city.toLowerCase();
-            if (cityToRegion[normalizedCity]) return cityToRegion[normalizedCity];
+            if (!country || String(country).toLowerCase().trim() !== "france") return null;
+            if (!city || !String(city).trim()) return "Autres régions françaises";
+            const normalized = normalizeCityForLookup(city);
+            if (!normalized) return "Autres régions françaises";
+            // Si la donnée contient déjà le nom de la région (ex: "Ile-De-France")
+            const regionByKey = FRENCH_REGIONS_LOOKUP[normalized] || FRENCH_REGIONS_LOOKUP[normalized.replace(/-/g, ' ')];
+            if (regionByKey) return regionByKey;
+            if (cityToRegion[normalized]) return cityToRegion[normalized];
+            // Clés avec accents possibles (fallback)
+            if (cityToRegion[city.trim().toLowerCase()]) return cityToRegion[city.trim().toLowerCase()];
             return "Autres régions françaises";
         }
 
@@ -1907,7 +1947,8 @@
                                 const country = parts[1] ? String(parts[1]).trim() : '';
                                 
                                 if (country && country.length > 0) {
-                                    job.cleanCountries.push(country);
+                                    const countryNorm = (String(country).toLowerCase().trim() === 'france') ? 'France' : String(country).trim();
+                                    job.cleanCountries.push(countryNorm);
 
                                     // Traiter les villes avec try/catch pour éviter les erreurs
                                     let cities = [];
@@ -1923,12 +1964,16 @@
                                                     clean = clean.replace(/\(.*?\)/g, '').trim();
                                                     clean = clean.replace(/\d{5,6}/g, '').trim();
                                                     
-                                                    // Si c'est une adresse (ex: Robinson Road), on essaye de garder que le dernier mot si pas de virgule
-                                                    if (clean.includes(' ') && !cityToRegion[clean.toLowerCase()]) {
-                                                        const words = clean.split(' ');
-                                                        if (words.length > 0) {
-                                                            const lastWord = words[words.length - 1].toLowerCase();
-                                                            if (cityToRegion[lastWord]) clean = cityToRegion[lastWord];
+                                                    // Si plusieurs mots et pas reconnu en bloc : essayer le dernier mot comme ville (ex: "Paris La Défense" -> garder "Paris" ou "La Défense" selon ce qui matche)
+                                                    if (clean.includes(' ') && !cityToRegion[normalizeCityForLookup(clean)] && !cityToRegion[clean.toLowerCase()]) {
+                                                        const words = clean.split(/\s+/).filter(w => w.length > 0);
+                                                        for (let i = words.length - 1; i >= 0; i--) {
+                                                            const w = words[i].toLowerCase();
+                                                            const wNorm = normalizeCityForLookup(words[i]);
+                                                            if (cityToRegion[w] || cityToRegion[wNorm]) {
+                                                                clean = words[i];
+                                                                break;
+                                                            }
                                                         }
                                                     }
                                                     return clean && clean.length > 0 ? clean : null;
@@ -1984,7 +2029,8 @@
                         } else if (job && job.location && typeof job.location === 'string' && job.location.trim()) {
                             const countryOnly = job.location.trim();
                             if (countryOnly) {
-                                job.cleanCountries = [countryOnly];
+                                const cNorm = countryOnly.toLowerCase().trim() === 'france' ? 'France' : countryOnly;
+                                job.cleanCountries = [cNorm];
                                 job.cleanRegions = countryOnly.toLowerCase() === "france" ? ["Autres régions françaises"] : [];
                             }
                         }

@@ -36,25 +36,31 @@ BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 
 def fix_location(loc):
-    """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie, N/A - Luxembourg → Luxembourg)"""
+    """Corrige les locations incorrectes (ex: Tunis - France → Tunis - Tunisie, N/A - Luxembourg → Luxembourg).
+    Normalise toujours le pays en sortie (ex: France, Royaume-Uni) pour cohérence site/filtres."""
     if not loc:
         return loc
-    loc_upper = loc.strip().upper()
-    if loc_upper.startswith('N/A') and (' - ' in loc or '-' in loc):
-        parts = re.split(r'\s*-\s*', loc.strip(), 1)
+    loc = loc.strip()
+    if not loc:
+        return loc
+    if loc.upper().startswith('N/A') and (' - ' in loc or '-' in loc):
+        parts = re.split(r'\s*-\s*', loc, maxsplit=1)
         if len(parts) >= 2 and parts[0].strip().upper() == 'N/A':
-            return parts[1].strip()
+            return normalize_country(parts[1].strip())
     if ' - ' not in loc:
         return loc
     parts = loc.split(' - ', 1)
     city = (parts[0] or '').strip()
     country = (parts[1] or '').strip()
-    if not city or country.lower() != 'france':
+    if not country:
         return loc
-    correct_country = get_country_from_city(city)
-    if correct_country:
-        return f"{city} - {normalize_country(correct_country)}"
-    return loc
+    # Corriger pays erroné pour villes connues hors France (ex: Tunis - France → Tunisie)
+    if country.lower() == 'france' and city:
+        correct_country = get_country_from_city(city)
+        if correct_country:
+            return f"{city} - {normalize_country(correct_country)}"
+    # Toujours normaliser le nom du pays pour cohérence (France, Royaume-Uni, etc.)
+    return f"{city} - {normalize_country(country)}"
 
 
 def read_from_db(db_path, company_name, live_only=True):
