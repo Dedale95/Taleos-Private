@@ -13,6 +13,7 @@ CA_DB = PYTHON_DIR / "credit_agricole_jobs.db"
 SG_DB = PYTHON_DIR / "societe_generale_jobs.db"
 DELOITTE_DB = PYTHON_DIR / "deloitte_jobs.db"
 BNP_DB = PYTHON_DIR / "bnp_paribas_jobs.db"
+BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 
 def main():
     print("=" * 55)
@@ -26,6 +27,7 @@ def main():
         ("Société Générale", SG_DB),
         ("Deloitte", DELOITTE_DB),
         ("BNP Paribas", BNP_DB),
+        ("BPCE", BPCE_DB),
     ]
 
     total_live = 0
