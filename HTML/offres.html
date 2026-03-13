@@ -2289,7 +2289,14 @@
             // hideDisabled=false pour Contrat et Études (garde le barré)
             populateCheckboxFilter('contractFilter', sortedContracts, new Set(), counts.contracts, false, restoredFilters?.contracts);
             populateCheckboxFilter('experienceFilter', sortedExperiences, new Set(), counts.experiences, false, restoredFilters?.experiences);
-            populateCheckboxFilter('companyFilter', Array.from(sets.companies).sort(), new Set(), counts.companies, false, restoredFilters?.companies);
+            populateCheckboxFilter(
+                'companyFilter',
+                Array.from(sets.companies).sort(),
+                new Set(),
+                counts.companies,
+                false,
+                restoredFilters?.companies || restoredFilters?.companiesExpanded
+            );
             populateCheckboxFilter('educationFilter', Array.from(sets.educations).sort(), new Set(), counts.educations, false, restoredFilters?.educations);
             
             // Appliquer les filtres restaurés après avoir créé tous les checkboxes
@@ -2690,7 +2697,10 @@
                 contracts: getCheckedValues('contractFilter'),
                 experiences: getCheckedValues('experienceFilter'),
                 families: getCheckedValues('familyFilter'),
-                companies: getSelectedCompanies(),
+                // On sauvegarde ce que l'utilisateur a vraiment coché (y compris les groupes),
+                // et on laisse getSelectedCompanies() faire l'expansion au moment du filtrage.
+                companies: getCheckedValues('companyFilter'),
+                companiesExpanded: getSelectedCompanies(),
                 educations: getCheckedValues('educationFilter'),
                 companyGroupCAExpanded: companyGroupCAExpanded,
                 companyGroupBPCEExpanded: companyGroupBPCEExpanded,
