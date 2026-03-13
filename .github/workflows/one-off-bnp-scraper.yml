@@ -27,8 +27,9 @@ jobs:
       - name: Installation des dépendances
         run: |
           pip install -r PYTHON/requirements_scrapers.txt
-          playwright install chromium
+          playwright install chromium firefox
           playwright install-deps chromium
+          playwright install-deps firefox
 
       - name: Scraper BNP Paribas uniquement
         run: cd PYTHON && python bnp_paribas_scraper.py

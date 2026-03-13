@@ -340,17 +340,17 @@ def extract_offer_field(soup: BeautifulSoup, css_class: str) -> Optional[str]:
 # =========================================================
 # GET TOTAL PAGES
 # =========================================================
-async def navigate_with_retry(page, url: str, max_retries: int = 3):
-    """Navigate with retry and exponential backoff for transient errors."""
+async def navigate_with_retry(page, url: str, max_retries: int = 6):
+    """Navigate with retry and exponential backoff for transient errors (CDN blocks)."""
     for attempt in range(max_retries):
         try:
             await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until="domcontentloaded")
             return True
         except Exception as e:
             error_str = str(e)
-            if "ERR_HTTP2" in error_str or "net::" in error_str:
-                wait = (attempt + 1) * 5
-                logging.warning(f"Network error on {url} (attempt {attempt+1}), retrying in {wait}s...")
+            if "ERR_HTTP2" in error_str or "net::" in error_str or "timeout" in error_str.lower():
+                wait = 15 * (2 ** attempt)  # 15s, 30s, 60s, 120s, 240s, 480s
+                logging.warning(f"Network error on {url} (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
                 await asyncio.sleep(wait)
             else:
                 raise
@@ -578,8 +578,17 @@ async def main():
     logging.info(f"Base de données initialisée: {config.DB_PATH}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=config.HEADLESS)
-        context = await browser.new_context()
+        # Firefox a une empreinte TLS différente - contourne parfois les blocages CDN (Akamai)
+        try:
+            browser = await p.firefox.launch(headless=config.HEADLESS)
+            logging.info("Using Firefox (bypass CDN)")
+        except Exception:
+            browser = await p.chromium.launch(headless=config.HEADLESS)
+            logging.info("Using Chromium (Firefox fallback)")
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+        )
 
         await context.route(
             "**/*",

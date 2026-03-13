@@ -34,8 +34,9 @@ jobs:
       - name: Installation des dépendances
         run: |
           pip install -r PYTHON/requirements_scrapers.txt
-          playwright install chromium
+          playwright install chromium firefox
           playwright install-deps chromium
+          playwright install-deps firefox
 
       - name: Mise à jour des offres
         run: python PYTHON/update_all_jobs.py
