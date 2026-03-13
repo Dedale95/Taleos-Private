@@ -49,10 +49,13 @@
 
   function fillInput(el, value) {
     if (!el || value == null || value === '') return;
-    const str = String(value).trim();
+    var str = String(value).trim();
     el.focus();
-    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    if (nativeSetter) nativeSetter.call(el, str);
+    el.click();
+    var tracker = el._valueTracker;
+    if (tracker) tracker.setValue('');
+    var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    if (nativeSetter && nativeSetter.set) nativeSetter.set.call(el, str);
     else el.value = str;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -87,53 +90,59 @@
   }
 
   /**
-   * Valider les champs Workday comme en manuel : clic sur la case puis clic ailleurs.
-   * Uniquement les champs TEXTE (prénom, nom, adresse, ville, code postal, téléphone).
-   * Ne pas inclure les menus déroulants (Comment nous avez-vous connus ?, Pays, Type d'appareil, Indicatif de pays) sinon la sélection est vidée.
+   * Valider les champs Workday comme en manuel : focus → (re-set value) → click-away → blur.
+   * Si fieldsWithValues est fourni (avec .val), la valeur est ré-injectée avec le hack _valueTracker
+   * pendant le focus pour que React/Workday l'enregistre dans cette session focus→blur.
+   * Délai de 500ms entre chaque champ pour laisser Workday traiter la validation.
    */
-  function workdayClickThenClickAway() {
+  function workdayClickThenClickAway(fieldsWithValues) {
     try {
-      const firstnameEl = document.getElementById('name--legalName--firstName') || document.querySelector('input[name="legalName--firstName"]');
-      const lastnameEl = document.getElementById('name--legalName--lastName') || document.querySelector('input[name="legalName--lastName"]');
-      const addressEl = document.getElementById('address--addressLine1') || document.querySelector('input[name="addressLine1"]');
-      const cityEl = document.getElementById('address--city') || document.querySelector('input[name="city"]');
-      const zipEl = document.getElementById('address--postalCode') || document.querySelector('input[name="postalCode"]');
-      const phoneEl = document.getElementById('phoneNumber--phoneNumber') || document.querySelector('input[name="phoneNumber"][id*="phoneNumber"]') || document.querySelector('input[name="phoneNumber"]');
-      const prevLocationEl = document.getElementById('previousWorker--location');
-      const prevEmailEl = document.getElementById('previousWorker--email');
-      const fields = [
-        { el: firstnameEl, label: 'Prénom(s)' },
-        { el: lastnameEl, label: 'Nom de famille' },
-        { el: addressEl, label: 'Nature et nom de la voie' },
-        { el: cityEl, label: 'Ville' },
-        { el: zipEl, label: 'Code postal' },
-        { el: phoneEl, label: 'Numéro de téléphone' },
-        { el: prevLocationEl, label: 'Ancien bureau Deloitte' },
-        { el: prevEmailEl, label: 'Ancienne email Deloitte' }
-      ].filter(function (x) { return x.el && x.el.offsetParent; });
-      const elsewhere = document.querySelector('h2[data-automation-id="sectionHeader"], [role="heading"][aria-level="2"], h2') || document.body;
+      var fields;
+      if (fieldsWithValues && fieldsWithValues.length) {
+        fields = fieldsWithValues.filter(function (x) { return x.el && x.el.offsetParent; });
+      } else {
+        fields = [
+          { el: document.getElementById('name--legalName--firstName') || document.querySelector('input[name="legalName--firstName"]'), label: 'Prénom(s)' },
+          { el: document.getElementById('name--legalName--lastName') || document.querySelector('input[name="legalName--lastName"]'), label: 'Nom de famille' },
+          { el: document.getElementById('address--addressLine1') || document.querySelector('input[name="addressLine1"]'), label: 'Nature et nom de la voie' },
+          { el: document.getElementById('address--city') || document.querySelector('input[name="city"]'), label: 'Ville' },
+          { el: document.getElementById('address--postalCode') || document.querySelector('input[name="postalCode"]'), label: 'Code postal' },
+          { el: document.getElementById('phoneNumber--phoneNumber') || document.querySelector('input[name="phoneNumber"][id*="phoneNumber"]') || document.querySelector('input[name="phoneNumber"]'), label: 'Numéro de téléphone' },
+          { el: document.getElementById('previousWorker--location'), label: 'Ancien bureau Deloitte' },
+          { el: document.getElementById('previousWorker--email'), label: 'Ancienne email Deloitte' }
+        ].filter(function (x) { return x.el && x.el.offsetParent; });
+      }
+      var elsewhere = document.querySelector('h2[data-automation-id="sectionHeader"], [role="heading"][aria-level="2"], h2') || document.body;
       fields.forEach(function (item, index) {
-        const delay = index * 280;
+        var delay = index * 500;
         setTimeout(function () {
           try {
             scrollIntoViewIfNeeded(item.el);
             item.el.focus();
             item.el.click();
+            if (item.val) {
+              var val = String(item.val).trim();
+              if (val) {
+                var tracker = item.el._valueTracker;
+                if (tracker) tracker.setValue('');
+                var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+                if (desc && desc.set) desc.set.call(item.el, val);
+                else item.el.value = val;
+                item.el.dispatchEvent(new Event('input', { bubbles: true }));
+                item.el.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            }
             log('   🔁 Validation → ' + item.label, 5);
           } catch (_) {}
         }, delay);
         setTimeout(function () {
-          try {
-            elsewhere.click();
-          } catch (_) {}
-        }, delay + 120);
+          try { elsewhere.click(); } catch (_) {}
+        }, delay + 250);
         setTimeout(function () {
           try {
-            if (document.activeElement === item.el) {
-              item.el.blur();
-            }
+            if (document.activeElement === item.el) item.el.blur();
           } catch (_) {}
-        }, delay + 180);
+        }, delay + 350);
       });
     } catch (e) {
       log('   ❌ workdayClickThenClickAway: ' + (e && e.message), 5);
@@ -1103,9 +1112,22 @@
     // Détection : on est sur un formulaire de candidature (apply ou applyManually, mais pas useMyLastApplication)
     var isOnApplyForm = url.includes('/apply') && !url.includes('useMyLastApplication');
 
-    // Après remplissage, forcer la validation Workday : clic dans chaque champ texte puis clic en dehors
     if (isOnApplyForm) {
-      setTimeout(workdayClickThenClickAway, 800);
+      var validationFields = [
+        { el: firstnameEl, label: 'Prénom(s)', val: profile.firstname },
+        { el: lastnameEl, label: 'Nom de famille', val: profile.lastname },
+        { el: addressLine1El, label: 'Nature et nom de la voie', val: profile.address },
+        { el: cityEl, label: 'Ville', val: profile.city },
+        { el: postalCodeEl, label: 'Code postal', val: profile.zipcode },
+        { el: phoneEl, label: 'Numéro de téléphone', val: phoneVal }
+      ];
+      if (rawWorked === 'yes') {
+        var pvLocEl = document.getElementById('previousWorker--location');
+        var pvEmailEl = document.getElementById('previousWorker--email');
+        if (pvLocEl) validationFields.push({ el: pvLocEl, label: 'Ancien bureau', val: (profile.deloitte_old_office || '').trim() });
+        if (pvEmailEl) validationFields.push({ el: pvEmailEl, label: 'Ancienne email', val: (profile.deloitte_old_email || '').trim() });
+      }
+      setTimeout(function() { workdayClickThenClickAway(validationFields); }, 800);
 
       // ——— Indicatif de pays (code téléphone) : exécuté EN DERNIER, après toutes les validations ———
       var phoneCountryCode = (profile.phone_country_code || '').trim().replace(/\s/g, '');
@@ -1159,7 +1181,7 @@
       if (isOnApplyForm) {
         step1Done = true;
         log('✅ Étape 1 remplie → clic auto "Enregistrer et continuer"', 5);
-        clickNextAndContinue(5000);
+        clickNextAndContinue(6000);
         return;
       }
       // Sur /apply (page d'entrée) on peut relancer une fois pour s'assurer que tout est bien pris en compte
