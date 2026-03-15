@@ -347,6 +347,8 @@ BNP_BRAND_NORMALIZATION = {
     "hello bank!": "Hello bank!",
     "banque commerciale en france": "Banque Commerciale en France",
     "bcf": "Banque Commerciale en France",
+    "nickel": "Nickel",
+    "alfred berg": "Alfred Berg",
 }
 
 
