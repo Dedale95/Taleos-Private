@@ -2340,6 +2340,11 @@
             } else {
                 companyGroupBPCEExpanded = localStorage.getItem('companyGroupBPCEExpanded') === 'true';
             }
+            if (restoredFilters?.companyGroupBNPExpanded !== undefined) {
+                companyGroupBNPExpanded = restoredFilters.companyGroupBNPExpanded;
+            } else {
+                companyGroupBNPExpanded = localStorage.getItem('companyGroupBNPExpanded') === 'true';
+            }
             if (restoredFilters?.companyGroupCMExpanded !== undefined) {
                 companyGroupCMExpanded = restoredFilters.companyGroupCMExpanded;
             } else {
@@ -2485,9 +2490,15 @@
                         ? restoredFilters.companies
                         : null);
 
+            // Inclure les entreprises restaurées pour pouvoir cocher même si pas dans le 1er lot (ex: BNP dans lot 2)
+            const companiesForFilter = new Set(sets.companies);
+            if (restoredCompanies && restoredCompanies.length) {
+                restoredCompanies.forEach(c => companiesForFilter.add(c));
+                restoredCompanies.forEach(c => { if (!(c in counts.companies)) counts.companies[c] = 0; });
+            }
             populateCheckboxFilter(
                 'companyFilter',
-                Array.from(sets.companies).sort(),
+                Array.from(companiesForFilter).sort(),
                 new Set(),
                 counts.companies,
                 false,
@@ -3271,6 +3282,7 @@
                 educations: getCheckedValues('educationFilter'),
                 companyGroupCAExpanded: companyGroupCAExpanded,
                 companyGroupBPCEExpanded: companyGroupBPCEExpanded,
+                companyGroupBNPExpanded: companyGroupBNPExpanded,
                 companyGroupCMExpanded: companyGroupCMExpanded,
                 continentExpanded: getContinentExpandedState(),
                 countryExpanded: getCountryExpandedState(),
@@ -3304,7 +3316,6 @@
         // Firestore en secours uniquement si localStorage vide (évite problèmes auth async / données obsolètes)
         async function restoreFilters() {
             let filtersLocal = null;
-            let filtersFirestore = null;
             
             try {
                 const savedFilters = localStorage.getItem('offresFilters');
@@ -3313,6 +3324,13 @@
                 console.error('Erreur lors de la restauration localStorage des filtres:', error);
             }
             
+            // Si localStorage a des données, les utiliser immédiatement (évite attente Firestore)
+            if (filtersLocal) {
+                console.log('✅ Filtres restaurés depuis localStorage');
+                return filtersLocal;
+            }
+            
+            let filtersFirestore = null;
             if (firebase.auth && firebase.firestore) {
                 const auth = firebase.auth();
                 const currentUser = auth.currentUser;
@@ -3331,9 +3349,9 @@
                 }
             }
             
-            const filters = filtersLocal || filtersFirestore;
+            const filters = filtersFirestore;
             if (filters) {
-                console.log('✅ Filtres restaurés depuis', filtersLocal ? 'localStorage' : 'Firestore');
+                console.log('✅ Filtres restaurés depuis Firestore');
             }
             
             if (!filters) return null;
