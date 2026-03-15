@@ -3211,7 +3211,23 @@
                 'factofrance': 'images/logos/factofrance.png',
                 'facto': 'images/logos/factofrance.png',
                 'monabanq': 'images/logos/monabanq.png',
-                'oddo_bhf': 'images/logos/oddo_bhf.svg'
+                'oddo_bhf': 'images/logos/oddo_bhf.svg',
+                'bnp_paribas': 'images/logos/bnp_paribas.png',
+                'arval': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_cardif': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_real_estate': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_asset_management': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_wealth_management': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_cib': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_personal_finance': 'images/logos/bnp_paribas.png',
+                'bnp_paribas_fortis': 'images/logos/bnp_paribas.png',
+                'bgl_bnp_paribas': 'images/logos/bnp_paribas.png',
+                'hello_bank': 'images/logos/bnp_paribas.png',
+                'banque_commerciale_en_france': 'images/logos/bnp_paribas.png',
+                'nickel': 'images/logos/bnp_paribas.png',
+                'alfred_berg': 'images/logos/bnp_paribas.png',
+                'bnl': 'images/logos/bnp_paribas.png',
+                'teb': 'images/logos/bnp_paribas.png'
             };
             
             // Rechercher le logo dans le mapping
@@ -3223,6 +3239,10 @@
             // Fallback : toute filiale Crédit Mutuel sans logo spécifique → logo groupe
             if (typeof isCreditMutuelSubsidiary === 'function' && isCreditMutuelSubsidiary(companyName)) {
                 return 'images/logos/credit_mutuel.svg';
+            }
+            // Fallback : toute marque BNP Paribas sans logo spécifique → logo groupe
+            if (typeof isBNPParibasBrand === 'function' && isBNPParibasBrand(companyName)) {
+                return 'images/logos/bnp_paribas.png';
             }
             return null;
         }
