@@ -3843,6 +3843,16 @@
                         applicationStatuses.set(data.jobId, status);
                     }
                 });
+                // Charger les offres expirées (détectées via extension, persistées en localStorage)
+                try {
+                    const uid = currentUser.uid;
+                    const key = `taleos_expired_job_ids_${uid}`;
+                    const expiredIds = JSON.parse(localStorage.getItem(key) || '[]');
+                    expiredIds.forEach(id => {
+                        const sid = String(id || '').trim();
+                        if (sid) applicationStatuses.set(sid, 'expirée');
+                    });
+                } catch (_) {}
                 
                 console.log(`📋 ${userApplications.size} candidature(s) chargée(s)`);
             } catch (error) {
@@ -3873,6 +3883,13 @@
             const jobTitle = e.detail?.jobTitle || 'cette offre';
             if (!jobId) return;
             applicationStatuses.set(jobId, 'expirée');
+            try {
+                const uid = firebase?.auth?.()?.currentUser?.uid || 'anon';
+                const key = `taleos_expired_job_ids_${uid}`;
+                const stored = JSON.parse(localStorage.getItem(key) || '[]');
+                if (!stored.includes(jobId)) stored.push(jobId);
+                localStorage.setItem(key, JSON.stringify(stored));
+            } catch (_) {}
             if (typeof updateJobCardButtons === 'function') updateJobCardButtons(jobId);
             if (typeof updateJobCardStyles === 'function') updateJobCardStyles(jobId);
             if (typeof showToast === 'function') showToast('Offre expirée', `L'offre "${jobTitle}" n'est plus disponible.`, 'warning', 6000);
