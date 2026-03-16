@@ -2748,9 +2748,9 @@
                 container.appendChild(groupDiv);
 
                 countries.forEach(c => {
-                    countriesAssigned.add(c);
                     const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0) return;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
+                    countriesAssigned.add(c);
                     const disabled = disabledValues.has(c);
                     const labelEl = document.createElement('label');
                     const cb = document.createElement('input');

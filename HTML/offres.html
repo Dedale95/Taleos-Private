@@ -3108,8 +3108,9 @@
                 container.appendChild(contGroupDiv);
 
                 countries.forEach(country => {
-                    countriesAssigned.add(country);
                     const countryCnt = counts[country] || 0;
+                    if (hideDisabled && countryCnt === 0 && !checkedCountries.has(country)) return;
+                    countriesAssigned.add(country);
                     const regionsForCountry = (countryToRegions && countryToRegions[country]) ? Array.from(countryToRegions[country]).sort((a, b) => (regionCounts[b] || 0) - (regionCounts[a] || 0)) : [];
                     const hasRegions = regionsForCountry.length > 1;
                     const isCountryExpanded = countryExpanded[country] === true;
