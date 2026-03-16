@@ -416,12 +416,17 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
                     elif "alternance" in text.lower() or "dual studies" in text.lower():
                         contract_type = "Alternance / Apprentissage"
 
-            # Priorité 1: "Localisation : PARIS" (label explicite sur la page détail)
+            # Priorité 1: "Localisation : PARIS" ou "Localisation : Tunisie"
+            # Tunisie, Romania, etc. → pays ; Paris, Tunis → ville
+            known_countries = {"France", "Allemagne", "Germany", "Suisse", "Switzerland", "Luxembourg", "Tunisie", "Romania", "Italy", "Italie", "Spain", "Espagne", "Portugal", "Belgique", "Belgium"}
             loc_match = re.search(r'Localisation\s*:\s*([A-Za-zÀ-ÿ\-]+)', full_text, re.IGNORECASE)
             if loc_match:
                 loc_raw = loc_match.group(1).strip()
                 if loc_raw and "domaine" not in loc_raw.lower() and "type" not in loc_raw.lower():
-                    city_raw = loc_raw
+                    if loc_raw in known_countries:
+                        country_raw = loc_raw
+                    else:
+                        city_raw = loc_raw
 
             # Structure Altays : bloc "Lieu du poste" avec liste [ville, contrat, domaine, pays, date]
             # Ex: - Saarbrücken | - CDI | - Others | - Allemagne | - 04/03/2026
@@ -432,8 +437,6 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
                             "Equities and Fixed Income", "Credit Risk Management", "Corporate Services", "Innovation",
                             "International Banking", "Metals Trading", "Facilities Management", "Foreign Exchange & Funds",
                             "Independent Financial Advisors", "Private Equity", "Transformation"}
-            known_countries = {"France", "Allemagne", "Germany", "Suisse", "Switzerland", "Luxembourg"}
-
             meta_block = soup.find(string=re.compile(r"Lieu du poste|Date de première publication", re.I))
             if meta_block:
                 parent = meta_block.find_parent(["div", "section", "article", "main"])
@@ -464,7 +467,7 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
                         job_family_raw = d
                         break
             if not country_raw:
-                pays = ["France", "Allemagne", "Germany", "Suisse", "Switzerland", "Luxembourg"]
+                pays = ["France", "Allemagne", "Germany", "Suisse", "Switzerland", "Luxembourg", "Tunisie", "Romania"]
                 for p in pays:
                     if p.lower() in full_text:
                         country_raw = p

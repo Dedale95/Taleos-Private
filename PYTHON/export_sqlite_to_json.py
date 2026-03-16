@@ -264,9 +264,14 @@ def fix_location(loc):
         country = get_country_from_city(loc)
         if country:
             return f"{loc.strip()} - {normalize_country(country)}"
-        # Pays seul (Allemagne, France, Luxembourg) → normaliser
-        if loc_lower in ('allemagne', 'france', 'luxembourg', 'suisse', 'belgique'):
+        # Pays seul (Allemagne, France, Tunisie, etc.) → normaliser pour le filtre
+        if loc_lower in ('allemagne', 'france', 'luxembourg', 'suisse', 'belgique', 'tunisie', 'roumanie', 'romania'):
             return normalize_country(loc)
+        # Nettoyer "Localisation : Tunisie" si le préfixe est resté
+        if loc_lower.startswith('localisation') and ':' in loc:
+            rest = loc.split(':', 1)[1].strip()
+            if rest and rest.lower() in ('tunisie', 'roumanie', 'romania'):
+                return normalize_country(rest)
         return loc
     parts = loc.split(' - ', 1)
     city = (parts[0] or '').strip()

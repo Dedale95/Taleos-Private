@@ -126,7 +126,12 @@ def clean_location(location_raw):
         
         return f"{city_clean} - {country_clean}"
     else:
-        # Pas de format "Ville - Pays" : ville seule (ex: Tunis, Paris, Lyon)
+        # Pas de format "Ville - Pays" : ville ou pays seul
+        loc_lower = location_raw.lower().strip()
+        # Pays seul (Tunisie, Roumanie, etc.) → ne pas forcer France
+        known_countries_only = ('tunisie', 'roumanie', 'romania', 'maroc', 'algérie', 'algerie')
+        if loc_lower in known_countries_only:
+            return f"{normalize_country(location_raw)} - {normalize_country(location_raw)}"
         city_clean = normalize_city(location_raw)
         country = get_country_from_city(location_raw)
         if country:
