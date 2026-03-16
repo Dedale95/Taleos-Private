@@ -114,6 +114,10 @@ def clean_location(location_raw):
         city_clean = normalize_city(city_part)
         country_clean = normalize_country(country_part)
         
+        # Ville invalide (N, etc.) ou vide → garder uniquement le pays
+        if not city_clean or (len(city_part.strip()) <= 2 and city_part.strip().upper() not in ('NY', 'LA', 'UK', 'US')):
+            return country_clean
+        
         # Harmoniser "France" et "- France"
         if country_clean.lower() == 'france' or country_clean == '- France':
             country_clean = 'France'

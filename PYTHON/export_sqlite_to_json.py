@@ -281,6 +281,9 @@ def fix_location(loc):
     # Cas comme \"- - France\" ou \"- France\" → on garde uniquement le pays
     if not city or city == '-':
         return normalize_country(country)
+    # Ville junk (N, S, etc.) quand le pays est valide → garder uniquement le pays
+    if len(city.strip()) <= 2 and city.strip().upper() not in ('NY', 'LA', 'UK', 'US'):
+        return normalize_country(country)
     # Corriger pays erroné pour villes connues hors France (ex: Tunis - France → Tunisie, Bruxelles - France → Belgique)
     if country.lower() == 'france' and city:
         correct_country = get_country_from_city(city)

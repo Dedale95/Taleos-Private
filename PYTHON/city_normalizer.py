@@ -360,8 +360,13 @@ def normalize_city(city_raw):
     # Mots-clés suspects qui ne devraient pas être des villes
     invalid_standalone_words = ['central', 'boulevard', 'metro', 'park', 'einsteinring', 
                                 'allée', 'chemin', 'allee', 'scheffer', 'floor', 'bldg',
-                                'building', 'tower', 'road', 'street', 'avenue']
+                                'building', 'tower', 'road', 'street', 'avenue',
+                                'n', 's', 'e', 'w']  # Abréviations directionnelles ou junk
     if city_clean in invalid_standalone_words:
+        return None
+    
+    # Rejeter les chaînes trop courtes (1-2 caractères) sauf abréviations connues
+    if len(city_clean) <= 2 and city_clean not in ('ny', 'la', 'uk', 'us'):
         return None
     
     # Appliquer le mapping
