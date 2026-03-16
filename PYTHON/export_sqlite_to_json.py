@@ -345,10 +345,15 @@ def read_from_db(db_path, company_name, live_only=True):
                 job['contract_types'] = ['Stage', 'Alternance']
                 job['contract_type'] = 'Stage, Alternance'
             elif not job.get('contract_type'):
-                # Fallback : dériver depuis la description (ex: "Apply Add to favorites Fixed term contract")
-                desc = (job.get('job_description') or '')[:2000]
-                if 'fixed term contract' in desc.lower() or 'temporary contract' in desc.lower():
-                    job['contract_type'] = 'CDD'
+                # Fallback : dériver depuis le titre (stagiaire, trainee, stage) ou la description
+                title_lower = (job.get('job_title') or '').lower()
+                if ('stagiaire' in title_lower or 'trainee' in title_lower or
+                    title_lower.startswith('stage ') or ' stage ' in title_lower):
+                    job['contract_type'] = 'Stage'
+                else:
+                    desc = (job.get('job_description') or '')[:2000]
+                    if 'fixed term contract' in desc.lower() or 'temporary contract' in desc.lower():
+                        job['contract_type'] = 'CDD'
             
             # Normaliser la famille de métier pour éviter la prolifération de libellés exotiques
             if job.get('job_family'):

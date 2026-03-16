@@ -2174,12 +2174,12 @@
                         }
                         
                         // Harmonisation des types de contrat : Stage, Alternance, VIE, CDD, CDI, Graduate Programme
+                        const titleForContract = (job.job_title || '').toLowerCase();
                         if (job && job.contract_type && typeof job.contract_type === 'string') {
                             const c = job.contract_type.trim();
                             const cFull = c.toLowerCase();
                             const cl = cFull.replace(/\s*\([^)]*\)/g, '').trim();
-                            const title = (job.job_title || '').toLowerCase();
-                            const combined = cl + ' ' + title;
+                            const combined = cl + ' ' + titleForContract;
                             let consolidated = null;
                             // Alternant / stagiaire → match Stage ET Alternance (contract_types pour le filtre)
                             if ((/alternant|alternance/i.test(combined) && /stagiaire|stage/i.test(combined))) {
@@ -2193,6 +2193,10 @@
                             else if (/graduate programme|graduate program/i.test(cl)) consolidated = 'Graduate Programme';
                             else if (/cdi|permanent|reconversion professionnelle/i.test(cl)) consolidated = 'CDI';
                             if (consolidated) job.contract_type = consolidated;
+                        }
+                        // Fallback : dériver depuis le titre (stagiaire, trainee, stage)
+                        if (job && !job.contract_type && /^(stagiaire|trainee|stage)\b|^stage\s|stagiaire\s|trainee\s|\bstage\b|\bstagiaire\b|\btrainee\b/i.test(titleForContract)) {
+                            job.contract_type = 'Stage';
                         }
 
                         // Consolidation des familles de métier : regrouper les rubriques synonymes sous un libellé canonique
