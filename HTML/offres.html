@@ -3219,7 +3219,7 @@
                 const allCountriesOrRegionsChecked = countries.every(c => {
                     const regs = countryToRegions && countryToRegions[c] ? Array.from(countryToRegions[c]) : [];
                     const countryChecked = checkedCountries.has(c);
-                    const allRegionsChecked = regs.length === 0 || regs.every(r => checkedRegions.has(r));
+                    const allRegionsChecked = regs.length > 0 ? regs.every(r => checkedRegions.has(r)) : false;
                     return countryChecked || allRegionsChecked;
                 });
                 if (allCountriesOrRegionsChecked && countries.length > 0) {
