@@ -24,7 +24,7 @@
 
   function is404OfferPage() {
     const txt = (document.body?.innerText || document.body?.innerHTML || document.documentElement?.innerHTML || '').toLowerCase();
-    return /page not found|error 404|job position is no longer online|the requested page no longer exists/i.test(txt);
+    return /page not found|page introuvable|erreur 404|error 404|job position is no longer online|the requested page no longer exists|offre d'emploi ne soit plus en ligne|n'existe plus|il semblerait que la page/i.test(txt);
   }
 
   function urlMatchesOffer(currentUrl, offerUrl) {
@@ -76,6 +76,7 @@
 
     if (is404OfferPage()) {
       const jobId = taleos_pending_sg?.profile?.__jobId || taleos_pending_sg?.jobId || '';
+      const jobTitle = taleos_pending_sg?.profile?.__jobTitle || taleos_pending_sg?.jobTitle || '';
       const offerUrl = taleos_pending_sg?.profile?.__offerUrl || taleos_pending_sg?.offerUrl || '';
       chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
       try {
@@ -83,8 +84,10 @@
           chrome.runtime.sendMessage({
             action: 'candidature_failure',
             jobId,
+            jobTitle,
             offerUrl,
-            error: 'Offre non disponible (404) — L\'offre n\'est plus en ligne.'
+            error: 'Offre non disponible (404) — L\'offre n\'est plus en ligne.',
+            offerExpired: true
           });
         }
       } catch (_) {}

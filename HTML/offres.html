@@ -4848,7 +4848,7 @@
                             const jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre →</a>`;
                             
                             if (isExpired) {
-                                buttonHTML = `<span class="job-expired-label">Offre indisponible</span>`;
+                                buttonHTML = `<span class="job-expired-label">Offre expirée</span>`;
                             } else if (isSubmitted || isApplied || isPending) {
                                 buttonHTML = jobLinkHTML;
                             } else {

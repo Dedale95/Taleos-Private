@@ -407,9 +407,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === 'candidature_failure') {
+    const { offerExpired, jobId, jobTitle, error } = msg;
+    const isExpired = !!offerExpired || /404|non disponible|expirée|n'est plus en ligne/i.test(error || '');
     chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
-    if (sender.tab?.id) sgLastInject.delete(sender.tab.id);
-    notifyTaleosCandidatureFailure(msg).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+    if (sender.tab?.id) {
+      sgLastInject.delete(sender.tab.id);
+      if (isExpired) chrome.tabs.remove(sender.tab.id).catch(() => {});
+    }
+    if (isExpired && jobId) {
+      notifyTaleosOfferUnavailable({ jobId, jobTitle: jobTitle || '' }).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+    } else {
+      notifyTaleosCandidatureFailure(msg).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+    }
     return true;
   }
   if (msg.action === 'reload_and_continue') {
@@ -882,6 +891,25 @@ async function notifyTaleosCandidatureFailure(msg) {
   if (taleosTab) {
     try {
       await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_failure', jobId, error: error || 'Erreur' });
+    } catch (_) {}
+  }
+}
+
+async function notifyTaleosOfferUnavailable(msg) {
+  const { jobId, jobTitle } = msg;
+  const { taleos_pending_tab } = await chrome.storage.local.get(['taleos_pending_tab']);
+  let taleosTab = taleos_pending_tab;
+  if (!taleosTab) {
+    const taleosTabs = await chrome.tabs.query({ url: '*://*.taleos.co/*' });
+    taleosTab = taleosTabs[0]?.id;
+  }
+  if (!taleosTab) {
+    const ghTabs = await chrome.tabs.query({ url: '*://*.github.io/*' });
+    taleosTab = ghTabs[0]?.id;
+  }
+  if (taleosTab) {
+    try {
+      await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_offer_unavailable', jobId, jobTitle: jobTitle || '' });
     } catch (_) {}
   }
 }

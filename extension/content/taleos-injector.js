@@ -351,6 +351,7 @@
       window.dispatchEvent(new CustomEvent('taleos-extension-auth-required'));
     }
     if (msg.action === 'taleos_offer_unavailable') {
+      clearProcessing(msg.jobId || '', true);
       window.dispatchEvent(new CustomEvent('taleos-extension-offer-unavailable', {
         detail: { jobId: msg.jobId, jobTitle: msg.jobTitle }
       }));
