@@ -3482,12 +3482,13 @@
             // Sauvegarde automatique effectuée au début de applyFilters()
 
             // Filtrer les jobs selon les critères sélectionnés
+            const keywords = window.searchKeywords ? Array.from(window.searchKeywords) : [];
             filteredJobs = allJobs.filter(job => {
                 // Vérifier que TOUS les mots-clés sont présents dans le titre OU la description
-                const matchSearch = window.searchKeywords.size === 0 || Array.from(window.searchKeywords).every(keyword => {
-                    const titleMatch = job.job_title.toLowerCase().includes(keyword);
-                    const descMatch = (job.job_description || '').toLowerCase().includes(keyword);
-                    return titleMatch || descMatch;
+                const matchSearch = keywords.length === 0 || keywords.every(keyword => {
+                    const title = (job.job_title || '').toLowerCase();
+                    const desc = (job.job_description || '').toLowerCase();
+                    return title.includes(keyword) || desc.includes(keyword);
                 });
                 const jobCountry = job.cleanCountries && job.cleanCountries.length ? job.cleanCountries : null;
                 const matchCountry = !selectedCountries.length ||
@@ -3521,10 +3522,10 @@
             // (pas celui qu'on évalue)
             const getJobsMatchingOtherFilters = (excludeFilterType) => {
                 return allJobs.filter(job => {
-                    const matchSearch = window.searchKeywords.size === 0 || Array.from(window.searchKeywords).every(keyword => {
-                        const titleMatch = job.job_title.toLowerCase().includes(keyword);
-                        const descMatch = (job.job_description || '').toLowerCase().includes(keyword);
-                        return titleMatch || descMatch;
+                    const matchSearch = keywords.length === 0 || keywords.every(kw => {
+                        const title = (job.job_title || '').toLowerCase();
+                        const desc = (job.job_description || '').toLowerCase();
+                        return title.includes(kw) || desc.includes(kw);
                     });
 
                     // Pour les comptages pays : exclure pays ET région (cocher Europe coche pays + régions enfants)
@@ -3705,7 +3706,7 @@
             populateCheckboxFilter('contractFilter', sortedAllContracts,
                 new Set([...allContracts].filter(c => !availableContracts.has(c) && !selectedContracts.includes(c))), contractCounts, false);
             populateCheckboxFilter('experienceFilter', sortedAllExperiences,
-                new Set([...allExperiences].filter(e => !availableExperiences.has(e) && !selectedExperiences.includes(e))), experienceCounts, false);
+                new Set([...allExperiences].filter(e => !availableExperiences.has(e) && !selectedExperiences.includes(e))), experienceCounts, false, selectedExperiences);
             populateCheckboxFilter('familyFilter', sortedAllFamilies,
                 new Set([...allFamilies].filter(f => !availableFamilies.has(f) && !selectedFamilies.includes(f))), familyCounts, true);
             populateCheckboxFilter('companyFilter', Array.from(allCompanies).sort(),
