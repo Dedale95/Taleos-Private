@@ -137,6 +137,45 @@ def html_to_text(html: Optional[str]) -> str:
     return unescape(text)
 
 
+def extract_location_from_description(description: Optional[str]) -> Optional[str]:
+    """
+    Extrait la localisation depuis la description quand l'API ne la fournit pas.
+    Ex: "📍 Poste basé à Paris Austerlitz", "Localisation : Lyon"
+    """
+    if not description or not isinstance(description, str):
+        return None
+    text = description.strip()
+    if not text:
+        return None
+    patterns = [
+        r'(?:poste\s+)?basé\s+à\s+([^.\n,;]+)',
+        r'localisation\s*[:\s]+([^.\n,;]+)',
+        r'lieu\s+(?:de\s+travail\s+)?[:\s]+([^.\n,;]+)',
+        r'(?:📍|📌)\s*(?:poste\s+)?basé\s+à\s+([^.\n,;]+)',
+        r'site\s+[:\s]+([^.\n,;]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            loc_raw = match.group(1).strip()
+            # Couper au premier emoji ou mot-clé parasite (Contrat, mois, etc.)
+            loc_raw = re.split(r'[📍📌📄]|\s+Contrat\b|\s+mois\b', loc_raw, maxsplit=1)[0].strip()
+            if len(loc_raw) < 3 or len(loc_raw) > 80:
+                continue
+            city = normalize_city(loc_raw)
+            if city:
+                country = get_country_from_city(city) or normalize_country("France")
+                if country:
+                    country = normalize_country(country)
+                if city and country and city.lower() != country.lower():
+                    return f"{city} - {country}"
+                elif country:
+                    return country
+                elif city:
+                    return city
+    return None
+
+
 def build_location(loc_data: Dict) -> Optional[str]:
     """Construit 'Ville - Pays' à partir de localisations API."""
     city_raw = loc_data.get("city") or loc_data.get("localisation") or ""
@@ -440,6 +479,10 @@ def transform_api_item_to_job(item: Dict) -> Dict:
     job_description = html_to_text(desc_html)
     if job_description:
         job_description = re.sub(r'\s+', ' ', job_description).strip()[:25000]
+
+    # Fallback: extraire la localisation depuis la description (ex: "Poste basé à Paris Austerlitz")
+    if not location and job_description:
+        location = extract_location_from_description(job_description)
 
     # Job family
     job_family = classify_job_family(job_title or "", job_description or "")

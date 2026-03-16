@@ -3,6 +3,10 @@ import re
 CITY_MAPPING = {
     # ========== RÉGION PARISIENNE (IDF) ==========
     'paris': 'Paris',
+    'paris austerlitz': 'Paris',
+    'paris la défense': 'La Défense',
+    'paris la defense': 'La Défense',
+    'paris montparnasse': 'Paris',
     'montrouge': 'Montrouge',
     'la defense': 'La Défense',
     'la défense': 'La Défense',
@@ -19,7 +23,6 @@ CITY_MAPPING = {
     'montreuil': 'Montreuil',
     'villejuif': 'Villejuif',
     'ivry-sur-seine': 'Ivry-Sur-Seine',
-    'paris montparnasse': 'Paris',
     'guyancourt': 'Guyancourt',
     'saint-quentin-en-yvelines': 'Saint-Quentin-En-Yvelines',
     'saint-quentin en yvelines': 'Saint-Quentin-En-Yvelines',
