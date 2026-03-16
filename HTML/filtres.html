@@ -2329,9 +2329,9 @@
             const cmSubs = values.filter(c => isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const others = values.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
 
-            const bpceGroupChecked = bpceBrands.every(c => cv.has(c));
+            const bpceGroupChecked = cv.has(BPCE_GROUP_KEY) || bpceBrands.every(c => cv.has(c));
             const bpceGroupCount = bpceBrands.reduce((s, c) => s + (counts[c] || 0), 0);
-            if (bpceBrands.length > 0) {
+            if (bpceBrands.length > 0 && (!hideDisabled || bpceGroupCount > 0 || bpceGroupChecked)) {
                 const groupDiv = document.createElement('div');
                 groupDiv.className = 'company-group-header';
                 const expandSpan = document.createElement('span');
@@ -2406,9 +2406,9 @@
                 container.appendChild(childrenDiv);
             }
 
-            const bnpGroupChecked = bnpBrands.every(c => cv.has(c));
+            const bnpGroupChecked = cv.has(BNP_PARIBAS_GROUP_KEY) || bnpBrands.every(c => cv.has(c));
             const bnpGroupCount = bnpBrands.reduce((s, c) => s + (counts[c] || 0), 0);
-            if (bnpBrands.length > 0) {
+            if (bnpBrands.length > 0 && (!hideDisabled || bnpGroupCount > 0 || bnpGroupChecked)) {
                 const groupDiv = document.createElement('div');
                 groupDiv.className = 'company-group-header';
                 const expandSpan = document.createElement('span');
@@ -2560,9 +2560,9 @@
                 container.appendChild(childrenDiv);
             }
 
-            const cmGroupChecked = cmSubs.every(c => cv.has(c));
+            const cmGroupChecked = cv.has(CREDIT_MUTUEL_GROUP_KEY) || cmSubs.every(c => cv.has(c));
             const cmGroupCount = cmSubs.reduce((s, c) => s + (counts[c] || 0), 0);
-            if (cmSubs.length > 0) {
+            if (cmSubs.length > 0 && (!hideDisabled || cmGroupCount > 0 || cmGroupChecked)) {
                 const groupDiv = document.createElement('div');
                 groupDiv.className = 'company-group-header';
                 const expandSpan = document.createElement('span');
