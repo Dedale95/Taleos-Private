@@ -230,7 +230,7 @@ def fix_oddo_location(db_path):
 
 
 def fix_bpifrance_location(db_path):
-    """Extrait la localisation depuis titre/description pour les offres BPI sans lieu (ex: Réunion, Martinique)."""
+    """Extrait la localisation depuis titre/description (ex: Réunion, Martinique). Sinon Paris par défaut (siège Bpifrance)."""
     if not db_path.exists():
         return
     try:
@@ -239,18 +239,19 @@ def fix_bpifrance_location(db_path):
         return
     conn = sqlite3.connect(db_path)
     cursor = conn.execute(
-        "SELECT job_url, job_title, job_description FROM jobs WHERE (location IS NULL OR location = '') AND (job_title IS NOT NULL OR job_description IS NOT NULL)"
+        "SELECT job_url, job_title, job_description FROM jobs WHERE (location IS NULL OR location = '') AND is_valid = 1"
     )
     updated = 0
     for job_url, title, desc in cursor.fetchall():
-        loc = extract_location_from_title_and_description(title, desc)
-        if loc:
-            conn.execute("UPDATE jobs SET location = ?, last_updated = CURRENT_TIMESTAMP WHERE job_url = ?", (loc, job_url))
-            updated += 1
+        loc = extract_location_from_title_and_description(title or "", desc or "")
+        if not loc:
+            loc = "Paris - France"  # Siège Bpifrance
+        conn.execute("UPDATE jobs SET location = ?, last_updated = CURRENT_TIMESTAMP WHERE job_url = ?", (loc, job_url))
+        updated += 1
     conn.commit()
     conn.close()
     if updated:
-        print(f"   📍 Bpifrance: {updated} localisation(s) extraite(s) depuis titre/description")
+        print(f"   📍 Bpifrance: {updated} localisation(s) corrigée(s) (titre/description ou Paris par défaut)")
 
 
 def mark_credit_mutuel_error_pages_invalid(db_path):

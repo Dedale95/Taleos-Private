@@ -577,6 +577,9 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
                 loc = extract_location_from_title_and_description(job.get("job_title"), desc)
                 if loc:
                     job["location"] = loc
+            # Fallback final: Bpifrance siège à Paris → Paris - France par défaut
+            if not job.get("location"):
+                job["location"] = "Paris - France"
 
         except Exception as e:
             logging.warning(f"Erreur détail {job.get('job_url')}: {e}")
