@@ -397,11 +397,11 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
                 if contract_type:
                     break
 
-            # Fallback : chercher dans l'en-tête de la page (Apply, Add to favorites, Fixed term contract)
+            # Fallback : chercher dans toute la page (badge peut être hors des sections, ex: pages /en/)
             if not contract_type:
-                header_text = soup.get_text(separator=" ")[:3000]
+                full_page_text = soup.get_text(separator=" ")
                 for key in ["Fixed term contract", "Temporary contract", "Permanent contract", "Internship", "Trainee", "International Volunteer Program", "V.I.E", "Graduate program", "Alternance"]:
-                    if key in header_text:
+                    if key in full_page_text:
                         contract_type = contract_mapping.get(key)
                         if contract_type:
                             break

@@ -326,12 +326,21 @@ def fix_database(db_path, db_name):
                 OR job_title LIKE '%CDD%' OR job_title LIKE '% - CDD %'
             )
         """).rowcount
+        # Fallback 2 : SG jobs /en/ (international) avec contract vide → souvent Fixed term contract (CDD)
+        # Ex: Administrator Operatiuni Curente - Sucursala Delfin (Roumanie)
+        r3 = conn_sg.execute("""
+            UPDATE jobs SET contract_type = 'CDD', last_updated = CURRENT_TIMESTAMP
+            WHERE is_valid = 1 AND (contract_type IS NULL OR contract_type = '')
+            AND job_url LIKE '%/en/%'
+        """).rowcount
         conn_sg.commit()
         conn_sg.close()
         if r1:
             print(f"   📄 {r1} offres 'Fixed term contract' → CDD")
         if r2:
             print(f"   📄 {r2} offres (contract vide + 'Fixed term contract' en description) → CDD")
+        if r3:
+            print(f"   📄 {r3} offres SG /en/ (contract vide) → CDD (Fixed term contract typique)")
     # Crédit Mutuel : marquer les pages d'erreur (Erreur de navigation, Accusé de réception)
     if db_name == "Crédit Mutuel":
         n = mark_credit_mutuel_error_pages_invalid(db_path)
