@@ -2241,19 +2241,6 @@
         function getBNPDisplayName(name) {
             if (!name || typeof name !== 'string') return name;
             const n = name.toLowerCase().trim();
-            const mappings = [
-                ['bnp paribas corporate & institutional banking', 'BNP Paribas CIB'],
-                ['bnp paribas personal finance', 'BNP Personal Finance'],
-                ['bnp paribas real estate', 'BNP Real Estate'],
-                ['bnp paribas wealth management', 'BNP Wealth Management'],
-                ['bnp paribas asset management', 'BNP Asset Management'],
-                ['bnp paribas securities services', 'BNP Securities Services'],
-                ['bnp paribas leasing solutions', 'BNP Leasing Solutions'],
-                ['bnp paribas personal investors', 'BNP Personal Investors'],
-            ];
-            for (const [k, v] of mappings) {
-                if (n.includes(k)) return v;
-            }
             if (n === 'teb') return 'TEB (Türk Ekonomi Bankasi)';
             if (n === 'bnl' || n.includes('banca nazionale del lavoro')) return 'BNL (Banca Nazionale del Lavoro)';
             return name;
