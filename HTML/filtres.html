@@ -1799,9 +1799,15 @@
                                         const c = job.contract_type.trim();
                                         const cFull = c.toLowerCase();
                                         const cl = cFull.replace(/\s*\([^)]*\)/g, '').trim();
+                                        const title = (job.job_title || '').toLowerCase();
+                                        const combined = cl + ' ' + title;
                                         let consolidated = null;
-                                        if (/stage|internship|job etudiant|student job|working student|contrat etudiant|auxiliaire/i.test(cl)) consolidated = 'Stage';
-                                        else if (/alternance|apprentissage|contrat de professionnalisation|contrat d'apprentissage|contrat en alternance/i.test(cl)) consolidated = 'Alternance';
+                                        // Alternant / stagiaire → match Stage ET Alternance (contract_types pour le filtre)
+                                        if ((/alternant|alternance/i.test(combined) && /stagiaire|stage/i.test(combined))) {
+                                            job.contract_types = ['Stage', 'Alternance'];
+                                            job.contract_type = 'Stage, Alternance';
+                                        } else if (/stage|internship|stagiaire|job etudiant|student job|working student|contrat etudiant|auxiliaire/i.test(cl)) consolidated = 'Stage';
+                                        else if (/alternance|alternant|apprentissage|contrat de professionnalisation|contrat d'apprentissage|contrat en alternance/i.test(cl)) consolidated = 'Alternance';
                                         else if (/\bvie\b|v\.i\.e|volontariat international/i.test(cl)) consolidated = 'VIE';
                                         else if (/cdd|temporary|temporaire|fixed term|zero hours|contractor|\btemp\b/i.test(cl)) consolidated = 'CDD';
                                         else if (/(graduate programme|graduate program)/i.test(cl) && /(cdi|permanent)/i.test(cFull)) consolidated = 'CDI';  // Graduate Programme (CDI) → CDI
@@ -3305,8 +3311,10 @@
 
                     // Contrats
                     if (excludeFilterType !== 'contract' && filters.contracts && filters.contracts.length > 0) {
-                        const jct = job.contract_type && String(job.contract_type).trim();
-                        const matchContract = filters.contracts.includes(jct) || (filters.contracts.includes('Non spécifié') && !jct);
+                        const jctTypes = job.contract_types || (job.contract_type ? [String(job.contract_type).trim()] : []);
+                        const matchContract = !filters.contracts?.length ||
+                            (filters.contracts.includes('Non spécifié') && !job.contract_type) ||
+                            filters.contracts.some(s => jctTypes.includes(s));
                         if (!matchContract) return false;
                     }
 
@@ -3350,7 +3358,8 @@
             allJobs.forEach(job => {
                 if (job.cleanCountries) job.cleanCountries.forEach(c => allCountries.add(c));
                 if (job.cleanRegions) job.cleanRegions.forEach(r => allRegions.add(r));
-                if (job.contract_type) allContracts.add(job.contract_type);
+                const cts = job.contract_types || (job.contract_type ? [job.contract_type] : []);
+                cts.forEach(ct => allContracts.add(ct));
                 if (job.experience_level) allExperiences.add(job.experience_level);
                 if (job.job_family) allFamilies.add(job.job_family);
                 if (job.company_name) allCompanies.add(job.company_name);
@@ -3413,10 +3422,8 @@
             const educationCounts = {};
 
             getJobsMatchingOtherFilters('contract').forEach(job => {
-                if (job.contract_type) {
-                    availableContracts.add(job.contract_type);
-                    contractCounts[job.contract_type] = (contractCounts[job.contract_type] || 0) + 1;
-                }
+                const cts = job.contract_types || (job.contract_type ? [job.contract_type] : []);
+                cts.forEach(ct => { availableContracts.add(ct); contractCounts[ct] = (contractCounts[ct] || 0) + 1; });
             });
 
             getJobsMatchingOtherFilters('experience').forEach(job => {
@@ -4517,8 +4524,10 @@
 
                 // Contrats
                 if (filters.contracts && filters.contracts.length > 0) {
-                    const jct = job.contract_type && String(job.contract_type).trim();
-                    const matchContract = filters.contracts.includes(jct) || (filters.contracts.includes('Non spécifié') && !jct);
+                    const jctTypes = job.contract_types || (job.contract_type ? [String(job.contract_type).trim()] : []);
+                    const matchContract = !filters.contracts?.length ||
+                        (filters.contracts.includes('Non spécifié') && !job.contract_type) ||
+                        filters.contracts.some(s => jctTypes.includes(s));
                     if (!matchContract) return false;
                 }
 

@@ -2178,9 +2178,15 @@
                             const c = job.contract_type.trim();
                             const cFull = c.toLowerCase();
                             const cl = cFull.replace(/\s*\([^)]*\)/g, '').trim();
+                            const title = (job.job_title || '').toLowerCase();
+                            const combined = cl + ' ' + title;
                             let consolidated = null;
-                            if (/stage|internship|job etudiant|student job|working student|contrat etudiant|auxiliaire/i.test(cl)) consolidated = 'Stage';
-                            else if (/alternance|apprentissage|contrat de professionnalisation|contrat d'apprentissage|contrat en alternance/i.test(cl)) consolidated = 'Alternance';
+                            // Alternant / stagiaire → match Stage ET Alternance (contract_types pour le filtre)
+                            if ((/alternant|alternance/i.test(combined) && /stagiaire|stage/i.test(combined))) {
+                                job.contract_types = ['Stage', 'Alternance'];
+                                job.contract_type = 'Stage, Alternance';
+                            } else if (/stage|internship|stagiaire|job etudiant|student job|working student|contrat etudiant|auxiliaire/i.test(cl)) consolidated = 'Stage';
+                            else if (/alternance|alternant|apprentissage|contrat de professionnalisation|contrat d'apprentissage|contrat en alternance/i.test(cl)) consolidated = 'Alternance';
                             else if (/\bvie\b|v\.i\.e|volontariat international/i.test(cl)) consolidated = 'VIE';
                             else if (/cdd|temporary|temporaire|fixed term|zero hours|contractor|\btemp\b/i.test(cl)) consolidated = 'CDD';
                             else if (/(graduate programme|graduate program)/i.test(cl) && /(cdi|permanent)/i.test(cFull)) consolidated = 'CDI';  // Graduate Programme (CDI) → CDI
@@ -3786,9 +3792,10 @@
                     (jobCountry && jobCountry.some(c => selectedCountries.includes(c)));
                 const matchRegion = !selectedRegions.length ||
                     (job.cleanRegions && job.cleanRegions.some(r => selectedRegions.includes(r)));
-                const jobContract = job.contract_type && String(job.contract_type).trim();
-                const matchContract = !selectedContracts.length || selectedContracts.includes(jobContract) ||
-                    (selectedContracts.includes('Non spécifié') && !jobContract);
+                const jobContractTypes = job.contract_types || (job.contract_type ? [String(job.contract_type).trim()] : []);
+                const matchContract = !selectedContracts.length ||
+                    (selectedContracts.includes('Non spécifié') && !job.contract_type) ||
+                    selectedContracts.some(s => jobContractTypes.includes(s));
                 const jobExp = job.experience_level && String(job.experience_level).trim();
                 const matchExperience = !selectedExperiences.length || selectedExperiences.includes(jobExp) ||
                     (selectedExperiences.includes('Non spécifié') && !jobExp);
@@ -3826,9 +3833,10 @@
                         (jc && jc.some(c => selectedCountries.includes(c)));
                     const matchRegion = skipLocationForCountryCounts || excludeFilterType === 'region' || !selectedRegions.length ||
                         (job.cleanRegions && job.cleanRegions.some(r => selectedRegions.includes(r)));
-                    const jct = job.contract_type && String(job.contract_type).trim();
-                    const matchContract = excludeFilterType === 'contract' || !selectedContracts.length || selectedContracts.includes(jct) ||
-                        (selectedContracts.includes('Non spécifié') && !jct);
+                    const jctTypes = job.contract_types || (job.contract_type ? [String(job.contract_type).trim()] : []);
+                    const matchContract = excludeFilterType === 'contract' || !selectedContracts.length ||
+                        (selectedContracts.includes('Non spécifié') && !job.contract_type) ||
+                        selectedContracts.some(s => jctTypes.includes(s));
                     const jex = job.experience_level && String(job.experience_level).trim();
                     const matchExperience = excludeFilterType === 'experience' || !selectedExperiences.length || selectedExperiences.includes(jex) ||
                         (selectedExperiences.includes('Non spécifié') && !jex);
@@ -3894,8 +3902,9 @@
                 if (job.cleanCountries && job.cleanCountries.length) job.cleanCountries.forEach(c => allCountries.add(c));
                 else allCountries.add('Non spécifié');
                 if (job.cleanRegions) job.cleanRegions.forEach(r => allRegions.add(r));
-                const ct = job.contract_type && String(job.contract_type).trim();
-                allContracts.add(ct || 'Non spécifié');
+                const cts = job.contract_types || (job.contract_type ? [String(job.contract_type).trim()] : []);
+                if (cts.length) cts.forEach(ct => allContracts.add(ct));
+                else allContracts.add('Non spécifié');
                 const ex = job.experience_level && String(job.experience_level).trim();
                 allExperiences.add(ex || 'Non spécifié');
                 if (job.job_family) allFamilies.add(job.job_family);
@@ -3957,10 +3966,9 @@
             const educationCounts = {};
 
             getJobsMatchingOtherFilters('contract').forEach(job => {
-                const ct = job.contract_type && String(job.contract_type).trim();
-                const v = ct || 'Non spécifié';
-                availableContracts.add(v);
-                contractCounts[v] = (contractCounts[v] || 0) + 1;
+                const cts = job.contract_types || (job.contract_type ? [String(job.contract_type).trim()] : []);
+                if (cts.length) cts.forEach(v => { availableContracts.add(v); contractCounts[v] = (contractCounts[v] || 0) + 1; });
+                else { const v = 'Non spécifié'; availableContracts.add(v); contractCounts[v] = (contractCounts[v] || 0) + 1; }
             });
             getJobsMatchingOtherFilters('experience').forEach(job => {
                 const ex = job.experience_level && String(job.experience_level).trim();

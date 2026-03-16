@@ -159,14 +159,14 @@ def normalize_contract_type(raw_contract: str) -> str:
 
     # Stage
     if any(x in norm or x in norm_clean for x in [
-        "stage", "internship", "auxiliaire de vacances", "job etudiant", "student job",
+        "stage", "stagiaire", "internship", "auxiliaire de vacances", "job etudiant", "student job",
         "working student", "contrat etudiant", "stagesup"
     ]):
         return "Stage"
 
     # Alternance
     if any(x in norm or x in norm_clean for x in [
-        "alternance", "apprentissage", "contrat de professionnalisation",
+        "alternance", "alternant", "apprentissage", "contrat de professionnalisation",
         "contrat d'apprentissage", "contrat en alternance", "contrat-dapprentissage",
         "contrat-de-professionnalisation", "contrat-en-alternance"
     ]):
@@ -339,7 +339,12 @@ def read_from_db(db_path, company_name, live_only=True):
             # Normaliser le type de contrat (filet de sécurité)
             if job.get('contract_type'):
                 job['contract_type'] = normalize_contract_type(job['contract_type'])
-            else:
+            # Alternant / stagiaire → match Stage ET Alternance
+            combined_ct = f"{(job.get('contract_type') or '')} {(job.get('job_title') or '')}".lower()
+            if ('alternant' in combined_ct or 'alternance' in combined_ct) and ('stagiaire' in combined_ct or 'stage' in combined_ct):
+                job['contract_types'] = ['Stage', 'Alternance']
+                job['contract_type'] = 'Stage, Alternance'
+            elif not job.get('contract_type'):
                 # Fallback : dériver depuis la description (ex: "Apply Add to favorites Fixed term contract")
                 desc = (job.get('job_description') or '')[:2000]
                 if 'fixed term contract' in desc.lower() or 'temporary contract' in desc.lower():
