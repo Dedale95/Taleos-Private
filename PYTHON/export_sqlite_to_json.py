@@ -384,6 +384,10 @@ def main():
     
     all_jobs = []
     
+    # Marques BNP (pour préserver si BNP_DB absent en local)
+    BNP_PATTERNS = ['bnp paribas', 'arval', 'bgl bnp', 'bnl', 'teb', 'hello bank',
+                    'banque commerciale en france', 'nickel', 'alfred berg']
+    
     sources_info = [
         ("Crédit Agricole", CA_DB),
         ("Société Générale", SG_DB),
@@ -395,6 +399,21 @@ def main():
         ("ODDO BHF", ODDO_BHF_DB),
     ]
 
+    # Si BNP_DB absent : préserver les offres BNP du JSON existant (évite de les écraser en local)
+    bnp_jobs_preserved = []
+    if not BNP_DB.exists():
+        live_path = HTML_DIR / "scraped_jobs_live.json"
+        if live_path.exists():
+            try:
+                with open(live_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                bnp_jobs_preserved = [j for j in existing
+                                      if any(p in (j.get('company_name') or '').lower() for p in BNP_PATTERNS)]
+                if bnp_jobs_preserved:
+                    print(f"   📌 {len(bnp_jobs_preserved)} offres BNP préservées du JSON existant (base absente)")
+            except Exception:
+                pass
+
     for name, db_path in sources_info:
         print(f"📁 Lecture de {name} depuis {db_path.name}...")
         jobs = read_from_db(db_path, name, live_only=True)
@@ -404,6 +423,10 @@ def main():
             print(f"   ✅ {len(jobs)} offres Live lues")
         else:
             print(f"   ⚠️ Aucune offre trouvée dans {db_path.name}")
+    
+    # Ajouter les offres BNP préservées si la base était absente
+    if bnp_jobs_preserved:
+        all_jobs.extend(bnp_jobs_preserved)
     
     if all_jobs:
         # Sauvegarder en JSON (version complète)
@@ -428,6 +451,8 @@ def main():
             if db_path.exists():
                 full = read_from_db(db_path, name, live_only=False)
                 all_jobs_full.extend(full)
+        if bnp_jobs_preserved and not BNP_DB.exists():
+            all_jobs_full.extend(bnp_jobs_preserved)
         OUTPUT_JSON_FULL = HTML_DIR / "scraped_jobs_full.json"
         if all_jobs_full:
             with open(OUTPUT_JSON_FULL, 'w', encoding='utf-8') as f:
