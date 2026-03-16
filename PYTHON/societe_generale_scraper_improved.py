@@ -367,30 +367,44 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
             job_title = title_tag.get_text(strip=True) if title_tag else None
 
             # Contract type (from badge) with harmonization
+            # Badge peut contenir "Apply Add to favorites Fixed term contract" → extraire "Fixed term contract"
             contract_type = None
+            contract_mapping = {
+                "Permanent contract": "CDI",
+                "Temporary contract": "CDD",
+                "Fixed term contract": "CDD",
+                "Internship": "Stage",
+                "Trainee": "Stage",
+                "International Volunteer Program": "VIE",
+                "V.I.E": "VIE",
+                "Graduate program": "Graduate Program",
+                "Alternance": "Alternance / Apprentissage",
+                "CDI": "CDI",
+                "CDD": "CDD",
+                "Stage": "Stage",
+                "VIE": "VIE"
+            }
             for badge in soup.select("span.flex.pb-px"):
                 text = badge.get_text(strip=True)
-                # Harmonization mapping to match Crédit Agricole terminology
-                contract_mapping = {
-                    "Permanent contract": "CDI",
-                    "Temporary contract": "CDD",
-                    "Fixed term contract": "CDD",
-                    "Internship": "Stage",
-                    "Trainee": "Stage",
-                    "International Volunteer Program": "VIE",
-                    "V.I.E": "VIE",
-                    "Graduate program": "Graduate Program",
-                    "Alternance": "Alternance / Apprentissage",
-                    # Keep these as-is
-                    "CDI": "CDI",
-                    "CDD": "CDD",
-                    "Stage": "Stage",
-                    "VIE": "VIE"
-                }
-                
                 if text in contract_mapping:
                     contract_type = contract_mapping[text]
                     break
+                # Badge peut être "Apply Add to favorites Fixed term contract" → chercher les sous-chaînes
+                for key in contract_mapping:
+                    if key in text:
+                        contract_type = contract_mapping[key]
+                        break
+                if contract_type:
+                    break
+
+            # Fallback : chercher dans l'en-tête de la page (Apply, Add to favorites, Fixed term contract)
+            if not contract_type:
+                header_text = soup.get_text(separator=" ")[:3000]
+                for key in ["Fixed term contract", "Temporary contract", "Permanent contract", "Internship", "Trainee", "International Volunteer Program", "V.I.E", "Graduate program", "Alternance"]:
+                    if key in header_text:
+                        contract_type = contract_mapping.get(key)
+                        if contract_type:
+                            break
 
             # Location (harmonize to match CA format: "Ville - Pays")
             location_tag = soup.select_one("div.mask-location-check")

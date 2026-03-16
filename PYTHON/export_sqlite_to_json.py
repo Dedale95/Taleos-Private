@@ -339,6 +339,11 @@ def read_from_db(db_path, company_name, live_only=True):
             # Normaliser le type de contrat (filet de sécurité)
             if job.get('contract_type'):
                 job['contract_type'] = normalize_contract_type(job['contract_type'])
+            else:
+                # Fallback : dériver depuis la description (ex: "Apply Add to favorites Fixed term contract")
+                desc = (job.get('job_description') or '')[:2000]
+                if 'fixed term contract' in desc.lower() or 'temporary contract' in desc.lower():
+                    job['contract_type'] = 'CDD'
             
             # Normaliser la famille de métier pour éviter la prolifération de libellés exotiques
             if job.get('job_family'):

@@ -314,11 +314,23 @@ def fix_database(db_path, db_name):
         if n:
             print(f"   🧹 {n} offres 'Page not found' marquées invalides")
         conn_sg = sqlite3.connect(db_path)
-        r = conn_sg.execute("UPDATE jobs SET contract_type = 'CDD', last_updated = CURRENT_TIMESTAMP WHERE is_valid = 1 AND contract_type = 'Fixed term contract'").rowcount
+        r1 = conn_sg.execute("UPDATE jobs SET contract_type = 'CDD', last_updated = CURRENT_TIMESTAMP WHERE is_valid = 1 AND contract_type = 'Fixed term contract'").rowcount
+        # Fallback : contract_type vide mais description/titre contient "Fixed term contract" ou "CDD"
+        r2 = conn_sg.execute("""
+            UPDATE jobs SET contract_type = 'CDD', last_updated = CURRENT_TIMESTAMP
+            WHERE is_valid = 1 AND (contract_type IS NULL OR contract_type = '')
+            AND (
+                job_description LIKE '%Fixed term contract%' OR job_description LIKE '%fixed term contract%'
+                OR job_description LIKE '%Temporary contract%' OR job_description LIKE '%temporary contract%'
+                OR job_title LIKE '%CDD%' OR job_title LIKE '% - CDD %'
+            )
+        """).rowcount
         conn_sg.commit()
         conn_sg.close()
-        if r:
-            print(f"   📄 {r} offres 'Fixed term contract' → CDD")
+        if r1:
+            print(f"   📄 {r1} offres 'Fixed term contract' → CDD")
+        if r2:
+            print(f"   📄 {r2} offres (contract vide + 'Fixed term contract' en description) → CDD")
     # Crédit Mutuel : marquer les pages d'erreur (Erreur de navigation, Accusé de réception)
     if db_name == "Crédit Mutuel":
         n = mark_credit_mutuel_error_pages_invalid(db_path)
