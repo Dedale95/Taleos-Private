@@ -500,6 +500,14 @@
             background: rgba(34, 197, 94, 0.15);
             border-bottom-color: rgba(34, 197, 94, 0.3);
         }
+        .filter-box-education {
+            border-color: #0d9488;
+            background: linear-gradient(180deg, rgba(13, 148, 136, 0.08) 0%, #f9fafb 30%);
+        }
+        .filter-box-education .filter-box-header {
+            background: rgba(13, 148, 136, 0.15);
+            border-bottom-color: rgba(13, 148, 136, 0.3);
+        }
 
         .search-wrapper {
             display: flex;
@@ -875,6 +883,11 @@
         .tag-family {
             background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
             color: #065f46;
+        }
+
+        .tag-education {
+            background: linear-gradient(135deg, #ccfbf1 0%, #99f6e4 100%);
+            color: #0f766e;
         }
 
         .job-bottom-block {
@@ -3216,10 +3229,10 @@
                                     </div>
                                 </div>
                                 <div class="filter-group">
-                                    <div class="filter-box">
-                                        <div class="filter-box-header">🎓 Niveau d'étude</div>
-                                        <div class="filter-checkbox-container filter-box-body-checkboxes" id="educationFilter-${accordionId}"></div>
-                                    </div>
+                                <div class="filter-box filter-box-education">
+                                    <div class="filter-box-header">🎓 Niveau d'étude</div>
+                                    <div class="filter-checkbox-container filter-box-body-checkboxes" id="educationFilter-${accordionId}"></div>
+                                </div>
                                 </div>
                             </div>
                             <div class="filter-group">
@@ -4344,6 +4357,7 @@
                 ${job.location ? `<span class="tag tag-location">📍 ${job.location}</span>` : ''}
                 ${job.contract_type ? `<span class="tag tag-contract">📄 ${job.contract_type}</span>` : ''}
                 ${job.experience_level ? `<span class="tag tag-experience">💼 ${job.experience_level}</span>` : ''}
+                ${job.education_level ? `<span class="tag tag-education">🎓 ${job.education_level}</span>` : ''}
                 ${job.job_family ? `<span class="tag tag-family">🎯 ${job.job_family}</span>` : ''}
             </div>
             <div class="job-bottom-block">
