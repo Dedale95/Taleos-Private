@@ -3374,14 +3374,14 @@
                 searchKeywords: Array.from(window.searchKeywords || []),
                 countries: locCountries,
                 regions: locRegions,
-                contracts: getCheckedValues('contractFilter'),
-                experiences: getCheckedValues('experienceFilter'),
-                families: getCheckedValues('familyFilter'),
+                contracts: getCheckedValues('contractFilter') || [],
+                experiences: getCheckedValues('experienceFilter') || [],
+                families: getCheckedValues('familyFilter') || [],
                 // On sauvegarde directement la liste « étendue » des entreprises sélectionnées
                 // (y compris les filiales quand un groupe est coché) pour simplifier la restauration.
                 companies: getSelectedCompanies(),
                 companiesExpanded: getSelectedCompanies(),
-                educations: getCheckedValues('educationFilter'),
+                educations: getCheckedValues('educationFilter') || [],
                 companyGroupCAExpanded: companyGroupCAExpanded,
                 companyGroupBPCEExpanded: companyGroupBPCEExpanded,
                 companyGroupBNPExpanded: companyGroupBNPExpanded,
@@ -3705,15 +3705,15 @@
 
             // hideDisabled=false pour Contrat/Études (garde le barré), true pour Famille (masque)
             populateCheckboxFilter('contractFilter', sortedAllContracts,
-                new Set([...allContracts].filter(c => !availableContracts.has(c) && !selectedContracts.includes(c))), contractCounts, false);
+                new Set([...allContracts].filter(c => !availableContracts.has(c) && !selectedContracts.includes(c))), contractCounts, false, selectedContracts);
             populateCheckboxFilter('experienceFilter', sortedAllExperiences,
                 new Set([...allExperiences].filter(e => !availableExperiences.has(e) && !selectedExperiences.includes(e))), experienceCounts, false, selectedExperiences);
             populateCheckboxFilter('familyFilter', sortedAllFamilies,
-                new Set([...allFamilies].filter(f => !availableFamilies.has(f) && !selectedFamilies.includes(f))), familyCounts, true);
+                new Set([...allFamilies].filter(f => !availableFamilies.has(f) && !selectedFamilies.includes(f))), familyCounts, true, selectedFamilies);
             populateCheckboxFilter('companyFilter', Array.from(allCompanies).sort(),
                 new Set([...allCompanies].filter(c => !availableCompanies.has(c) && !selectedCompanies.includes(c))), companyCounts, true, selectedCompanies);
             populateCheckboxFilter('educationFilter', Array.from(allEducations).sort(),
-                new Set([...allEducations].filter(e => !availableEducations.has(e) && !selectedEducations.includes(e))), educationCounts, false);
+                new Set([...allEducations].filter(e => !availableEducations.has(e) && !selectedEducations.includes(e))), educationCounts, false, selectedEducations);
 
             await renderJobs();
             updateActiveFiltersBadge();

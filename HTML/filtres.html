@@ -3034,12 +3034,16 @@
 
                     // Contrats
                     if (excludeFilterType !== 'contract' && filters.contracts && filters.contracts.length > 0) {
-                        if (!filters.contracts.includes(job.contract_type)) return false;
+                        const jct = job.contract_type && String(job.contract_type).trim();
+                        const matchContract = filters.contracts.includes(jct) || (filters.contracts.includes('Non spécifié') && !jct);
+                        if (!matchContract) return false;
                     }
 
                     // Expériences
                     if (excludeFilterType !== 'experience' && filters.experiences && filters.experiences.length > 0) {
-                        if (!filters.experiences.includes(job.experience_level)) return false;
+                        const jex = job.experience_level && String(job.experience_level).trim();
+                        const matchExp = filters.experiences.includes(jex) || (filters.experiences.includes('Non spécifié') && !jex);
+                        if (!matchExp) return false;
                     }
 
                     // Familles
@@ -3054,7 +3058,9 @@
 
                     // Éducations
                     if (excludeFilterType !== 'education' && filters.educations && filters.educations.length > 0) {
-                        if (!filters.educations.includes(job.education_level)) return false;
+                        const jed = job.education_level && String(job.education_level).trim();
+                        const matchEdu = filters.educations.includes(jed) || (filters.educations.includes('Non spécifié') && !jed);
+                        if (!matchEdu) return false;
                     }
 
                     return true;
@@ -4222,12 +4228,16 @@
 
                 // Contrats
                 if (filters.contracts && filters.contracts.length > 0) {
-                    if (!filters.contracts.includes(job.contract_type)) return false;
+                    const jct = job.contract_type && String(job.contract_type).trim();
+                    const matchContract = filters.contracts.includes(jct) || (filters.contracts.includes('Non spécifié') && !jct);
+                    if (!matchContract) return false;
                 }
 
                 // Expériences
                 if (filters.experiences && filters.experiences.length > 0) {
-                    if (!filters.experiences.includes(job.experience_level)) return false;
+                    const jex = job.experience_level && String(job.experience_level).trim();
+                    const matchExp = filters.experiences.includes(jex) || (filters.experiences.includes('Non spécifié') && !jex);
+                    if (!matchExp) return false;
                 }
 
                 // Familles
@@ -4242,7 +4252,9 @@
 
                 // Éducations
                 if (filters.educations && filters.educations.length > 0) {
-                    if (!filters.educations.includes(job.education_level)) return false;
+                    const jed = job.education_level && String(job.education_level).trim();
+                    const matchEdu = filters.educations.includes(jed) || (filters.educations.includes('Non spécifié') && !jed);
+                    if (!matchEdu) return false;
                 }
 
                 return true;
