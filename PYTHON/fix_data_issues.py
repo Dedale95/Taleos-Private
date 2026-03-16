@@ -192,11 +192,40 @@ def normalize_education_level(edu):
     # Sinon retourner tel quel
     return edu
 
+def mark_sg_error_pages_invalid(db_path):
+    """Marque is_valid=0 pour les offres SG avec titre 'Page not found' / 'Page introuvable'"""
+    if not db_path.exists():
+        return 0
+    error_patterns = ['page not found', 'page introuvable', 'pagenot found']
+    conn = sqlite3.connect(db_path)
+    cursor = conn.execute(
+        "SELECT job_url, job_title FROM jobs WHERE is_valid = 1 AND job_title IS NOT NULL"
+    )
+    to_invalidate = [
+        row[0] for row in cursor.fetchall()
+        if row[1] and any(p in row[1].lower() for p in error_patterns)
+    ]
+    if to_invalidate:
+        placeholders = ','.join('?' * len(to_invalidate))
+        conn.execute(f"""
+            UPDATE jobs SET is_valid = 0, last_updated = CURRENT_TIMESTAMP
+            WHERE job_url IN ({placeholders})
+        """, tuple(to_invalidate))
+        conn.commit()
+    conn.close()
+    return len(to_invalidate)
+
 def fix_database(db_path, db_name):
     """Corrige les données dans une base SQLite"""
     if not db_path.exists():
         print(f"⚠️ Base de données manquante : {db_path}")
         return
+    
+    # SG : marquer les tuiles 404 comme invalides
+    if db_name == "Société Générale":
+        n = mark_sg_error_pages_invalid(db_path)
+        if n:
+            print(f"   🧹 {n} offres 'Page not found' marquées invalides")
     
     print(f"\n📁 Correction de {db_name}...")
     conn = sqlite3.connect(db_path)

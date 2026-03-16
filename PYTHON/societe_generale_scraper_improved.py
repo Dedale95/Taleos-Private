@@ -115,11 +115,35 @@ class JobDatabase:
             """, tuple(urls))
             conn.commit()
 
+    def mark_error_pages_invalid(self) -> int:
+        """Marque is_valid=0 pour les jobs dont le titre indique une page 404. Retourne le nombre mis à jour."""
+        error_patterns = ['page not found', 'page introuvable', 'pagenot found']
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT job_url, job_title FROM jobs WHERE is_valid = 1 AND job_title IS NOT NULL"
+            )
+            to_invalidate = [
+                row[0] for row in cursor.fetchall()
+                if row[1] and any(p in row[1].lower() for p in error_patterns)
+            ]
+            if to_invalidate:
+                placeholders = ','.join('?' * len(to_invalidate))
+                conn.execute(f"""
+                    UPDATE jobs SET is_valid = 0, last_updated = CURRENT_TIMESTAMP
+                    WHERE job_url IN ({placeholders})
+                """, tuple(to_invalidate))
+                conn.commit()
+        return len(to_invalidate)
+
     def insert_or_update_job(self, job: Dict):
         """Insert ou update un job"""
         with sqlite3.connect(self.db_path) as conn:
             # Vérifier si le job a du contenu valide
             is_valid = 1 if (job.get('job_id') or job.get('job_title') or job.get('job_description')) else 0
+            # Exclure les pages d'erreur 404 (tuiles vides "PageNot found", "Page introuvable")
+            title_lower = (job.get('job_title') or '').lower()
+            if any(err in title_lower for err in ['page not found', 'page introuvable', 'pagenot found']):
+                is_valid = 0
 
             # Convertir les listes en JSON si nécessaire
             technical_skills = job.get('technical_skills', '[]')
@@ -591,6 +615,11 @@ async def main():
     # Initialiser la base de données
     db = JobDatabase(config.DB_PATH)
     logging.info(f"Base de données initialisée: {config.DB_PATH}")
+
+    # Nettoyer les tuiles d'erreur 404 déjà en base
+    n_invalid = db.mark_error_pages_invalid()
+    if n_invalid:
+        logging.info(f"🧹 {n_invalid} offres 'Page not found' marquées comme invalides")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=config.HEADLESS)
