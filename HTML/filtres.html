@@ -626,9 +626,12 @@
         }
         .filter-checkbox-container .company-group-header,
         .filter-checkbox-container .company-group-header label,
-        .filter-checkbox-container .company-group-header span {
+        .filter-checkbox-container .company-group-header span:not(.company-group-expand) {
             font-weight: 800 !important;
             color: #1a1a1a;
+        }
+        .filter-checkbox-container .company-group-expand {
+            color: #3b82f6 !important;
         }
         .company-group-header:hover {
             background: rgba(102, 126, 234, 0.08);
@@ -643,16 +646,16 @@
             justify-content: center;
             font-size: 12px;
             transition: transform 0.2s;
-            color: #667eea;
+            color: #3b82f6;
             user-select: none;
             cursor: pointer;
             border-radius: 6px;
         }
         .company-group-header:hover .company-group-expand {
-            background: rgba(102, 126, 234, 0.12);
+            background: rgba(59, 130, 246, 0.12);
         }
         .company-group-expand:hover {
-            background: rgba(102, 126, 234, 0.15);
+            background: rgba(59, 130, 246, 0.15);
         }
         .company-group-expand.expanded {
             transform: rotate(90deg);
