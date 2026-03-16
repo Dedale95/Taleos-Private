@@ -2564,6 +2564,26 @@
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
         const BPCE_GROUP_KEY = '__BPCE_GROUP__';
         const BNP_PARIBAS_GROUP_KEY = '__BNP_GROUP__';
+        function getBNPDisplayName(name) {
+            if (!name || typeof name !== 'string') return name;
+            const n = name.toLowerCase().trim();
+            const mappings = [
+                ['bnp paribas corporate & institutional banking', 'BNP Paribas CIB'],
+                ['bnp paribas personal finance', 'BNP Personal Finance'],
+                ['bnp paribas real estate', 'BNP Real Estate'],
+                ['bnp paribas wealth management', 'BNP Wealth Management'],
+                ['bnp paribas asset management', 'BNP Asset Management'],
+                ['bnp paribas securities services', 'BNP Securities Services'],
+                ['bnp paribas leasing solutions', 'BNP Leasing Solutions'],
+                ['bnp paribas personal investors', 'BNP Personal Investors'],
+            ];
+            for (const [k, v] of mappings) {
+                if (n.includes(k)) return v;
+            }
+            if (n === 'teb') return 'TEB (Türk Ekonomi Bankasi)';
+            if (n === 'bnl' || n.includes('banca nazionale del lavoro')) return 'BNL (Banca Nazionale del Lavoro)';
+            return name;
+        }
         const CREDIT_MUTUEL_GROUP_KEY = '__CM_GROUP__';
         let companyGroupCAExpanded = false;
         let companyGroupBPCEExpanded = false;
@@ -2628,8 +2648,9 @@
                 result = result.filter(v => v !== CREDIT_MUTUEL_GROUP_KEY).concat(cmSubs);
             }
             if (checked.includes(BNP_PARIBAS_GROUP_KEY)) {
-                const bnpBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-bnp-brand]')).map(cb => cb.value);
-                result = result.filter(v => v !== BNP_PARIBAS_GROUP_KEY).concat(bnpBrands);
+                const bnpCbs = container.querySelectorAll('input[type="checkbox"][data-bnp-brand]');
+                const bnpList = Array.from(bnpCbs).filter(cb => cb.checked).map(cb => cb.value);
+                result = result.filter(v => v !== BNP_PARIBAS_GROUP_KEY).concat(bnpList);
             }
             return [...new Set(result)];
         }
@@ -2759,6 +2780,7 @@
                 groupCb.type = 'checkbox';
                 groupCb.value = BNP_PARIBAS_GROUP_KEY;
                 groupCb.checked = bnpGroupChecked;
+                const childCheckboxes = [];
                 groupCb.onchange = () => {
                     bnpBrands.forEach(c => {
                         const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-bnp-brand]`);
@@ -2774,7 +2796,6 @@
                 groupDiv.appendChild(groupLabel);
                 groupDiv.appendChild(expandSpan);
                 container.appendChild(groupDiv);
-                const childCheckboxes = [];
                 bnpBrands.forEach(c => {
                     const cnt = counts[c] || 0;
                     if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
@@ -2789,7 +2810,8 @@
                     childCheckboxes.push(cb);
                     label.appendChild(cb);
                     const sp = document.createElement('span');
-                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
+                    const displayName = getBNPDisplayName(c);
+                    sp.textContent = cnt > 0 ? `${displayName} (${cnt})` : displayName;
                     label.appendChild(sp);
                     if (disabled) label.classList.add('disabled');
                     childrenDiv.appendChild(label);
