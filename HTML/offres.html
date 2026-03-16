@@ -3436,9 +3436,11 @@
                         return titleMatch || descMatch;
                     });
 
-                    const matchCountry = excludeFilterType === 'country' || !selectedCountries.length ||
+                    // Pour les comptages pays : exclure pays ET région (cocher Europe coche pays + régions enfants)
+                    const skipLocationForCountryCounts = excludeFilterType === 'country';
+                    const matchCountry = skipLocationForCountryCounts || !selectedCountries.length ||
                         (job.cleanCountries && job.cleanCountries.some(c => selectedCountries.includes(c)));
-                    const matchRegion = excludeFilterType === 'region' || !selectedRegions.length ||
+                    const matchRegion = skipLocationForCountryCounts || excludeFilterType === 'region' || !selectedRegions.length ||
                         (job.cleanRegions && job.cleanRegions.some(r => selectedRegions.includes(r)));
                     const matchContract = excludeFilterType === 'contract' || !selectedContracts.length || selectedContracts.includes(job.contract_type);
                     const matchExperience = excludeFilterType === 'experience' || !selectedExperiences.length || selectedExperiences.includes(job.experience_level);
