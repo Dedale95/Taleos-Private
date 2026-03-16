@@ -2419,6 +2419,9 @@
             } else {
                 companyGroupCMExpanded = localStorage.getItem('companyGroupCMExpanded') === 'true';
             }
+            if (restoredFilters?.familyGroupExpanded) {
+                restoreFamilyGroupExpanded(restoredFilters.familyGroupExpanded);
+            }
             
             const sets = {
                 regions: new Set(), countries: new Set(), contracts: new Set(),
@@ -2587,7 +2590,7 @@
             
             // hideDisabled=false pour Contrat et Études (garde le barré)
             populateCheckboxFilter('contractFilter', sortedContracts, new Set(), counts.contracts, false, restoredFilters?.contracts);
-            populateCheckboxFilter('experienceFilter', sortedExperiences, new Set(), counts.experiences, false, restoredFilters?.experiences);
+            populateCheckboxFilter('experienceFilter', sortedExperiences, new Set(), counts.experiences, false, restoredFilters?.experiences ?? []);
             const restoredCompanies =
                 (restoredFilters && Array.isArray(restoredFilters.companiesExpanded) && restoredFilters.companiesExpanded.length)
                     ? restoredFilters.companiesExpanded
@@ -3117,6 +3120,12 @@
 
         let familyGroupExpanded = {};
         try { familyGroupExpanded = JSON.parse(localStorage.getItem('familyGroupExpanded') || '{}'); } catch (_) {}
+        function restoreFamilyGroupExpanded(restored) {
+            if (restored && typeof restored === 'object' && Object.keys(restored).length > 0) {
+                familyGroupExpanded = { ...familyGroupExpanded, ...restored };
+                localStorage.setItem('familyGroupExpanded', JSON.stringify(familyGroupExpanded));
+            }
+        }
         function populateFamilyFilterWithGroups(values, counts, disabledValues, hideDisabled, restoredCheckedValues) {
             const container = document.getElementById('familyFilter');
             if (!container) return;
@@ -3604,6 +3613,7 @@
                 companyGroupCMExpanded: companyGroupCMExpanded,
                 continentExpanded: getContinentExpandedState(),
                 countryExpanded: getCountryExpandedState(),
+                familyGroupExpanded: familyGroupExpanded,
                 savedAt: new Date().toISOString()
             };
             
@@ -3937,6 +3947,7 @@
 
         function getCheckedValues(containerId) {
             const container = document.getElementById(containerId);
+            if (!container) return [];
             return Array.from(container.querySelectorAll('input:checked'))
                 .filter(cb => !cb.classList.contains('continent-group-checkbox'))
                 .map(cb => cb.value);
