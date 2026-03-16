@@ -2567,6 +2567,16 @@
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
         const BPCE_GROUP_KEY = '__BPCE_GROUP__';
         const BNP_PARIBAS_GROUP_KEY = '__BNP_GROUP__';
+        const FAMILY_GROUPS = {
+            'Contrôle et Risques': ['Risques / Contrôles permanents', 'Conformité / Sécurité financière', 'Inspection / Audit'],
+            'Finance et Analyse': ['Finances / Comptabilité / Contrôle de gestion', 'Analyse financière et économique'],
+            'Business et Investissement': ['Financement et Investissement', "Gestion d'Actifs"],
+            'Support et Pilotage': ['Organisation / Qualité', 'Direction générale', 'Autres']
+        };
+        const FAMILY_GROUP_PREFIX = '__FAMILY_GROUP__';
+        function getFamilyGroupKey(label) { return FAMILY_GROUP_PREFIX + label; }
+        function isFamilyGroupKey(v) { return typeof v === 'string' && v.startsWith(FAMILY_GROUP_PREFIX); }
+        function getFamilyGroupFamilies(key) { return FAMILY_GROUPS[key.slice(FAMILY_GROUP_PREFIX.length)] || []; }
         function getBNPDisplayName(name) {
             if (!name || typeof name !== 'string') return name;
             const n = name.toLowerCase().trim();
@@ -2618,6 +2628,21 @@
                 'ataraxia promotion'
             ];
             return cmPatterns.some(s => n.includes(s)) || /^ccm\s/.test(n) || /\sccm$/.test(n);
+        }
+
+        function getSelectedFamilies() {
+            const container = document.getElementById('familyFilter');
+            if (!container) return [];
+            const checked = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+            let result = [];
+            checked.forEach(v => {
+                if (isFamilyGroupKey(v)) {
+                    result = result.concat(getFamilyGroupFamilies(v));
+                } else {
+                    result.push(v);
+                }
+            });
+            return [...new Set(result)];
         }
 
         function getSelectedCompanies() {
@@ -3024,6 +3049,128 @@
             });
         }
 
+        let familyGroupExpanded = {};
+        try { familyGroupExpanded = JSON.parse(localStorage.getItem('familyGroupExpanded') || '{}'); } catch (_) {}
+        function populateFamilyFilterWithGroups(values, counts, disabledValues, hideDisabled, restoredCheckedValues) {
+            const container = document.getElementById('familyFilter');
+            if (!container) return;
+            const checkedValues = restoredCheckedValues ? new Set(restoredCheckedValues) : new Set(getSelectedFamilies());
+            const allGroupedFamilies = new Set();
+            Object.values(FAMILY_GROUPS).forEach(arr => arr.forEach(f => allGroupedFamilies.add(f)));
+            const others = values.filter(f => !allGroupedFamilies.has(f)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            container.innerHTML = '';
+
+            Object.entries(FAMILY_GROUPS).forEach(([groupLabel, families]) => {
+                const subFamilies = families.filter(f => values.includes(f));
+                if (subFamilies.length === 0) return;
+                const groupKey = getFamilyGroupKey(groupLabel);
+                const groupCount = subFamilies.reduce((s, f) => s + (counts[f] || 0), 0);
+                const groupChecked = checkedValues.has(groupKey) || subFamilies.every(f => checkedValues.has(f));
+                if (hideDisabled && groupCount === 0 && !groupChecked) return;
+                const expanded = familyGroupExpanded[groupLabel] !== false;
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'company-group-header';
+                const expandSpan = document.createElement('span');
+                expandSpan.className = 'company-group-expand';
+                expandSpan.textContent = '▶';
+                expandSpan.title = 'Cliquer pour afficher/masquer les familles du pôle';
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'company-group-children' + (expanded ? ' visible' : '');
+                childrenDiv.setAttribute('data-group', 'family-' + groupLabel);
+                if (expanded) expandSpan.classList.add('expanded');
+                expandSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    childrenDiv.classList.toggle('visible');
+                    expandSpan.classList.toggle('expanded');
+                    familyGroupExpanded[groupLabel] = childrenDiv.classList.contains('visible');
+                    localStorage.setItem('familyGroupExpanded', JSON.stringify(familyGroupExpanded));
+                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
+                };
+                const groupLabelEl = document.createElement('label');
+                groupLabelEl.style.display = 'flex';
+                groupLabelEl.style.alignItems = 'center';
+                groupLabelEl.style.flex = '1';
+                groupLabelEl.style.cursor = 'pointer';
+                const groupCb = document.createElement('input');
+                groupCb.type = 'checkbox';
+                groupCb.value = groupKey;
+                groupCb.checked = groupChecked;
+                groupCb.setAttribute('data-family-group', '1');
+                const childCheckboxes = [];
+                groupCb.onchange = () => {
+                    childCheckboxes.forEach(cb => { if (!cb.disabled) cb.checked = groupCb.checked; });
+                    requestAnimationFrame(() => { groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked); });
+                    updateActiveFiltersBadge();
+                    applyFilters();
+                };
+                groupLabelEl.appendChild(groupCb);
+                const span = document.createElement('span');
+                span.textContent = groupLabel + ' (' + groupCount + ')';
+                groupLabelEl.appendChild(span);
+                groupDiv.appendChild(groupLabelEl);
+                groupDiv.appendChild(expandSpan);
+                container.appendChild(groupDiv);
+                subFamilies.forEach(f => {
+                    const cnt = counts[f] || 0;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(f)) return;
+                    const disabled = disabledValues.has(f);
+                    const label = document.createElement('label');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = f;
+                    cb.setAttribute('data-family-child', '1');
+                    cb.checked = checkedValues.has(f) || groupChecked;
+                    cb.disabled = disabled;
+                    childCheckboxes.push(cb);
+                    label.appendChild(cb);
+                    const sp = document.createElement('span');
+                    sp.textContent = cnt > 0 ? f + ' (' + cnt + ')' : f;
+                    label.appendChild(sp);
+                    if (disabled) label.classList.add('disabled');
+                    childrenDiv.appendChild(label);
+                });
+                childCheckboxes.forEach(cb => {
+                    cb.onchange = () => {
+                        requestAnimationFrame(() => { groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked); });
+                        updateActiveFiltersBadge();
+                        applyFilters();
+                    };
+                });
+                groupDiv.addEventListener('click', (e) => {
+                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                    groupCb.checked = !allChecked;
+                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                container.appendChild(childrenDiv);
+            });
+
+            others.forEach(f => {
+                const cnt = counts[f] || 0;
+                if (hideDisabled && cnt === 0 && !checkedValues.has(f)) return;
+                const disabled = disabledValues.has(f);
+                const label = document.createElement('label');
+                label.className = 'company-filter-other';
+                const spacer = document.createElement('span');
+                spacer.className = 'company-filter-spacer';
+                label.appendChild(spacer);
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = f;
+                cb.checked = checkedValues.has(f);
+                cb.disabled = disabled;
+                cb.onchange = () => { updateActiveFiltersBadge(); applyFilters(); };
+                label.appendChild(cb);
+                const sp = document.createElement('span');
+                sp.textContent = cnt > 0 ? f + ' (' + cnt + ')' : f;
+                label.appendChild(sp);
+                if (disabled) label.classList.add('disabled');
+                container.appendChild(label);
+            });
+        }
+
         const CONTINENT_GROUPS = {
             'Europe': [
                 'France', 'Allemagne', 'Luxembourg', 'Roumanie', 'Pologne', 'Italie',
@@ -3306,6 +3453,9 @@
             if (id === 'companyFilter') {
                 return populateCompanyFilterWithGroup(values, counts, disabledValues, hideDisabled, restoredCheckedValues);
             }
+            if (id === 'familyFilter') {
+                return populateFamilyFilterWithGroups(values, counts, disabledValues, hideDisabled, restoredCheckedValues);
+            }
             const container = document.getElementById(id);
             // Sauvegarder les valeurs actuellement cochées OU utiliser les valeurs restaurées
             const checkedValues = restoredCheckedValues ? new Set(restoredCheckedValues) : new Set(getCheckedValues(id));
@@ -3376,7 +3526,7 @@
                 regions: locRegions,
                 contracts: getCheckedValues('contractFilter') || [],
                 experiences: getCheckedValues('experienceFilter') || [],
-                families: getCheckedValues('familyFilter') || [],
+                families: getSelectedFamilies() || [],
                 // On sauvegarde directement la liste « étendue » des entreprises sélectionnées
                 // (y compris les filiales quand un groupe est coché) pour simplifier la restauration.
                 companies: getSelectedCompanies(),
@@ -3476,7 +3626,7 @@
             const { countries: selectedCountries, regions: selectedRegions } = getCheckedCountriesAndRegions();
             const selectedContracts = getCheckedValues('contractFilter');
             const selectedExperiences = getCheckedValues('experienceFilter');
-            const selectedFamilies = getCheckedValues('familyFilter');
+            const selectedFamilies = getSelectedFamilies();
             const selectedCompanies = getSelectedCompanies();
             const selectedEducations = getCheckedValues('educationFilter');
             

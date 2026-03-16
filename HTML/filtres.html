@@ -2248,6 +2248,16 @@
             return name;
         }
         const CREDIT_MUTUEL_GROUP_KEY = '__CM_GROUP__';
+        const FAMILY_GROUPS = {
+            'Contrôle et Risques': ['Risques / Contrôles permanents', 'Conformité / Sécurité financière', 'Inspection / Audit'],
+            'Finance et Analyse': ['Finances / Comptabilité / Contrôle de gestion', 'Analyse financière et économique'],
+            'Business et Investissement': ['Financement et Investissement', "Gestion d'Actifs"],
+            'Support et Pilotage': ['Organisation / Qualité', 'Direction générale', 'Autres']
+        };
+        const FAMILY_GROUP_PREFIX = '__FAMILY_GROUP__';
+        function getFamilyGroupKey(label) { return FAMILY_GROUP_PREFIX + label; }
+        function isFamilyGroupKey(v) { return typeof v === 'string' && v.startsWith(FAMILY_GROUP_PREFIX); }
+        function getFamilyGroupFamilies(key) { return FAMILY_GROUPS[key.slice(FAMILY_GROUP_PREFIX.length)] || []; }
         const companyGroupCAExpandedByAccordion = {};
         const companyGroupBPCEExpandedByAccordion = {};
         const companyGroupBNPExpandedByAccordion = {};
@@ -2878,6 +2888,133 @@
             });
         }
 
+        const familyGroupExpandedByAccordion = {};
+        function populateFamilyFilterAccordionWithGroups(accordionId, values, counts, disabledValues, hideDisabled, checkedValues) {
+            const container = document.getElementById(`familyFilter-${accordionId}`);
+            if (!container) return;
+            const cv = checkedValues instanceof Set ? checkedValues : new Set(checkedValues || []);
+            Object.keys(FAMILY_GROUPS).forEach(groupLabel => {
+                const prev = container.querySelector('.company-group-children[data-group="family-' + groupLabel + '"]');
+                if (prev && prev.classList.contains('visible')) {
+                    if (!familyGroupExpandedByAccordion[accordionId]) familyGroupExpandedByAccordion[accordionId] = {};
+                    familyGroupExpandedByAccordion[accordionId][groupLabel] = true;
+                }
+            });
+            const allGroupedFamilies = new Set();
+            Object.values(FAMILY_GROUPS).forEach(arr => arr.forEach(f => allGroupedFamilies.add(f)));
+            const others = values.filter(f => !allGroupedFamilies.has(f)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            container.innerHTML = '';
+
+            Object.entries(FAMILY_GROUPS).forEach(([groupLabel, families]) => {
+                const subFamilies = families.filter(f => values.includes(f));
+                if (subFamilies.length === 0) return;
+                const groupKey = getFamilyGroupKey(groupLabel);
+                const groupCount = subFamilies.reduce((s, f) => s + (counts[f] || 0), 0);
+                const groupChecked = cv.has(groupKey) || subFamilies.every(f => cv.has(f));
+                if (hideDisabled && groupCount === 0 && !groupChecked) return;
+                const expanded = familyGroupExpandedByAccordion[accordionId]?.[groupLabel] !== false;
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'company-group-header';
+                const expandSpan = document.createElement('span');
+                expandSpan.className = 'company-group-expand';
+                expandSpan.textContent = '▶';
+                expandSpan.title = 'Cliquer pour afficher/masquer les familles du pôle';
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'company-group-children' + (expanded ? ' visible' : '');
+                childrenDiv.setAttribute('data-group', 'family-' + groupLabel);
+                if (expanded) expandSpan.classList.add('expanded');
+                expandSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    childrenDiv.classList.toggle('visible');
+                    expandSpan.classList.toggle('expanded');
+                    if (!familyGroupExpandedByAccordion[accordionId]) familyGroupExpandedByAccordion[accordionId] = {};
+                    familyGroupExpandedByAccordion[accordionId][groupLabel] = childrenDiv.classList.contains('visible');
+                };
+                const groupLabelEl = document.createElement('label');
+                groupLabelEl.style.display = 'flex';
+                groupLabelEl.style.alignItems = 'center';
+                groupLabelEl.style.flex = '1';
+                groupLabelEl.style.cursor = 'pointer';
+                const groupCb = document.createElement('input');
+                groupCb.type = 'checkbox';
+                groupCb.value = groupKey;
+                groupCb.checked = groupChecked;
+                groupCb.setAttribute('data-family-group', '1');
+                const childCheckboxes = [];
+                groupCb.onchange = () => {
+                    childCheckboxes.forEach(cb => {
+                        if (!cb.disabled) cb.checked = groupCb.checked;
+                        updateFilter(accordionId, 'families', cb.value, groupCb.checked);
+                    });
+                    requestAnimationFrame(() => { groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked); });
+                };
+                groupLabelEl.appendChild(groupCb);
+                const span = document.createElement('span');
+                span.textContent = groupLabel + ' (' + groupCount + ')';
+                groupLabelEl.appendChild(span);
+                groupDiv.appendChild(groupLabelEl);
+                groupDiv.appendChild(expandSpan);
+                container.appendChild(groupDiv);
+                subFamilies.forEach(f => {
+                    const cnt = counts[f] || 0;
+                    if (hideDisabled && cnt === 0 && !cv.has(f)) return;
+                    const disabled = disabledValues.has(f);
+                    const label = document.createElement('label');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = f;
+                    cb.setAttribute('data-family-child', '1');
+                    cb.checked = cv.has(f) || groupChecked;
+                    cb.disabled = disabled;
+                    childCheckboxes.push(cb);
+                    label.appendChild(cb);
+                    const sp = document.createElement('span');
+                    sp.textContent = cnt > 0 ? f + ' (' + cnt + ')' : f;
+                    label.appendChild(sp);
+                    if (disabled) label.classList.add('disabled');
+                    childrenDiv.appendChild(label);
+                });
+                childCheckboxes.forEach(cb => {
+                    cb.onchange = () => {
+                        updateFilter(accordionId, 'families', cb.value, cb.checked);
+                        requestAnimationFrame(() => { groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked); });
+                    };
+                });
+                groupDiv.addEventListener('click', (e) => {
+                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                    groupCb.checked = !allChecked;
+                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                container.appendChild(childrenDiv);
+            });
+
+            others.forEach(f => {
+                const cnt = counts[f] || 0;
+                if (hideDisabled && cnt === 0 && !cv.has(f)) return;
+                const disabled = disabledValues.has(f);
+                const label = document.createElement('label');
+                label.className = 'company-filter-other';
+                const spacer = document.createElement('span');
+                spacer.className = 'company-filter-spacer';
+                label.appendChild(spacer);
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = f;
+                cb.checked = cv.has(f);
+                cb.disabled = disabled;
+                cb.onchange = () => updateFilter(accordionId, 'families', f, cb.checked);
+                label.appendChild(cb);
+                const sp = document.createElement('span');
+                sp.textContent = cnt > 0 ? f + ' (' + cnt + ')' : f;
+                label.appendChild(sp);
+                if (disabled) label.classList.add('disabled');
+                container.appendChild(label);
+            });
+        }
+
         // Fonction pour peupler un filtre avec compteurs et état disabled (identique à offres.html)
         function populateCheckboxFilterAccordion(accordionId, filterId, values, disabledValues = new Set(), counts = {}, hideDisabled = false, checkedValues = new Set()) {
             const container = document.getElementById(`${filterId}-${accordionId}`);
@@ -2889,6 +3026,10 @@
 
             if (filterId === 'companyFilter') {
                 return populateCompanyFilterAccordionWithGroup(accordionId, values, counts, disabledValues, hideDisabled, checkedValues);
+            }
+
+            if (filterId === 'familyFilter') {
+                return populateFamilyFilterAccordionWithGroups(accordionId, values, counts, disabledValues, hideDisabled, checkedValues);
             }
             
             container.innerHTML = '';
