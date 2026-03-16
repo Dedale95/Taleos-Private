@@ -386,9 +386,9 @@
             margin-bottom: 20px;
         }
 
-        /* Disposition : gauche (Recherche+Expérience) | centre (Contrat+Études+Famille) | droite (Pays+Région+Entreprise) */
+        /* Disposition : gauche (Recherche+Expérience) | centre (Contrat+Études côte à côte, Famille en dessous) | droite (Pays+Région+Entreprise) */
         .filter-row-top {
-            grid-template-columns: 1fr 1.2fr 1.2fr;
+            grid-template-columns: 0.85fr 1.3fr 1.3fr;
             align-items: start;
         }
         .filter-col-left {
@@ -399,6 +399,11 @@
         .filter-col-center {
             display: flex;
             flex-direction: column;
+            gap: 20px;
+        }
+        .filter-col-center-top {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
         .filter-col-right {
@@ -1372,6 +1377,9 @@
             }
 
             .filter-row-top {
+                grid-template-columns: 1fr;
+            }
+            .filter-col-center-top {
                 grid-template-columns: 1fr;
             }
         }
@@ -3200,16 +3208,18 @@
                             </div>
                         </div>
                         <div class="filter-col-center">
-                            <div class="filter-group">
-                                <div class="filter-box filter-box-contract">
-                                    <div class="filter-box-header">📄 Type de contrat</div>
-                                    <div class="filter-checkbox-container filter-box-body-checkboxes" id="contractFilter-${accordionId}"></div>
+                            <div class="filter-col-center-top">
+                                <div class="filter-group">
+                                    <div class="filter-box filter-box-contract">
+                                        <div class="filter-box-header">📄 Type de contrat</div>
+                                        <div class="filter-checkbox-container filter-box-body-checkboxes" id="contractFilter-${accordionId}"></div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="filter-group">
-                                <div class="filter-box">
-                                    <div class="filter-box-header">🎓 Niveau d'étude</div>
-                                    <div class="filter-checkbox-container filter-box-body-checkboxes" id="educationFilter-${accordionId}"></div>
+                                <div class="filter-group">
+                                    <div class="filter-box">
+                                        <div class="filter-box-header">🎓 Niveau d'étude</div>
+                                        <div class="filter-checkbox-container filter-box-body-checkboxes" id="educationFilter-${accordionId}"></div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="filter-group">
