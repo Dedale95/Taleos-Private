@@ -3,9 +3,40 @@ Normalisation des noms de pays
 EN → FR pour cohérence
 """
 
-# Villes connues hors France : ville (lowercase) → pays en français
-# Utilisé pour corriger les offres Deloitte (et autres) où le pays est incorrectement "France"
+# Villes connues : ville (lowercase) → pays en français
+# Utilisé pour corriger les offres (ODDO BHF, Deloitte, etc.) où le pays manque ou est erroné
 CITY_TO_COUNTRY = {
+    # France (villes courantes pour ODDO BHF et autres sources sans pays)
+    'paris': 'France',
+    'lyon': 'France',
+    'clichy': 'France',
+    'marseille': 'France',
+    'toulouse': 'France',
+    'bordeaux': 'France',
+    'lille': 'France',
+    'nice': 'France',
+    'nantes': 'France',
+    'strasbourg': 'France',
+    'rennes': 'France',
+    'montpellier': 'France',
+    'saint-denis': 'France',
+    'reims': 'France',
+    'le havre': 'France',
+    'saint-étienne': 'France',
+    'toulon': 'France',
+    'grenoble': 'France',
+    'dijon': 'France',
+    'angers': 'France',
+    'nîmes': 'France',
+    'villeurbanne': 'France',
+    'aix-en-provence': 'France',
+    'nanterre': 'France',
+    'courbevoie': 'France',
+    'levallois-perret': 'France',
+    'neuilly-sur-seine': 'France',
+    'puteaux': 'France',
+    'la défense': 'France',
+    'suresnes': 'France',
     # Tunisie
     'tunis': 'Tunisie',
     # Afrique subsaharienne
@@ -116,8 +147,8 @@ CITY_TO_COUNTRY = {
 
 def get_country_from_city(city):
     """
-    Retourne le pays pour une ville connue hors France.
-    Retourne None si la ville est en France ou inconnue.
+    Retourne le pays pour une ville connue (France, Tunisie, etc.).
+    Retourne None si la ville est inconnue.
     """
     if not city or not isinstance(city, str):
         return None

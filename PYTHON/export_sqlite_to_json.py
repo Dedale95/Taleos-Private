@@ -248,18 +248,25 @@ def fix_location(loc):
         parts = re.split(r'\s*-\s*', loc, maxsplit=1)
         if len(parts) >= 2 and parts[0].strip().upper() == 'N/A':
             return normalize_country(parts[1].strip())
-    # Cas où la location est juste une ville connue en France (ex: \"Grandcamp Maisy\"):
-    # on la transforme en \"Grandcamp Maisy - France\" pour que le filtre pays fonctionne.
-    loc_lower = loc.lower()
+    # Cas où la location est juste une ville (sans pays) : Tunis, Paris, Lyon, Clichy, Zurich...
+    # On ajoute le pays pour éviter "Non spécifié / Autres" dans les filtres
+    loc_lower = loc.lower().strip()
     if ' - ' not in loc:
         if 'grandcamp maisy' in loc_lower:
             return 'Grandcamp Maisy - France'
         if 'millénaire 4' in loc_lower or 'millenaire 4' in loc_lower:
             return loc.strip() + ' - France'
-        if loc_lower.strip() == 'deutschlandweit':
+        if loc_lower == 'deutschlandweit':
             return normalize_country('Allemagne')
-        if loc_lower.strip() in ('montréal', 'montreal'):
+        if loc_lower in ('montréal', 'montreal'):
             return loc.strip() + ' - Canada'
+        # Ville seule connue (Tunis→Tunisie, Paris/Lyon/Clichy→France, Zurich→Suisse)
+        country = get_country_from_city(loc)
+        if country:
+            return f"{loc.strip()} - {normalize_country(country)}"
+        # Pays seul (Allemagne, France, Luxembourg) → normaliser
+        if loc_lower in ('allemagne', 'france', 'luxembourg', 'suisse', 'belgique'):
+            return normalize_country(loc)
         return loc
     parts = loc.split(' - ', 1)
     city = (parts[0] or '').strip()

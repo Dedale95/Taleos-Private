@@ -10,7 +10,7 @@ import sqlite3
 import re
 from pathlib import Path
 from city_normalizer import normalize_city
-from country_normalizer import normalize_country
+from country_normalizer import normalize_country, get_country_from_city
 
 # Chemins des bases de données
 PYTHON_DIR = Path(__file__).parent
@@ -19,6 +19,7 @@ SG_DB = PYTHON_DIR / "societe_generale_jobs.db"
 DELOITTE_DB = PYTHON_DIR / "deloitte_jobs.db"
 BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 CREDIT_MUTUEL_DB = PYTHON_DIR / "credit_mutuel_jobs.db"
+ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 
 # Mots-clés à détecter comme adresses ou noms d'entreprises
 ADDRESS_KEYWORDS = [
@@ -95,16 +96,8 @@ def clean_location(location_raw):
             # Pas de format "Ville - Pays", essayer de normaliser directement
             city_clean = normalize_city(location_raw)
             if city_clean and not any(kw in city_clean.lower() for kw in ADDRESS_KEYWORDS + COMPANY_KEYWORDS):
-                # Déterminer le pays selon la ville
-                if city_clean.lower() in ['paris', 'lyon', 'marseille', 'toulouse', 'bordeaux', 'lille', 'nice', 'nantes']:
-                    country = 'France'
-                elif city_clean.lower() in ['luxembourg']:
-                    country = 'Luxembourg'
-                elif city_clean.lower() in ['genève', 'zurich', 'lausanne']:
-                    country = 'Suisse'
-                else:
-                    country = 'France'  # Par défaut
-                return f"{city_clean} - {country}"
+                country = get_country_from_city(location_raw) or 'France'
+                return f"{city_clean} - {normalize_country(country)}"
             else:
                 return None
     
@@ -125,10 +118,19 @@ def clean_location(location_raw):
         if country_clean.lower() == 'france' or country_clean == '- France':
             country_clean = 'France'
         
+        # Corriger pays erroné pour villes connues (ex: Tunis - France → Tunis - Tunisie)
+        if country_clean.lower() == 'france' and city_clean:
+            correct_country = get_country_from_city(city_part)
+            if correct_country and correct_country.lower() != 'france':
+                country_clean = normalize_country(correct_country)
+        
         return f"{city_clean} - {country_clean}"
     else:
-        # Pas de format "Ville - Pays", essayer de deviner
+        # Pas de format "Ville - Pays" : ville seule (ex: Tunis, Paris, Lyon)
         city_clean = normalize_city(location_raw)
+        country = get_country_from_city(location_raw)
+        if country:
+            return f"{city_clean} - {normalize_country(country)}"
         return f"{city_clean} - France"  # Par défaut France
 
 def normalize_education_level(edu):
@@ -193,6 +195,30 @@ def normalize_education_level(edu):
     
     # Sinon retourner tel quel
     return edu
+
+def fix_oddo_location(db_path):
+    """Enrichit les locations ODDO BHF : ville seule → Ville - Pays (Tunis→Tunisie, Paris→France, etc.)"""
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(db_path)
+    cursor = conn.execute(
+        "SELECT job_url, location FROM jobs WHERE is_valid = 1 AND location IS NOT NULL AND location != '' AND location NOT LIKE '%-%'"
+    )
+    updated = 0
+    for job_url, loc in cursor.fetchall():
+        if not loc or ' - ' in loc:
+            continue
+        loc = loc.strip()
+        country = get_country_from_city(loc)
+        if country:
+            new_loc = f"{loc} - {normalize_country(country)}"
+            conn.execute("UPDATE jobs SET location = ?, last_updated = CURRENT_TIMESTAMP WHERE job_url = ?", (new_loc, job_url))
+            updated += 1
+    conn.commit()
+    conn.close()
+    if updated:
+        print(f"   📍 ODDO BHF: {updated} localisation(s) enrichie(s) (ville → Ville - Pays)")
+
 
 def fix_bpifrance_location(db_path):
     """Extrait la localisation depuis titre/description pour les offres BPI sans lieu (ex: Réunion, Martinique)."""
@@ -329,6 +355,8 @@ def main():
     fix_database(SG_DB, "Société Générale")
     fix_database(DELOITTE_DB, "Deloitte")
     fix_database(CREDIT_MUTUEL_DB, "Crédit Mutuel")
+    fix_database(ODDO_BHF_DB, "ODDO BHF")
+    fix_oddo_location(ODDO_BHF_DB)
     fix_bpifrance_location(BPIFRANCE_DB)
     
     print("\n" + "=" * 80)

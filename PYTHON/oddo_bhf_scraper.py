@@ -246,6 +246,9 @@ def build_location(city_raw: Optional[str], country_raw: Optional[str]) -> Optio
     city = normalize_city(city_raw) if city_raw else None
     country = normalize_country(country_raw) if country_raw else None
 
+    # Inférer le pays depuis la ville si absent (ex: Tunis → Tunisie, Paris → France)
+    if not country and city:
+        country = get_country_from_city(city)
     if not country:
         return city or None
     if not city or (country and city.lower() == country.lower()):
