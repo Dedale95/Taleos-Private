@@ -43,6 +43,21 @@ logging.basicConfig(
 BASE_URL = "https://group.bnpparibas"
 SEARCH_URL = f"{BASE_URL}/emploi-carriere/toutes-offres-emploi"
 
+# Filtres par type de contrat : le site BNP expose une URL par type.
+# On scrape chaque filtre pour obtenir le type de contrat de façon fiable.
+# Ordre : types génériques d'abord, puis spécifiques (Graduate Programme, Job étudiant)
+# pour que les doublons gardent le type le plus précis.
+CONTRACT_FILTERS = [
+    ("cdi", "CDI"),
+    ("cdd", "CDD"),
+    ("stage", "Stage"),
+    ("vie", "VIE"),
+    ("job-etudiant", "Job étudiant"),
+    ("alternance", "Alternance / Apprentissage"),
+    ("graduate-programme-cdi", "Graduate Programme (CDI)"),
+    ("zero-hours", "Zero Hours"),
+]
+
 # ================= Config =================
 class Config:
     MAX_CONCURRENT_LISTING = 12   # Pages de liste (légères)
@@ -399,17 +414,29 @@ async def navigate_with_retry(page, url: str, max_retries: int = 6):
     raise Exception(f"Failed after {max_retries} retries: {url}")
 
 
-async def get_total_pages(context: BrowserContext) -> int:
+def _get_listing_url(filter_slug: str, page_num: int) -> str:
+    """URL de la page de liste, avec filtre contrat optionnel."""
+    if filter_slug:
+        return f"{SEARCH_URL}/{filter_slug}?page={page_num}" if page_num > 1 else f"{SEARCH_URL}/{filter_slug}"
+    return f"{SEARCH_URL}?q=&page={page_num}" if page_num > 1 else f"{SEARCH_URL}?q="
+
+
+async def get_total_pages_for_filter(
+    context: BrowserContext, filter_slug: str, *, cookie_banner_dismissed: bool = False
+) -> int:
+    """Retourne le nombre de pages pour un filtre contrat donné."""
     page = await context.new_page()
-    await navigate_with_retry(page, f"{SEARCH_URL}?q=")
+    url = _get_listing_url(filter_slug, 1)
+    await navigate_with_retry(page, url)
 
-    try:
-        await page.click("button#onetrust-reject-all-handler", timeout=3000)
-        logging.info("Cookie banner closed")
-    except:
-        pass
+    if not cookie_banner_dismissed:
+        try:
+            await page.click("button#onetrust-reject-all-handler", timeout=3000)
+            logging.info("Cookie banner closed")
+        except Exception:
+            pass
 
-    await asyncio.sleep(1)  # Cookie banner + rendu
+    await asyncio.sleep(1)
     html = await page.content()
     soup = BeautifulSoup(html, "html.parser")
     await page.close()
@@ -418,8 +445,7 @@ async def get_total_pages(context: BrowserContext) -> int:
     match = re.search(r'(\d[\d\s\xa0]*)\s*offres?\s', text)
     if match:
         total = int(match.group(1).replace(' ', '').replace('\xa0', ''))
-        pages = (total + 9) // 10
-        logging.info(f"Total offres détectées: {total} → {pages} pages")
+        pages = max(1, (total + 9) // 10)
         return pages
 
     max_page = 1
@@ -427,7 +453,6 @@ async def get_total_pages(context: BrowserContext) -> int:
         m = re.search(r'page=(\d+)', link.get('href', ''))
         if m:
             max_page = max(max_page, int(m.group(1)))
-    logging.info(f"Pages détectées via pagination: {max_page}")
     return max_page
 
 
@@ -435,14 +460,20 @@ async def get_total_pages(context: BrowserContext) -> int:
 # COLLECT JOB URLs FROM LISTING PAGE
 # =========================================================
 async def fetch_listing_page(
-    context: BrowserContext, page_num: int, sem: asyncio.Semaphore
+    context: BrowserContext,
+    filter_slug: str,
+    contract_type: str,
+    filter_index: int,
+    page_num: int,
+    sem: asyncio.Semaphore,
 ) -> List[Dict]:
+    """Récupère les offres d'une page de liste. Le type de contrat vient du filtre URL (fiable)."""
     async with sem:
         page = await context.new_page()
         try:
-            url = f"{SEARCH_URL}?q=&page={page_num}"
+            url = _get_listing_url(filter_slug, page_num)
             await navigate_with_retry(page, url)
-            await asyncio.sleep(0.4)  # Légère pause pour le rendu (domcontentloaded suffit)
+            await asyncio.sleep(0.4)
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
@@ -455,23 +486,20 @@ async def fetch_listing_page(
                 h3 = card.select_one("h3.title-4")
                 title = h3.get_text(strip=True) if h3 else None
 
-                ct_el = card.select_one("div.offer-type")
-                contract_raw = ct_el.get_text(strip=True) if ct_el else None
-                contract_type = normalize_contract_type(contract_raw) if contract_raw else None
-
                 loc_el = card.select_one("div.offer-location")
                 location_raw = loc_el.get_text(strip=True) if loc_el else None
 
                 jobs.append({
                     "job_url": job_url,
                     "job_title": title,
-                    "contract_type": contract_type,
+                    "contract_type": contract_type,  # Défini par le filtre URL, pas par le HTML
                     "location_raw": location_raw,
+                    "_filter_index": filter_index,  # Pour déduplication : type le plus spécifique gagne
                 })
 
             return jobs
         except Exception as e:
-            logging.error(f"Page {page_num} failed: {e}")
+            logging.error(f"Page {filter_slug} p.{page_num} failed: {e}")
             return []
         finally:
             await page.close()
@@ -497,10 +525,12 @@ async def fetch_job_details(
             if h1:
                 job["job_title"] = h1.get_text(strip=True)
 
-            # Contract type
-            ct_raw = extract_offer_field(soup, "offer-info-type")
-            if ct_raw:
-                job["contract_type"] = normalize_contract_type(ct_raw)
+            # Contract type : priorité au type issu du filtre URL (scraping par /cdi, /stage, etc.)
+            # La page détail en fallback uniquement si absent
+            if not job.get("contract_type"):
+                ct_raw = extract_offer_field(soup, "offer-info-type")
+                if ct_raw:
+                    job["contract_type"] = normalize_contract_type(ct_raw)
 
             # Location
             loc_raw = extract_offer_field(soup, "offer-info-loc")
@@ -640,29 +670,43 @@ async def main():
             else route.continue_()
         )
 
-        # ── Étape 1 : Collecter tous les liens ──
-        logging.info("\n📋 ÉTAPE 1: Collection des liens d'offres")
-        total_pages = await get_total_pages(context)
-
+        # ── Étape 1 : Collecter tous les liens par type de contrat ──
+        logging.info("\n📋 ÉTAPE 1: Collection des liens par type de contrat")
         sem_pages = asyncio.Semaphore(config.MAX_CONCURRENT_LISTING)
-        page_tasks = [
-            fetch_listing_page(context, p, sem_pages)
-            for p in range(1, total_pages + 1)
-        ]
+
+        page_tasks = []
+        cookie_done = False
+        for idx, (filter_slug, contract_type) in enumerate(CONTRACT_FILTERS):
+            try:
+                total_pages = await get_total_pages_for_filter(
+                    context, filter_slug, cookie_banner_dismissed=cookie_done
+                )
+                cookie_done = True
+                logging.info(f"  {contract_type}: {total_pages} pages")
+                for p in range(1, total_pages + 1):
+                    page_tasks.append(
+                        fetch_listing_page(context, filter_slug, contract_type, idx, p, sem_pages)
+                    )
+            except Exception as e:
+                logging.warning(f"  {contract_type} ({filter_slug}): {e}")
 
         all_jobs_basic = []
         for coro in tqdm(
-            asyncio.as_completed(page_tasks), total=total_pages, desc="Collecting URLs"
+            asyncio.as_completed(page_tasks), total=len(page_tasks), desc="Collecting URLs"
         ):
             page_jobs = await coro
             all_jobs_basic.extend(page_jobs)
 
-        seen = set()
-        unique_jobs = []
+        # Dédupliquer par URL : garder le type le plus spécifique (index élevé = Graduate Programme, Job étudiant)
+        seen = {}
         for job in all_jobs_basic:
-            if job["job_url"] not in seen:
-                seen.add(job["job_url"])
-                unique_jobs.append(job)
+            url = job["job_url"]
+            idx = job.get("_filter_index", 0)
+            if url not in seen or idx > seen[url].get("_filter_index", -1):
+                seen[url] = job
+        for j in seen.values():
+            j.pop("_filter_index", None)
+        unique_jobs = list(seen.values())
 
         all_current_urls = {j["job_url"] for j in unique_jobs}
         logging.info(f"Total unique URLs collectées: {len(all_current_urls)}")
