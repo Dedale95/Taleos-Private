@@ -1820,6 +1820,48 @@
                     </div>
                 </div>
 
+                <!-- Section Préférences BPCE -->
+                <div class="form-section accordion-section">
+                    <div class="accordion-header" onclick="toggleAccordion(this)">
+                        <h2>Préférences BPCE</h2>
+                        <span class="accordion-icon">▼</span>
+                    </div>
+                    <div class="accordion-content">
+                        <p style="color: #666; font-size: 0.9rem; margin-bottom: 24px; line-height: 1.6;">Ces informations sont utilisées pour les candidatures au Groupe BPCE (Banque Populaire, Caisse d'Épargne, Natixis, etc.).</p>
+
+                        <div class="form-group">
+                            <label for="bpceHandicap">Travailleur en situation de handicap (information à caractère non obligatoire) : Disposez-vous d'un titre de reconnaissance administrative de votre situation de handicap ?</label>
+                            <select id="bpceHandicap" name="bpceHandicap">
+                                <option value="">Sélectionnez...</option>
+                                <option value="Oui">Oui</option>
+                                <option value="Non">Non</option>
+                                <option value="Je ne souhaite pas répondre">Je ne souhaite pas répondre</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="bpceVivierNatixis">J'accepte que Natixis conserve mon profil dans le vivier Candidats. En sélectionnant «Oui», vous souhaitez que l'on puisse vous proposer de nouvelles offres d'emploi correspondant à votre profil et vous envoyer des informations sur nos métiers.</label>
+                            <select id="bpceVivierNatixis" name="bpceVivierNatixis">
+                                <option value="">Sélectionnez...</option>
+                                <option value="Oui">Oui</option>
+                                <option value="Non">Non</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="linkedinUrl">URL de votre profil LinkedIn <span style="color:#888;font-weight:400;font-size:0.85em">(facultatif)</span></label>
+                            <input type="url" id="linkedinUrl" name="linkedinUrl" placeholder="https://www.linkedin.com/in/votre-profil">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="bpceJobAlerts" name="bpceJobAlerts">
+                                <span class="checkbox-text">J'accepte de recevoir les mises à jour concernant les nouvelles opportunités d'emploi (pour le groupe BPCE)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Section Documents -->
                 <div class="form-section accordion-section">
                     <div class="accordion-header" onclick="toggleAccordion(this)">
@@ -2304,6 +2346,7 @@
                         loadExperienceLevel(profile);
                         loadEducationInfo(profile);
                         loadDeloitteInfo(profile);
+                        loadBpceInfo(profile);
 
                         // Charger les fichiers existants (CV et lettre de motivation)
                         loadFileInfo('cv', profile);
@@ -2363,6 +2406,7 @@
                         loadExperienceLevel(profile);
                         loadEducationInfo(profile);
                         loadDeloitteInfo(profile);
+                        loadBpceInfo(profile);
 
                         // Charger les fichiers existants (CV et lettre de motivation)
                         loadFileInfo('cv', profile);
@@ -2625,6 +2669,18 @@
                     loadLanguages();
                 }
             }
+        }
+
+        // Fonction pour charger les informations BPCE
+        function loadBpceInfo(profile) {
+            const handicapSelect = document.getElementById('bpceHandicap');
+            const vivierSelect = document.getElementById('bpceVivierNatixis');
+            const linkedinInput = document.getElementById('linkedinUrl');
+            const jobAlertsCheck = document.getElementById('bpceJobAlerts');
+            if (handicapSelect && profile.bpce_handicap) handicapSelect.value = profile.bpce_handicap;
+            if (vivierSelect && profile.bpce_vivier_natixis) vivierSelect.value = profile.bpce_vivier_natixis;
+            if (linkedinInput && profile.linkedin_url) linkedinInput.value = profile.linkedin_url;
+            if (jobAlertsCheck) jobAlertsCheck.checked = !!profile.bpce_job_alerts;
         }
 
         // Fonction pour charger les informations Deloitte
@@ -3215,6 +3271,10 @@
                 deloitte_old_office: document.getElementById('deloitteOldOffice')?.value?.trim() || '',
                 deloitte_old_email: document.getElementById('deloitteOldEmail')?.value?.trim() || '',
                 deloitte_country: document.getElementById('deloitteCountry')?.value || '',
+                bpce_handicap: document.getElementById('bpceHandicap')?.value || '',
+                bpce_vivier_natixis: document.getElementById('bpceVivierNatixis')?.value || '',
+                linkedin_url: document.getElementById('linkedinUrl')?.value?.trim() || '',
+                bpce_job_alerts: document.getElementById('bpceJobAlerts')?.checked || false,
                 email: userEmail || '',
                 updated_at: new Date().toISOString(),
                 created_at: null // Sera défini lors de la première création

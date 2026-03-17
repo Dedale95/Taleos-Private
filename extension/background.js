@@ -1101,7 +1101,11 @@ async function fetchProfile(uid, bankId, token) {
     deloitte_worked: profile.deloitte_worked || 'no',
     deloitte_old_office: profile.deloitte_old_office || '',
     deloitte_old_email: profile.deloitte_old_email || '',
-    deloitte_country: profile.deloitte_country || ''
+    deloitte_country: profile.deloitte_country || '',
+    bpce_handicap: profile.bpce_handicap || '',
+    bpce_vivier_natixis: profile.bpce_vivier_natixis || '',
+    linkedin_url: (profile.linkedin_url || '').trim(),
+    bpce_job_alerts: !!profile.bpce_job_alerts
   };
 }
 
