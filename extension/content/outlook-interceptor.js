@@ -1,5 +1,5 @@
 /**
- * Taleos - Outlook Web Interceptor (Version 1.0.53)
+ * Taleos - Outlook Web Interceptor (Version 1.0.54)
  * Ce script s'exécute sur outlook.live.com ou outlook.office.com.
  * Il surveille l'arrivée d'emails BPCE/Oracle et extrait le code PIN s'il est récent (< 2 min).
  */
@@ -50,10 +50,10 @@
     }
 
     // 2. Chercher dans le corps du message ouvert
-    const body = document.querySelector('[role="main"]') || document.querySelector('#ItemField_0');
+    const body = document.querySelector('[role="main"]') || document.querySelector('#ItemField_0') || document.querySelector('.ReadingPaneContainer');
     if (body) {
       const text = body.textContent || '';
-      if (text.includes('code d\'accès à usage unique')) {
+      if (text.includes('code d\'accès à usage unique') || text.includes('Confirmer votre identité')) {
         const match = text.match(PIN_REGEX);
         if (match) {
           const pinCode = match[1];
@@ -61,6 +61,17 @@
           log('📌 Code PIN trouvé dans le mail ouvert : ' + pinCode);
           chrome.runtime.sendMessage({ action: 'bpce_pin_code', pinCode });
         }
+      }
+    }
+
+    // 3. Fallback agressif : Scanner tout le texte visible si on ne trouve rien
+    const allText = document.body.innerText || '';
+    if (allText.includes('Confirmer votre identité') && allText.includes('code d\'accès à usage unique')) {
+      const match = allText.match(PIN_REGEX);
+      if (match) {
+        const pinCode = match[1];
+        log('📌 Code PIN trouvé via scan global : ' + pinCode);
+        chrome.runtime.sendMessage({ action: 'bpce_pin_code', pinCode });
       }
     }
   }
@@ -78,5 +89,5 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
   
-  log('👁️  Outlook Interceptor actif (V1.0.53) : surveillance des emails récents BPCE...');
+  log('👁️  Outlook Interceptor actif (V1.0.54) : surveillance des emails récents BPCE...');
 })();
