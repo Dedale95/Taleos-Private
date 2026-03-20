@@ -382,6 +382,24 @@
         }
       }
     });
+
+    // MutationObserver pour surveiller les changements dynamiques de la page Oracle (SPA)
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.addedNodes.length > 0) {
+          // Si de nouveaux éléments sont ajoutés, on tente de relancer l'automatisation (débounce 800ms)
+          clearTimeout(window.__taleosBpceDebounce);
+          window.__taleosBpceDebounce = setTimeout(() => {
+            chrome.storage.local.get('taleos_pending_bpce').then((s) => {
+              if (s.taleos_pending_bpce) runAutomation();
+            });
+          }, 800);
+          break;
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    log('👁️  MutationObserver actif : surveillance des changements de page...', 2);
   }
 
   if (document.readyState === 'loading') {
