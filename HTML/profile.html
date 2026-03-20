@@ -492,9 +492,9 @@
             }
         }
 
-        /* Styles pour champs/sections incomplets — fond neutre (jamais vert) */
+        /* Styles pour champs/sections incomplets — fond rouge clair (jamais vert) */
         .accordion-section.incomplete .accordion-header {
-            background: #fafafa;
+            background: #fef2f2;
             border-left: 4px solid #dc2626;
         }
 
@@ -2161,6 +2161,8 @@
             } else {
                 section.classList.add('active');
             }
+            // Re-synchroniser immédiatement l'état visuel de la section BPCE
+            applyBpceSectionState();
         }
         
         // Fonction pour mettre à jour la navigation immédiatement
@@ -3009,6 +3011,24 @@
             return true;
         }
 
+        function applyBpceSectionState() {
+            const bpceHandicap = document.getElementById('bpceHandicap')?.value?.trim() || '';
+            const bpceVivier = document.getElementById('bpceVivierNatixis')?.value?.trim() || '';
+            const linkedinUrl = document.getElementById('linkedinUrl')?.value?.trim() || '';
+            const bpceJobAlerts = document.getElementById('bpceJobAlerts')?.checked || false;
+            const bpceHasContent = !!(bpceHandicap || bpceVivier || linkedinUrl || bpceJobAlerts);
+
+            document.querySelectorAll('.accordion-header h2').forEach(header => {
+                if ((header.textContent || '').replace(/\s*✓\s*$/g, '').trim() === 'Préférences BPCE') {
+                    const section = header.closest('.accordion-section');
+                    if (section) {
+                        section.classList.remove('incomplete', 'complete');
+                        section.classList.add(bpceHasContent ? 'complete' : 'incomplete');
+                    }
+                }
+            });
+        }
+
         function validateProfile() {
             // Réinitialiser toutes les classes "incomplete" et "complete"
             document.querySelectorAll('.incomplete').forEach(el => el.classList.remove('incomplete'));
@@ -3135,20 +3155,7 @@
             });
 
             // Préférences BPCE : section optionnelle — verte uniquement si au moins un champ rempli
-            const bpceHandicap = document.getElementById('bpceHandicap')?.value?.trim() || '';
-            const bpceVivier = document.getElementById('bpceVivierNatixis')?.value?.trim() || '';
-            const linkedinUrl = document.getElementById('linkedinUrl')?.value?.trim() || '';
-            const bpceJobAlerts = document.getElementById('bpceJobAlerts')?.checked || false;
-            const bpceHasContent = !!(bpceHandicap || bpceVivier || linkedinUrl || bpceJobAlerts);
-            document.querySelectorAll('.accordion-header h2').forEach(header => {
-                if ((header.textContent || '').replace(/\s*✓\s*$/g, '').trim() === 'Préférences BPCE') {
-                    const section = header.closest('.accordion-section');
-                    if (section) {
-                        section.classList.remove('incomplete', 'complete');
-                        section.classList.add(bpceHasContent ? 'complete' : 'incomplete');
-                    }
-                }
-            });
+            applyBpceSectionState();
 
             // Si des champs sont incomplets, afficher un toast et retourner false
             if (incompleteFields.length > 0) {
