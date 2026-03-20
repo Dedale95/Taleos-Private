@@ -1,30 +1,28 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.0.51",
+  "version": "1.0.52",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
     "alarms",
-    "scripting",
     "storage",
-    "tabs"
+    "scripting",
+    "tabs",
+    "cookies",
+    "webRequest"
   ],
   "host_permissions": [
-    "https://taleos.co/*",
     "https://*.taleos.co/*",
-    "https://*.firebaseapp.com/*",
-    "https://*.googleapis.com/*",
-    "https://firestore.googleapis.com/*",
-    "https://firebasestorage.googleapis.com/*",
-    "https://*.firebasestorage.app/*",
-    "https://groupecreditagricole.jobs/*",
+    "https://*.oraclecloud.com/*",
+    "https://recrutement.bpce.fr/*",
     "https://careers.societegenerale.com/*",
     "https://socgen.taleo.net/*",
-    "https://*.deloitte.com/*",
+    "https://groupecreditagricole.jobs/*",
     "https://*.myworkdayjobs.com/*",
-    "https://recrutement.bpce.fr/*",
-    "https://*.fa.em2.oraclecloud.com/*",
+    "https://firestore.googleapis.com/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
     "http://localhost/*",
     "http://localhost:8000/*",
     "http://127.0.0.1/*",
@@ -40,96 +38,54 @@
       "128": "icons/icon128.png"
     }
   },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
       "matches": [
-        "https://taleos.co/*",
         "https://*.taleos.co/*",
+        "https://*.github.io/*",
         "http://localhost/*",
-        "http://localhost:8000/*",
-        "http://127.0.0.1/*",
-        "http://127.0.0.1:8000/*",
-        "https://*.github.io/*"
+        "http://127.0.0.1/*"
       ],
-      "js": [
-        "content/taleos-injector.js"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://groupecreditagricole.jobs/*"
-      ],
-      "js": [
-        "content/ca-connexion-filler.js"
-      ],
+      "js": ["content/taleos-injector.js"],
       "run_at": "document_start"
     },
     {
       "matches": [
-        "https://careers.societegenerale.com/*"
+        "https://*.fa.em2.oraclecloud.com/*"
       ],
-      "js": [
-        "content/sg-careers-helper.js"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://socgen.taleo.net/*"
-      ],
-      "js": [
-        "content/sg-at-click-polyfill.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": [
-        "https://socgen.taleo.net/*"
-      ],
-      "js": [
-        "content/sg-taleo-runner.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "https://*.myworkdayjobs.com/*",
-        "https://www.deloitte.com/*",
-        "https://*.deloitte.com/*"
-      ],
-      "js": [
-        "content/deloitte-careers-filler.js"
-      ],
+      "js": ["content/bpce-oracle-filler.js"],
       "run_at": "document_idle"
     },
     {
       "matches": [
         "https://recrutement.bpce.fr/*"
       ],
-      "js": [
-        "content/bpce-careers-filler.js"
-      ],
+      "js": ["content/bpce-careers-filler.js"],
       "run_at": "document_idle"
     },
     {
       "matches": [
-        "https://*.fa.em2.oraclecloud.com/*"
+        "https://outlook.live.com/*",
+        "https://outlook.office.com/*",
+        "https://outlook.office365.com/*"
       ],
-      "js": [
-        "content/bpce-oracle-filler.js"
-      ],
+      "js": ["content/outlook-interceptor.js"],
       "run_at": "document_idle"
     }
   ],
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+  "web_accessible_resources": [
+    {
+      "resources": ["scripts/*.js", "icons/*.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
