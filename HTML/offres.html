@@ -3537,10 +3537,19 @@
                         if (gap > 0) {
                             const labelEl = document.createElement('label');
                             labelEl.className = 'location-region-item location-non-specifie';
-                            labelEl.style.opacity = '0.85';
+                            const cb = document.createElement('input');
+                            cb.type = 'checkbox';
+                            cb.value = `__AUTRES__${country}`;
+                            cb.setAttribute('data-location-type', 'region');
+                            cb.checked = checkedRegions.has(`__AUTRES__${country}`);
+                            cb.onchange = () => {
+                                countryCb.checked = allCheckboxesIn(countryChildren).every(cb2 => cb2.checked);
+                                contCb.checked = allCheckboxesIn(contChildren).every(cb2 => cb2.checked);
+                                triggerUpdate();
+                            };
+                            labelEl.appendChild(cb);
                             const sp = document.createElement('span');
                             sp.textContent = `Non spécifié / Siège (${gap})`;
-                            sp.style.marginLeft = '22px';
                             labelEl.appendChild(sp);
                             countryChildren.appendChild(labelEl);
                         }
