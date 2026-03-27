@@ -23,7 +23,7 @@ jobs:
       - name: Checkout public repo
         uses: actions/checkout@v4
         with:
-          repository: Dedale95/mon-site
+          repository: Dedale95/Taleos-Public
           token: ${{ secrets.PUBLIC_REPO_PUSH_TOKEN }}
           path: public-repo
 
