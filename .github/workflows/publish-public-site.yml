@@ -1,0 +1,57 @@
+name: Publish Public Site
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "HTML/**"
+      - "index.html"
+      - "landing_page_finance.html"
+      - "scraped_jobs_live.json"
+      - "scraped_jobs.json"
+      - "scraped_jobs.csv"
+      - ".github/workflows/publish-public-site.yml"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private source repo
+        uses: actions/checkout@v4
+
+      - name: Checkout public repo
+        uses: actions/checkout@v4
+        with:
+          repository: Dedale95/mon-site
+          token: ${{ secrets.PUBLIC_REPO_PUSH_TOKEN }}
+          path: public-repo
+
+      - name: Sync public files only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf public-repo/HTML
+          cp -R HTML public-repo/HTML
+
+          cp index.html public-repo/index.html
+          cp landing_page_finance.html public-repo/landing_page_finance.html
+          cp scraped_jobs_live.json public-repo/scraped_jobs_live.json
+          cp scraped_jobs.json public-repo/scraped_jobs.json
+          cp scraped_jobs.csv public-repo/scraped_jobs.csv
+
+      - name: Commit and push if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd public-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git add .
+          git commit -m "chore: publish public site from private source"
+          git push origin main
+
