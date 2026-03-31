@@ -1233,3 +1233,127 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     }, 5000);
   }
 });
+
+
+/**
+ * === GA4 TRACKING VIA MEASUREMENT PROTOCOL ===
+ * Version 1.1.0 : Intégration du suivi analytique pour les candidatures
+ */
+
+const GA4_CONFIG = {
+  MEASUREMENT_ID: 'G-4PZJ4QXMJ0',
+  API_SECRET: 'S_nZvZMxQ1Kv9w_80lWorw'
+};
+
+/**
+ * Envoie un événement à Google Analytics 4 via le Measurement Protocol
+ * @param {string} eventName - Nom de l'événement (ex: 'apply_start', 'apply_success')
+ * @param {object} params - Paramètres additionnels (ex: {site: 'bpce', job_title: 'Risk Analyst'})
+ * @param {string} userId - ID utilisateur Firebase (optionnel)
+ */
+async function sendGA4Event(eventName, params = {}, userId = null) {
+  try {
+    // Récupération du user_id depuis Firebase si non fourni
+    if (!userId) {
+      const { taleosUser } = await chrome.storage.local.get('taleosUser');
+      userId = taleosUser?.uid || 'anonymous';
+    }
+
+    // Construction du payload GA4
+    const payload = {
+      client_id: userId,
+      events: [
+        {
+          name: eventName,
+          params: {
+            ...params,
+            timestamp_micros: Date.now() * 1000,
+            session_id: `session_${Date.now()}`
+          }
+        }
+      ]
+    };
+
+    // Envoi du POST request à Google Analytics
+    const response = await fetch(
+      `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_CONFIG.MEASUREMENT_ID}&api_secret=${GA4_CONFIG.API_SECRET}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (response.ok) {
+      console.log(`[Taleos Analytics] Événement "${eventName}" envoyé à GA4`);
+    } else {
+      console.warn(`[Taleos Analytics] Erreur envoi GA4:`, response.status);
+    }
+  } catch (e) {
+    console.error('[Taleos Analytics] Erreur:', e);
+  }
+}
+
+/**
+ * Envoie un événement de candidature au démarrage
+ */
+async function trackApplyStart(site, jobTitle, jobId) {
+  await sendGA4Event('apply_start', {
+    site: site || 'unknown',
+    job_title: jobTitle || 'Unknown Position',
+    job_id: jobId || 'unknown'
+  });
+}
+
+/**
+ * Envoie un événement quand le code PIN est reçu
+ */
+async function trackPinReceived(site) {
+  await sendGA4Event('pin_received', {
+    site: site || 'unknown'
+  });
+}
+
+/**
+ * Envoie un événement quand le formulaire est rempli
+ */
+async function trackFormFilled(site, jobTitle) {
+  await sendGA4Event('form_filled', {
+    site: site || 'unknown',
+    job_title: jobTitle || 'Unknown Position'
+  });
+}
+
+/**
+ * Envoie un événement quand la candidature est soumise
+ */
+async function trackApplySuccess(site, jobTitle) {
+  await sendGA4Event('apply_success', {
+    site: site || 'unknown',
+    job_title: jobTitle || 'Unknown Position'
+  });
+}
+
+/**
+ * Envoie un événement d'erreur
+ */
+async function trackError(errorType, errorMessage, site) {
+  await sendGA4Event('apply_error', {
+    error_type: errorType || 'unknown',
+    error_message: errorMessage || 'Unknown error',
+    site: site || 'unknown'
+  });
+}
+
+// Exposition des fonctions GA4 pour les content scripts
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'track_event') {
+    sendGA4Event(msg.eventName, msg.params, msg.userId).then(() => {
+      sendResponse({ ok: true });
+    }).catch(e => {
+      console.error('[Taleos Analytics] Erreur tracking:', e);
+      sendResponse({ ok: false, error: e.message });
+    });
+    return true; // Indique que la réponse sera asynchrone
+  }
+});

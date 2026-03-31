@@ -1,6 +1,6 @@
 /**
  * Taleos - Remplissage formulaire BPCE Oracle Cloud (ekez.fa.em2.oraclecloud.com)
- * Version 1.0.60 : Logs anti-spam, correction disponibilité ("Immédiatement") et vivier Natixis.
+ * Version 1.1.0 : Intégration GA4 Measurement Protocol pour tracking analytique.
  */
 (function() {
   'use strict';
@@ -23,7 +23,7 @@
     if (document.getElementById(BANNER_ID)) return;
     const banner = document.createElement('div');
     banner.id = BANNER_ID;
-    banner.textContent = '⏳ Automatisation Taleos active (V1.0.60) — Ne touchez à rien.';
+    banner.textContent = '⏳ Automatisation Taleos active (V1.1.0) — Ne touchez à rien.';
     Object.assign(banner.style, {
       position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483647',
       background: 'linear-gradient(135deg, #003366 0%, #0055a4 100%)', color: 'white',
@@ -46,7 +46,6 @@
 
     try {
       input.focus();
-      // Utilisation d'une méthode de remplissage plus robuste pour éviter "Illegal invocation"
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set || 
                            Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
       
@@ -62,7 +61,6 @@
       logOnce(`   ✅ ${label} → "${newVal}" (Mis à jour)`);
       return true;
     } catch (e) {
-      // Fallback simple si le setter natif échoue
       input.value = newVal;
       input.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
@@ -105,8 +103,19 @@
         isAutomationRunning = false;
         return;
       }
-      const { profile } = taleos_pending_bpce;
+      const { profile, jobTitle, jobId } = taleos_pending_bpce;
       showBanner();
+
+      // Track: Candidature initiée
+      if (!filledFields.has('apply_start_tracked')) {
+        chrome.runtime.sendMessage({
+          action: 'track_event',
+          eventName: 'apply_start',
+          params: { site: 'bpce', job_title: jobTitle || 'Unknown', job_id: jobId || 'unknown' },
+          userId: profile?.uid
+        }).catch(() => {});
+        filledFields.add('apply_start_tracked');
+      }
 
       // --- Étape 1 : Email + CGU ---
       const emailInput = document.querySelector('#primary-email-0') || document.querySelector('input[type="email"]');
@@ -123,6 +132,13 @@
           nextBtn.click();
           filledFields.add('step1_submitted');
           logOnce('✅ Clic Suivant → Code PIN');
+          // Track: Email validé
+          chrome.runtime.sendMessage({
+            action: 'track_event',
+            eventName: 'email_validated',
+            params: { site: 'bpce' },
+            userId: profile?.uid
+          }).catch(() => {});
         }
       }
 
@@ -142,6 +158,13 @@
             verifyBtn.click();
             filledFields.add('pin_submitted');
             logOnce('✅ Code PIN soumis');
+            // Track: PIN reçu et soumis
+            chrome.runtime.sendMessage({
+              action: 'track_event',
+              eventName: 'pin_received',
+              params: { site: 'bpce' },
+              userId: profile?.uid
+            }).catch(() => {});
           }
         } else {
           logOnce('   ⏳ En attente du code PIN...');
@@ -170,18 +193,17 @@
         const handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => el.textContent.toLowerCase().includes('handicap'));
         if (handicapContainer) smartClickButton('Handicap', handicapVal, handicapContainer);
 
-        // Disponibilité (Correction : Support du texte "Immédiatement")
+        // Disponibilité
         const disponibiliteTextarea = document.querySelector('textarea[name="300000620007177"]') || 
                                      document.querySelector('textarea[id^="300000620007177"]') ||
                                      document.querySelector('.input-row__control--autoheight');
         
-        // On cherche la valeur dans profile.available_from ou profile.disponibilite
         const availableFrom = (profile.available_from || profile.available_date || profile.disponibilite || 'Immédiatement').trim();
         if (disponibiliteTextarea) {
           smartFillInput('Disponibilité', disponibiliteTextarea, availableFrom);
         }
 
-        // Vivier Natixis (Correction du sélecteur)
+        // Vivier Natixis
         const vivierVal = (profile.bpce_vivier_natixis || 'Oui').trim();
         const vivierContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => 
           el.textContent.toLowerCase().includes('vivier') || 
@@ -197,6 +219,17 @@
         if (linkedinInput) smartFillInput('LinkedIn', linkedinInput, profile.linkedin_url);
 
         logOnce('✅ Formulaire rempli ! Veuillez vérifier et SOUMETTRE.', 2);
+        
+        // Track: Formulaire rempli
+        if (!filledFields.has('form_filled_tracked')) {
+          chrome.runtime.sendMessage({
+            action: 'track_event',
+            eventName: 'form_filled',
+            params: { site: 'bpce', job_title: jobTitle || 'Unknown' },
+            userId: profile?.uid
+          }).catch(() => {});
+          filledFields.add('form_filled_tracked');
+        }
       }
     } catch (e) {
       logOnce('❌ Erreur automation: ' + e.message);
@@ -208,7 +241,7 @@
   function init() {
     if (window.__taleosBpceOracleInit) return;
     window.__taleosBpceOracleInit = true;
-    logOnce('👁️  Surveillance Totale active (V1.0.60)');
+    logOnce('👁️  Surveillance Totale active (V1.1.0) avec GA4 Tracking');
     
     setInterval(runAutomation, 1500);
 
@@ -222,4 +255,21 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+
+  // Track: Détection du bouton Soumettre (candidature complète)
+  const submitObserver = new MutationObserver(() => {
+    const submitBtn = document.querySelector('button[title="Soumettre"]') || 
+                      Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('SOUMETTRE'));
+    if (submitBtn && !window.__taleosBpceSubmitTracked) {
+      window.__taleosBpceSubmitTracked = true;
+      submitBtn.addEventListener('click', () => {
+        chrome.runtime.sendMessage({
+          action: 'track_event',
+          eventName: 'apply_success',
+          params: { site: 'bpce' }
+        }).catch(() => {});
+      });
+    }
+  });
+  submitObserver.observe(document.body, { childList: true, subtree: true });
 })();

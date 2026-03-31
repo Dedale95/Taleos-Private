@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.0.60",
+  "version": "1.1.0",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -10,7 +10,8 @@
     "scripting",
     "tabs",
     "cookies",
-    "webRequest"
+    "webRequest",
+    "identity"
   ],
   "host_permissions": [
     "https://*.taleos.co/*",
@@ -28,7 +29,8 @@
     "http://127.0.0.1/*",
     "http://127.0.0.1:8000/*",
     "https://*.github.io/*",
-    "https://www.googleapis.com/auth/gmail.readonly"
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.google-analytics.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
