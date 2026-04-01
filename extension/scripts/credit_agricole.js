@@ -578,6 +578,26 @@
     } catch (_) {}
   }
 
+  function isOfferUnavailablePage() {
+    const txt = (document.body?.textContent || '').toLowerCase();
+    const url = (window.location?.href || '').toLowerCase();
+    if (/\/404(\b|\/)|\bnot[-_]?found\b/.test(url)) return true;
+    return /page que vous recherchez est introuvable|page introuvable|offre non disponible|offre n'est plus en ligne|offre expirée|n'est plus disponible|error 404|page not found|job position is no longer online|the requested page no longer exists/.test(txt);
+  }
+
+  function notifyOfferUnavailable(jobId, reason) {
+    if (!jobId) return;
+    const message = reason || 'Offre non disponible (404) — L\'offre n\'est plus en ligne.';
+    try {
+      chrome.runtime.sendMessage({
+        action: 'candidature_failure',
+        jobId,
+        offerExpired: true,
+        error: message
+      });
+    } catch (_) {}
+  }
+
   async function main(profile) {
     showAutomationBanner();
     const phase = profile.__phase;
@@ -594,6 +614,13 @@
 
     const offerIdMatch = offerUrl.match(/reference--([\d-]+)--/);
     const offerId = offerIdMatch ? offerIdMatch[1] : 'INCONNU';
+
+    if (isOfferUnavailablePage()) {
+      log('⛔ Offre non disponible détectée (404 / introuvable).');
+      notifyOfferUnavailable(jobId, 'Offre non disponible (404) — L\'offre n\'est plus en ligne.');
+      hideAutomationBanner();
+      return;
+    }
 
     console.log('\n' + '='.repeat(60));
     const phaseLabels = { 2: 'Formulaire (après reload)', 3: 'Formulaire direct (redirection /candidature/)' };
@@ -631,6 +658,12 @@
       if (phase === 2) {
         log('⏳ Attente chargement page offre (fin animation)...');
         await waitForLoadingComplete(30000);
+        if (isOfferUnavailablePage()) {
+          log('⛔ Offre non disponible après chargement de la page offre.');
+          notifyOfferUnavailable(jobId, 'Offre non disponible (404) — L\'offre n\'est plus en ligne.');
+          hideAutomationBanner();
+          return;
+        }
         const cookieBtn = findCookieDismissButton();
         if (cookieBtn) { cookieBtn.click(); await delay(300); }
         const btnPostuleWait = await waitForPostuleButton(25000);
