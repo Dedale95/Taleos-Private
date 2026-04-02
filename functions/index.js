@@ -1,9 +1,8 @@
 /**
  * Cloud Functions (2nd gen) — Taleos
  *
- * Déploiement (machine locale, une fois Firebase CLI installé) :
- *   cd functions && npm install
- *   cd .. && firebase deploy --only functions
+ * Déploiement : GitHub Actions (push sur main, voir .github/workflows/deploy-firebase-functions.yml)
+ *   ou en local : cd functions && npm install && cd .. && firebase deploy --only functions
  *
  * Nécessite le plan Blaze pour les appels sortants hors quota gratuit.
  * Test local : firebase emulators:start --only functions
