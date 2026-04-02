@@ -1,11 +1,6 @@
 # Déploie les Cloud Functions depuis GitHub (aucune machine perso requise au quotidien).
 #
-# À configurer une fois dans le dépôt GitHub :
-#   Settings → Secrets and variables → Actions → New repository secret
-#   Nom : FIREBASE_SERVICE_ACCOUNT_JSON
-#   Valeur : contenu JSON d’un compte de service GCP autorisé à déployer sur project-taleos
-#   (IAM → Comptes de service → Créer une clé JSON ; rôles typiques : « Administrateur Firebase »
-#    ou rôles minimaux Cloud Functions + Cloud Build selon doc Firebase pour CI.)
+# Secret dépôt : FIREBASE_SERVICE_ACCOUNT_JSON (JSON complet du compte de service GCP).
 #
 # Déclencheurs : push sur main qui touche functions/ ou firebase.json, ou exécution manuelle.
 
@@ -24,9 +19,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      # Évite l’avertissement Node 20 sur les actions JS (changelog GitHub 2025–2026).
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -35,21 +32,34 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: functions/package-lock.json
+
+      - name: Vérifier le secret (sans l’afficher)
+        env:
+          HAS_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$HAS_JSON" ]; then
+            echo "::error::Le secret FIREBASE_SERVICE_ACCOUNT_JSON est vide ou absent. Vérifie le nom exact dans Settings → Secrets → Actions."
+            exit 1
+          fi
+
+      - name: Écrire la clé compte de service (fichier temporaire)
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          printf '%s' "$GOOGLE_CREDENTIALS" > "${GITHUB_WORKSPACE}/gcp-sa.json"
+          chmod 600 "${GITHUB_WORKSPACE}/gcp-sa.json"
 
       - name: Install function dependencies
         run: npm ci
         working-directory: functions
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
       - name: Deploy functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa.json
         run: firebase deploy --only functions --project project-taleos --non-interactive
