@@ -36,6 +36,6 @@ exports.ping = onCall(async (request) => {
     ok: true,
     uid,
     serverTime: Date.now(),
-    message: "Backend Taleos joignable.",
+    message: "Backend Taleos joignable (ping).",
   };
 });
