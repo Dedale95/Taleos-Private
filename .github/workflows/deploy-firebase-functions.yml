@@ -1,6 +1,8 @@
 # Déploie les Cloud Functions depuis GitHub (aucune machine perso requise au quotidien).
 #
 # Secret dépôt : FIREBASE_SERVICE_ACCOUNT_JSON (JSON complet du compte de service GCP).
+# Rôles IAM recommandés sur project-taleos pour ce compte (déploiement Functions 2ᵉ gen = Cloud Run) :
+#   Cloud Functions Admin, Cloud Run Admin, Service Account User — ou Éditeur (roles/editor) pour aller vite.
 #
 # Déclencheurs : push sur main qui touche functions/ ou firebase.json, ou exécution manuelle.
 
@@ -59,7 +61,8 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
+      # --force : politique de nettoyage Artifact Registry (évite erreur cleanup sans prompt)
       - name: Deploy functions
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa.json
-        run: firebase deploy --only functions --project project-taleos --non-interactive
+        run: firebase deploy --only functions --project project-taleos --non-interactive --force
