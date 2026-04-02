@@ -359,7 +359,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'taleos_apply') {
     const taleosTabId = sender.tab?.id;
-    handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId)
+    // Tracking non bloquant du démarrage de candidature.
+    trackApplyStart(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
+    handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId, msg.offerMeta || null)
       .then((result) => sendResponse(result?.error ? { error: result.error, openUrl: true } : { ok: true }))
       .catch(e => sendResponse({ error: e.message || 'Erreur', openUrl: true }));
     return true;
@@ -404,12 +406,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
     if (sender.tab?.id) sgLastInject.delete(sender.tab.id);
     const tabIdToClose = sender.tab?.id;
+    trackApplySuccess(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
     saveCandidatureAndNotifyTaleos(msg, tabIdToClose).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (msg.action === 'candidature_failure') {
     const { offerExpired, jobId, jobTitle, error } = msg;
     const isExpired = !!offerExpired || /404|non disponible|expirée|n'est plus en ligne/i.test(error || '');
+    if (isExpired) {
+      trackApplyExpired(msg.bankId, jobTitle, jobId, msg.offerUrl, error).catch(() => {});
+      upsertGlobalExpiredJobSignal({
+        jobId,
+        jobTitle,
+        offerUrl: msg.offerUrl || '',
+        source: msg.bankId || ''
+      }).catch(() => {});
+    } else {
+      trackError('apply_failure', error || 'Erreur candidature', msg.bankId, jobId, msg.offerUrl).catch(() => {});
+    }
     chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
     if (sender.tab?.id) {
       sgLastInject.delete(sender.tab.id);
@@ -614,7 +628,7 @@ async function runTestConnection(msg) {
   }
 }
 
-async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId) {
+async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId, offerMeta = null) {
   let { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
   if (!taleosUserId && taleosTabId) {
     try {
@@ -653,6 +667,24 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   profile.__jobTitle = jobTitle || '';
   profile.__companyName = companyName || 'Crédit Agricole';
   profile.__offerUrl = offerUrl;
+  profile.__offerMeta = offerMeta || {};
+
+  // Conserver les métadonnées d'offre pour enrichir l'enregistrement final de candidature
+  if (jobId) {
+    try {
+      const key = String(jobId).trim();
+      const { taleos_offer_meta_by_job = {} } = await chrome.storage.local.get(['taleos_offer_meta_by_job']);
+      taleos_offer_meta_by_job[key] = {
+        ...(taleos_offer_meta_by_job[key] || {}),
+        ...(offerMeta || {}),
+        offerUrl: offerUrl || '',
+        companyName: companyName || '',
+        updatedAt: Date.now()
+      };
+      const entries = Object.entries(taleos_offer_meta_by_job).sort((a, b) => (b[1]?.updatedAt || 0) - (a[1]?.updatedAt || 0)).slice(0, 300);
+      await chrome.storage.local.set({ taleos_offer_meta_by_job: Object.fromEntries(entries) });
+    } catch (_) {}
+  }
 
   const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
   chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
@@ -836,7 +868,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
 
 async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
   const { jobId, jobTitle, companyName, offerUrl } = msg;
-  const { taleosUserId, taleosIdToken, taleos_pending_tab } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab']);
+  const { taleosUserId, taleosIdToken, taleos_pending_tab, taleos_offer_meta_by_job = {} } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab', 'taleos_offer_meta_by_job']);
   chrome.storage.local.remove('taleos_pending_tab');
   if (!taleosUserId || !taleosIdToken) return;
 
@@ -848,16 +880,23 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
   const datePart = dd + '\uFF0F' + mm + '\uFF0F' + yyyy;
   const docId = (datePart + ' \u203A ' + safe(companyName) + ' \u203A ' + safe(jobTitle) + ' \u203A ' + (jobId || 'unknown')).slice(0, 1500);
 
+  const metaFromStore = taleos_offer_meta_by_job[String(jobId || '').trim()] || {};
+  const location = (msg.location || metaFromStore.location || '').trim();
+  const contractType = (msg.contractType || metaFromStore.contractType || '').trim();
+  const experienceLevel = (msg.experienceLevel || metaFromStore.experienceLevel || '').trim();
+  const jobFamily = (msg.jobFamily || metaFromStore.jobFamily || '').trim();
+  const publicationDate = (msg.publicationDate || metaFromStore.publicationDate || '').trim();
+
   const doc = {
     jobId: String(jobId || '').trim(),
     jobTitle: (jobTitle || '').trim(),
     jobUrl: offerUrl || '',
     companyName: companyName || 'Non spécifié',
-    location: 'Non spécifié',
-    contractType: 'Non spécifié',
-    experienceLevel: 'Non spécifié',
-    jobFamily: 'Non spécifié',
-    publicationDate: 'Non spécifié',
+    location: location || 'Non spécifié',
+    contractType: contractType || 'Non spécifié',
+    experienceLevel: experienceLevel || 'Non spécifié',
+    jobFamily: jobFamily || 'Non spécifié',
+    publicationDate: publicationDate || 'Non spécifié',
     appliedDate: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
     status: 'envoyée'
   };
@@ -938,6 +977,34 @@ async function notifyTaleosOfferUnavailable(msg) {
       await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_offer_unavailable', jobId, jobTitle: jobTitle || '' });
     } catch (_) {}
   }
+}
+
+async function upsertGlobalExpiredJobSignal(msg) {
+  const jobId = String(msg?.jobId || '').trim();
+  if (!jobId) return;
+  const { taleosIdToken, taleosUserId } = await chrome.storage.local.get(['taleosIdToken', 'taleosUserId']);
+  if (!taleosIdToken) return;
+  const nowIso = new Date().toISOString();
+  const doc = {
+    jobId,
+    jobTitle: String(msg?.jobTitle || '').trim(),
+    offerUrl: String(msg?.offerUrl || '').trim(),
+    source: String(msg?.source || '').trim(),
+    status: 'expired',
+    detectedBy: String(taleosUserId || 'unknown'),
+    lastDetectedAt: nowIso
+  };
+  const fields = {};
+  for (const [k, v] of Object.entries(doc)) fields[k] = { stringValue: String(v || '') };
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/expired_jobs/${encodeURIComponent(jobId)}`;
+  await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${taleosIdToken}`
+    },
+    body: JSON.stringify({ fields })
+  }).catch(() => {});
 }
 
 async function testCredentials(bankId) {
@@ -1245,6 +1312,46 @@ const GA4_CONFIG = {
   API_SECRET: 'S_nZvZMxQ1Kv9w_80lWorw'
 };
 
+/** Versions manifest (MP GA4 : à déclarer en dimensions personnalisées « événement » : extension_version, extension_version_name). */
+function getExtensionVersionForGa4() {
+  try {
+    const m = chrome.runtime.getManifest();
+    const v = String(m.version || 'unknown');
+    const vn = String(m.version_name || m.version || '');
+    return {
+      extension_version: v.length > 100 ? v.slice(0, 100) : v,
+      extension_version_name: vn.length > 100 ? vn.slice(0, 100) : vn
+    };
+  } catch (_) {
+    return { extension_version: 'unknown', extension_version_name: '' };
+  }
+}
+
+async function appendGa4EventLog(entry) {
+  try {
+    const { taleos_ga4_event_log = [] } = await chrome.storage.local.get('taleos_ga4_event_log');
+    const next = [entry, ...taleos_ga4_event_log].slice(0, 20);
+    await chrome.storage.local.set({ taleos_ga4_event_log: next });
+  } catch (_) {}
+}
+
+async function getTrackingUserContext() {
+  try {
+    const { taleosUser, taleosUserId, taleosUserEmail } = await chrome.storage.local.get([
+      'taleosUser',
+      'taleosUserId',
+      'taleosUserEmail'
+    ]);
+    const uid = taleosUser?.uid || taleosUserId || 'anonymous';
+    return {
+      uid: String(uid || 'anonymous'),
+      email: String(taleosUserEmail || '').trim().toLowerCase()
+    };
+  } catch (_) {
+    return { uid: 'anonymous', email: '' };
+  }
+}
+
 /**
  * Envoie un événement à Google Analytics 4 via le Measurement Protocol
  * @param {string} eventName - Nom de l'événement (ex: 'apply_start', 'apply_success')
@@ -1252,21 +1359,29 @@ const GA4_CONFIG = {
  * @param {string} userId - ID utilisateur Firebase (optionnel)
  */
 async function sendGA4Event(eventName, params = {}, userId = null) {
+  let userUid = String(userId || 'anonymous');
   try {
     // Récupération du user_id depuis Firebase si non fourni
     if (!userId) {
-      const { taleosUser } = await chrome.storage.local.get('taleosUser');
-      userId = taleosUser?.uid || 'anonymous';
+      const userCtx = await getTrackingUserContext();
+      userId = userCtx.uid || 'anonymous';
     }
+    const userCtx = await getTrackingUserContext();
+    userUid = userCtx.uid || String(userId || 'anonymous');
 
-    // Construction du payload GA4
+    const extVer = getExtensionVersionForGa4();
+
+    // Construction du payload GA4 (extension_version sur chaque événement pour filtrer les anciennes builds)
     const payload = {
-      client_id: userId,
+      client_id: userUid,
+      user_id: userUid,
       events: [
         {
           name: eventName,
           params: {
             ...params,
+            ...extVer,
+            user_uid: userUid,
             timestamp_micros: Date.now() * 1000,
             session_id: `session_${Date.now()}`
           }
@@ -1274,74 +1389,314 @@ async function sendGA4Event(eventName, params = {}, userId = null) {
       ]
     };
 
-    // Envoi du POST request à Google Analytics
-    const response = await fetch(
-      `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_CONFIG.MEASUREMENT_ID}&api_secret=${GA4_CONFIG.API_SECRET}`,
-      {
+    const collectUrl = `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_CONFIG.MEASUREMENT_ID}&api_secret=${GA4_CONFIG.API_SECRET}`;
+    const debugUrl = `https://www.google-analytics.com/debug/mp/collect?measurement_id=${GA4_CONFIG.MEASUREMENT_ID}&api_secret=${GA4_CONFIG.API_SECRET}`;
+
+    // Envoi réel + validation debug pour diagnostiquer la qualité des événements.
+    const response = await fetch(collectUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    let validationMessages = [];
+    try {
+      const debugRes = await fetch(debugUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-      }
-    );
+      });
+      const debugJson = await debugRes.json().catch(() => ({}));
+      validationMessages = Array.isArray(debugJson?.validationMessages) ? debugJson.validationMessages : [];
+    } catch (_) {
+      validationMessages = [{ description: 'Validation debug GA4 indisponible' }];
+    }
+
+    const debugValid = validationMessages.length === 0;
+    const firstValidationIssue = validationMessages[0]?.description || '';
 
     if (response.ok) {
       console.log(`[Taleos Analytics] Événement "${eventName}" envoyé à GA4`);
+      await appendGa4EventLog({
+        at: Date.now(),
+        name: eventName,
+        ok: true,
+        status: response.status,
+        debug_valid: debugValid,
+        debug_issue: firstValidationIssue || '',
+        site: params?.site || 'unknown',
+        job_id: params?.job_id || '',
+        user_uid: userUid,
+        extension_version: extVer.extension_version,
+        error_type: params?.error_type || ''
+      });
+      await chrome.storage.local.set({
+        taleos_ga4_last_event: {
+          name: eventName,
+          at: Date.now(),
+          userId: userId || 'anonymous',
+          user_uid: userUid,
+          params: params || {},
+          ok: true,
+          debug_valid: debugValid,
+          debug_issue: firstValidationIssue
+        }
+      });
     } else {
       console.warn(`[Taleos Analytics] Erreur envoi GA4:`, response.status);
+      await appendGa4EventLog({
+        at: Date.now(),
+        name: eventName,
+        ok: false,
+        status: response.status,
+        debug_valid: debugValid,
+        debug_issue: firstValidationIssue || '',
+        site: params?.site || 'unknown',
+        job_id: params?.job_id || '',
+        user_uid: userUid,
+        extension_version: extVer.extension_version,
+        error_type: params?.error_type || ''
+      });
+      await chrome.storage.local.set({
+        taleos_ga4_last_event: {
+          name: eventName,
+          at: Date.now(),
+          userId: userId || 'anonymous',
+          user_uid: userUid,
+          params: params || {},
+          ok: false,
+          status: response.status,
+          debug_valid: debugValid,
+          debug_issue: firstValidationIssue
+        }
+      });
     }
   } catch (e) {
     console.error('[Taleos Analytics] Erreur:', e);
+    await appendGa4EventLog({
+      at: Date.now(),
+      name: eventName,
+      ok: false,
+      status: 0,
+      debug_valid: false,
+      debug_issue: '',
+      site: params?.site || 'unknown',
+      job_id: params?.job_id || '',
+      user_uid: userUid,
+      extension_version: getExtensionVersionForGa4().extension_version,
+      error_type: params?.error_type || '',
+      error: e?.message || String(e)
+    });
+    await chrome.storage.local.set({
+      taleos_ga4_last_event: {
+        name: eventName,
+        at: Date.now(),
+        userId: userId || 'anonymous',
+        params: params || {},
+        ok: false,
+        error: e?.message || String(e)
+      }
+    });
   }
 }
 
 /**
  * Envoie un événement de candidature au démarrage
  */
-async function trackApplyStart(site, jobTitle, jobId) {
+function normalizeSite(site, offerUrl) {
+  const raw = (site || '').toLowerCase();
+  if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
+  if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
+  if (raw.includes('bpce')) return 'bpce';
+  if (raw.includes('deloitte')) return 'deloitte';
+  const url = (offerUrl || '').toLowerCase();
+  if (url.includes('groupecreditagricole.jobs')) return 'credit_agricole';
+  if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
+  if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com')) return 'bpce';
+  if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';
+  return 'unknown';
+}
+
+async function resolveTrackingContext(bankId, jobId, offerUrl) {
+  const directSite = normalizeSite(bankId, offerUrl);
+  if (directSite !== 'unknown') {
+    return { site: directSite, offerUrl: offerUrl || '' };
+  }
+  try {
+    const key = String(jobId || '').trim();
+    if (!key) return { site: directSite, offerUrl: offerUrl || '' };
+    const { taleos_offer_meta_by_job = {} } = await chrome.storage.local.get(['taleos_offer_meta_by_job']);
+    const meta = taleos_offer_meta_by_job[key] || {};
+    const resolvedOfferUrl = offerUrl || meta.offerUrl || '';
+    return { site: normalizeSite(bankId, resolvedOfferUrl), offerUrl: resolvedOfferUrl };
+  } catch (_) {
+    return { site: directSite, offerUrl: offerUrl || '' };
+  }
+}
+
+function getLocalDateTimeParts() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
+  return { event_local_date: date, event_local_time: time, event_local_datetime: `${date} ${time}`, event_timezone: tz };
+}
+
+async function getOfferMetaForTracking(jobId) {
+  try {
+    const key = String(jobId || '').trim();
+    if (!key) return {};
+    const { taleos_offer_meta_by_job = {} } = await chrome.storage.local.get(['taleos_offer_meta_by_job']);
+    return taleos_offer_meta_by_job[key] || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+async function trackApplyStart(site, jobTitle, jobId, offerUrl) {
+  const ctx = await resolveTrackingContext(site, jobId, offerUrl);
+  const meta = await getOfferMetaForTracking(jobId);
+  const dt = getLocalDateTimeParts();
   await sendGA4Event('apply_start', {
-    site: site || 'unknown',
+    site: ctx.site,
     job_title: jobTitle || 'Unknown Position',
-    job_id: jobId || 'unknown'
+    job_id: jobId || 'unknown',
+    offer_url: ctx.offerUrl || '',
+    company_name: meta.companyName || '',
+    location: meta.location || '',
+    contract_type: meta.contractType || '',
+    experience_level: meta.experienceLevel || '',
+    job_family: meta.jobFamily || '',
+    publication_date: meta.publicationDate || '',
+    ...dt
   });
 }
 
 /**
  * Envoie un événement quand le code PIN est reçu
  */
-async function trackPinReceived(site) {
+async function trackPinReceived(site, offerUrl) {
   await sendGA4Event('pin_received', {
-    site: site || 'unknown'
+    site: normalizeSite(site, offerUrl)
   });
 }
 
 /**
  * Envoie un événement quand le formulaire est rempli
  */
-async function trackFormFilled(site, jobTitle) {
+async function trackFormFilled(site, jobTitle, jobId, offerUrl) {
+  const ctx = await resolveTrackingContext(site, jobId, offerUrl);
+  const meta = await getOfferMetaForTracking(jobId);
+  const dt = getLocalDateTimeParts();
   await sendGA4Event('form_filled', {
-    site: site || 'unknown',
-    job_title: jobTitle || 'Unknown Position'
+    site: ctx.site,
+    job_title: jobTitle || 'Unknown Position',
+    job_id: jobId || 'unknown',
+    offer_url: ctx.offerUrl || '',
+    company_name: meta.companyName || '',
+    location: meta.location || '',
+    contract_type: meta.contractType || '',
+    experience_level: meta.experienceLevel || '',
+    job_family: meta.jobFamily || '',
+    publication_date: meta.publicationDate || '',
+    ...dt
   });
 }
 
 /**
  * Envoie un événement quand la candidature est soumise
  */
-async function trackApplySuccess(site, jobTitle) {
+async function trackApplySuccess(site, jobTitle, jobId, offerUrl) {
+  const ctx = await resolveTrackingContext(site, jobId, offerUrl);
+  const meta = await getOfferMetaForTracking(jobId);
+  const dt = getLocalDateTimeParts();
   await sendGA4Event('apply_success', {
-    site: site || 'unknown',
-    job_title: jobTitle || 'Unknown Position'
+    site: ctx.site,
+    job_title: jobTitle || 'Unknown Position',
+    job_id: jobId || 'unknown',
+    offer_url: ctx.offerUrl || '',
+    company_name: meta.companyName || '',
+    location: meta.location || '',
+    contract_type: meta.contractType || '',
+    experience_level: meta.experienceLevel || '',
+    job_family: meta.jobFamily || '',
+    publication_date: meta.publicationDate || '',
+    ...dt
+  });
+}
+
+function classifyApplyError(errorMessage) {
+  const raw = String(errorMessage || '');
+  const msg = raw.toLowerCase();
+  if (!raw.trim()) return { code: 'unknown', hint: 'Erreur non renseignée' };
+  if (/404|introuvable|non disponible|n'est plus en ligne|expired|no longer online/.test(msg)) {
+    return { code: 'offer_expired', hint: 'Offre expirée ou retirée' };
+  }
+  if (/question|mapping|mapp|non gér|non pris en charge|unsupported/.test(msg)) {
+    return { code: 'unmapped_question', hint: 'Question non mappée dans le formulaire cible' };
+  }
+  if (/obligatoire|required|champ manquant|missing field|validation/.test(msg)) {
+    return { code: 'required_field', hint: 'Champ obligatoire non complété ou validation échouée' };
+  }
+  if (/login|connexion|mot de passe|password|auth/.test(msg)) {
+    return { code: 'auth', hint: 'Échec d’authentification sur le site carrière' };
+  }
+  if (/timeout|timed out|délai|attente/.test(msg)) {
+    return { code: 'timeout', hint: 'Timeout pendant le parcours automatisé' };
+  }
+  if (/captcha|robot|verification/.test(msg)) {
+    return { code: 'anti_bot', hint: 'Blocage anti-bot/captcha détecté' };
+  }
+  if (/network|fetch|net::|cors/.test(msg)) {
+    return { code: 'network', hint: 'Erreur réseau/API pendant l’automatisation' };
+  }
+  return { code: 'other', hint: 'Erreur non catégorisée' };
+}
+
+async function trackApplyExpired(site, jobTitle, jobId, offerUrl, errorMessage) {
+  const ctx = await resolveTrackingContext(site, jobId, offerUrl);
+  const meta = await getOfferMetaForTracking(jobId);
+  const dt = getLocalDateTimeParts();
+  await sendGA4Event('apply_expired', {
+    site: ctx.site,
+    job_title: jobTitle || 'Unknown Position',
+    job_id: jobId || 'unknown',
+    offer_url: ctx.offerUrl || '',
+    reason: String(errorMessage || 'Offre expirée').slice(0, 300),
+    company_name: meta.companyName || '',
+    location: meta.location || '',
+    contract_type: meta.contractType || '',
+    experience_level: meta.experienceLevel || '',
+    job_family: meta.jobFamily || '',
+    publication_date: meta.publicationDate || '',
+    ...dt
   });
 }
 
 /**
  * Envoie un événement d'erreur
  */
-async function trackError(errorType, errorMessage, site) {
+async function trackError(errorType, errorMessage, site, jobId, offerUrl) {
+  const ctx = await resolveTrackingContext(site, jobId, offerUrl);
+  const meta = await getOfferMetaForTracking(jobId);
+  const dt = getLocalDateTimeParts();
+  const classified = classifyApplyError(errorMessage);
   await sendGA4Event('apply_error', {
-    error_type: errorType || 'unknown',
-    error_message: errorMessage || 'Unknown error',
-    site: site || 'unknown'
+    error_type: errorType || classified.code || 'unknown',
+    error_code: classified.code || 'unknown',
+    error_hint: classified.hint || 'Erreur inconnue',
+    error_message: String(errorMessage || 'Unknown error').slice(0, 300),
+    site: ctx.site,
+    job_id: jobId || 'unknown',
+    offer_url: ctx.offerUrl || '',
+    company_name: meta.companyName || '',
+    location: meta.location || '',
+    contract_type: meta.contractType || '',
+    experience_level: meta.experienceLevel || '',
+    job_family: meta.jobFamily || '',
+    publication_date: meta.publicationDate || '',
+    ...dt
   });
 }
 
