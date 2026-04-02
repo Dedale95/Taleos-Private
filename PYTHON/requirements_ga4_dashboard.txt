@@ -1,0 +1,3 @@
+# Pour ga4_dashboard_report.py (API Data GA4 → HTML + Chart.js)
+google-analytics-data>=0.18.0
+google-auth>=2.0.0
