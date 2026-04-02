@@ -5,7 +5,6 @@
  *   ou en local : cd functions && npm install && cd .. && firebase deploy --only functions
  *
  * Nécessite le plan Blaze pour les appels sortants hors quota gratuit.
- * Test local : firebase emulators:start --only functions
  */
 
 const { initializeApp } = require("firebase-admin/app");
