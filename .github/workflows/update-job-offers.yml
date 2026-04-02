@@ -18,7 +18,12 @@ on:
 jobs:
   update-offers:
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # Les scrapeurs peuvent prendre 30-90 min
+    # 9 scrapeurs + revalidation HTTP + export ; le plafond GitHub est 6 h
+    timeout-minutes: 360
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # Limite la revalidation HTTP par base (voir update_all_jobs.py) pour finir dans les temps
+      TALEOS_REVALIDATE_MAX_PER_SOURCE: "600"
 
     steps:
       - name: Checkout
