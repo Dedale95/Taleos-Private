@@ -38,6 +38,7 @@ const BANK_SCRIPT_MAP = {
 };
 
 const PROJECT_ID = 'project-taleos';
+const TALEOS_APPLY_PLAN_REGION = 'europe-west1';
 
 let authSyncResolve = null;
 const sgLastInject = new Map();
@@ -628,6 +629,51 @@ async function runTestConnection(msg) {
   }
 }
 
+/** Routage candidature (identique au serveur getApplyPlan) — utilisé si le plan serveur est indisponible. */
+function computeLegacyRouteAs(bankId, offerUrl) {
+  const url = String(offerUrl || '').toLowerCase();
+  const bid = String(bankId || '').toLowerCase();
+  if (bid === 'credit_agricole' || url.includes('groupecreditagricole.jobs')) return 'ca';
+  if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
+  if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
+  if (bid === 'bpce' || url.includes('recrutement.bpce.fr')) return 'bpce';
+  return 'other';
+}
+
+/**
+ * Plan serveur (Callable HTTPS). Ne remplace pas les scripts locaux : fournit routeAs + scriptKey.
+ * Échec → fallback silencieux sur computeLegacyRouteAs.
+ */
+async function fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken) {
+  const url = `https://${TALEOS_APPLY_PLAN_REGION}-${PROJECT_ID}.cloudfunctions.net/getApplyPlan`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${taleosIdToken}`
+    },
+    body: JSON.stringify({
+      data: {
+        bankId: bankId || '',
+        offerUrl: offerUrl || '',
+        jobId: jobId || '',
+        jobTitle: jobTitle || '',
+        companyName: companyName || ''
+      }
+    })
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message || json?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  const result = json.result !== undefined ? json.result : json;
+  if (!result || result.ok !== true) {
+    throw new Error(result?.message || 'Plan serveur invalide');
+  }
+  return result;
+}
+
 async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId, offerMeta = null) {
   let { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
   if (!taleosUserId && taleosTabId) {
@@ -686,11 +732,24 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     } catch (_) {}
   }
 
-  const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
+  let routeAs = computeLegacyRouteAs(bankId, offerUrl);
+  let scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, bankId) ? bankId : 'credit_agricole';
+  try {
+    const { taleos_use_server_apply_plan } = await chrome.storage.local.get('taleos_use_server_apply_plan');
+    if (taleos_use_server_apply_plan !== false && taleosIdToken) {
+      const plan = await fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken);
+      if (plan.routeAs) routeAs = plan.routeAs;
+      if (plan.scriptKey && Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, plan.scriptKey)) {
+        scriptKey = plan.scriptKey;
+      }
+    }
+  } catch (e) {
+    console.warn('[Taleos] Plan serveur indisponible, fallback local:', e?.message || e);
+  }
+  const scriptPath = BANK_SCRIPT_MAP[scriptKey] || BANK_SCRIPT_MAP.credit_agricole;
   chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
 
-  const isCreditAgricole = bankId === 'credit_agricole' || (offerUrl && String(offerUrl).toLowerCase().includes('groupecreditagricole.jobs'));
-  if (isCreditAgricole) {
+  if (routeAs === 'ca') {
     chrome.storage.local.set({
       taleos_pending_offer: {
         offerUrl,
@@ -771,7 +830,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     };
     chrome.tabs.onUpdated.addListener(listener);
     setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 120000);
-  } else if (bankId === 'deloitte' || (offerUrl && (String(offerUrl).includes('myworkdayjobs.com') && String(offerUrl).toLowerCase().includes('deloitte')))) {
+  } else if (routeAs === 'deloitte') {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
     const deloitteCreateOpts = { url: offerUrl, active: false };
     if (taleosTabId) {
@@ -795,7 +854,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
     }
-  } else if (bankId === 'societe_generale' || (offerUrl && String(offerUrl).toLowerCase().includes('careers.societegenerale.com')) || (offerUrl && String(offerUrl).toLowerCase().includes('socgen.taleo.net'))) {
+  } else if (routeAs === 'sg') {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
     const createOpts = { url: offerUrl, active: true };
     if (taleosTabId) {
@@ -814,7 +873,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       },
       taleos_sg_tab_id: tab.id
     });
-  } else if (bankId === 'bpce' || (offerUrl && String(offerUrl).toLowerCase().includes('recrutement.bpce.fr'))) {
+  } else if (routeAs === 'bpce') {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
     const createOpts = { url: offerUrl, active: true };
     if (taleosTabId) {
