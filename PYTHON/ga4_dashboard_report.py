@@ -5,10 +5,10 @@ Génère un dashboard HTML (graphiques) à partir de l'API Google Analytics Data
 
 Usage:
   export GOOGLE_APPLICATION_CREDENTIALS=/chemin/vers/service-account.json
-  python3 ga4_dashboard_report.py
+  python3 ga4_dashboard_report.py --browse
 
-  ou:
-  python3 ga4_dashboard_report.py --key /chemin/vers.json --property 519219314 --days 30
+  Ouvrir un fichier déjà généré (sans API) :
+  python3 ga4_dashboard_report.py --view --http
 
 Sortie par défaut: ../HTML/ga4_taleos_dashboard.html
 """
@@ -17,10 +17,19 @@ from __future__ import annotations
 
 import argparse
 import html as html_escape
+import http.server
 import json
 import os
+import platform
+import socket
+import socketserver
+import subprocess
 import sys
+import threading
+import time
+import webbrowser
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 HTML_DIR = Path(__file__).resolve().parent.parent / "HTML"
@@ -30,13 +39,97 @@ DEFAULT_OUTPUT = HTML_DIR / "ga4_taleos_dashboard.html"
 TALEOS_EVENTS = ("apply_start", "apply_success", "apply_error", "apply_expired")
 
 
+def _find_free_port(start: int = 8765) -> int:
+    for port in range(start, start + 40):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+            return port
+        except OSError:
+            continue
+    return start
+
+
+def open_in_default_app(path: Path) -> None:
+    """Ouvre le fichier HTML avec l’app par défaut (souvent le navigateur)."""
+    path = path.resolve()
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            subprocess.run(["open", str(path)], check=False)
+        elif system == "Windows":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        else:
+            subprocess.run(["xdg-open", str(path)], check=False)
+    except OSError:
+        webbrowser.open(path.as_uri())
+
+
+def serve_html_over_http(html_path: Path) -> None:
+    """Sert le dossier du fichier en http://127.0.0.1 — plus fiable que file:// pour le CDN Chart.js."""
+    html_path = html_path.resolve()
+    if not html_path.is_file():
+        print(f"Fichier introuvable: {html_path}", file=sys.stderr)
+        sys.exit(1)
+    directory = str(html_path.parent)
+    name = html_path.name
+    port = _find_free_port()
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=directory)
+    httpd = socketserver.TCPServer(("127.0.0.1", port), handler)
+    url = f"http://127.0.0.1:{port}/{name}"
+
+    def _open_browser() -> None:
+        time.sleep(0.25)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open_browser, daemon=True).start()
+    print(f"Dashboard: {url}")
+    print("Ctrl+C pour arrêter le serveur local.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Génère un dashboard HTML GA4 Taleos")
     parser.add_argument("--key", help="Chemin vers le JSON compte de service")
     parser.add_argument("--property", default=os.environ.get("GA4_PROPERTY_ID", "519219314"))
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("-o", "--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--view",
+        action="store_true",
+        help="N’appelle pas l’API : ouvre le fichier -o déjà généré (--browse ou --http)",
+    )
+    parser.add_argument(
+        "--browse",
+        action="store_true",
+        help="Après génération (ou avec --view) : ouvrir avec open / navigateur par défaut",
+    )
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Servir la page en http://127.0.0.1 (recommandé si file:// ne charge pas le graphique)",
+    )
     args = parser.parse_args()
+
+    if args.view:
+        out = args.output.expanduser().resolve()
+        if args.http:
+            serve_html_over_http(out)
+        elif args.browse:
+            open_in_default_app(out)
+        else:
+            print(
+                "Avec --view, ajoutez --browse (ouverture fichier) ou --http (mini-serveur).",
+                file=sys.stderr,
+            )
+            print(f"Fichier attendu: {out}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     if args.key:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(Path(args.key).expanduser().resolve())
@@ -58,12 +151,12 @@ def main():
             Metric,
             RunReportRequest,
         )
-    except ImportError as e:
+    except ImportError:
         print(
             "Installez: pip install google-analytics-data google-auth",
             file=sys.stderr,
         )
-        raise SystemExit(1) from e
+        sys.exit(1)
 
     client = BetaAnalyticsDataClient()
 
@@ -217,10 +310,18 @@ def main():
 </html>
 """
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(html, encoding="utf-8")
-    print(f"OK — Dashboard écrit: {args.output}")
-    print(f"Ouvrez ce fichier dans le navigateur: file://{args.output}")
+    out = args.output.expanduser().resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    print(f"OK — Dashboard écrit: {out}")
+    print(f"URL fichier (copier-coller): {out.as_uri()}")
+    if platform.system() == "Darwin":
+        print(f"Ou dans le Terminal : open {out!s}")
+
+    if args.http:
+        serve_html_over_http(out)
+    elif args.browse:
+        open_in_default_app(out)
 
 
 if __name__ == "__main__":
