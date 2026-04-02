@@ -3,11 +3,11 @@
 Génère un dashboard HTML (graphiques) à partir de l'API Google Analytics Data.
 Évite le montage manuel des explorations GA4.
 
-Usage:
-  export GOOGLE_APPLICATION_CREDENTIALS=/chemin/vers/service-account.json
-  python3 ga4_dashboard_report.py --browse
+Usage (remplacer le chemin par votre vrai fichier JSON compte de service Google Cloud) :
+  export GOOGLE_APPLICATION_CREDENTIALS="$HOME/Documents/mon-projet-abc123.json"
+  python3 ga4_dashboard_report.py --http
 
-  Ouvrir un fichier déjà généré (sans API) :
+  Sans clé API : ouvrir un HTML déjà généré
   python3 ga4_dashboard_report.py --view --http
 
 Sortie par défaut: ../HTML/ga4_taleos_dashboard.html
@@ -37,6 +37,28 @@ DEFAULT_OUTPUT = HTML_DIR / "ga4_taleos_dashboard.html"
 
 # Événements Taleos (extension)
 TALEOS_EVENTS = ("apply_start", "apply_success", "apply_error", "apply_expired")
+
+
+def _exit_if_credentials_file_missing() -> None:
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if not raw:
+        return
+    p = Path(raw).expanduser()
+    if p.is_file():
+        return
+    print(
+        "Fichier de compte de service introuvable :\n"
+        f"  {raw}\n\n"
+        "GOOGLE_APPLICATION_CREDENTIALS doit pointer vers le fichier .json téléchargé "
+        "depuis Google Cloud (IAM → comptes de service → clés), pas un exemple du type "
+        "« /chemin/vers/votre-service-account.json ».\n\n"
+        "Exemple :\n"
+        '  export GOOGLE_APPLICATION_CREDENTIALS="$HOME/Downloads/projet-xxxxx.json"\n'
+        "Ou :\n"
+        "  python3 PYTHON/ga4_dashboard_report.py --key \"$HOME/Downloads/projet-xxxxx.json\" --http",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _find_free_port(start: int = 8765) -> int:
@@ -140,6 +162,8 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+
+    _exit_if_credentials_file_missing()
 
     try:
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
