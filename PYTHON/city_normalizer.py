@@ -33,6 +33,9 @@ CITY_MAPPING = {
     'cergy': 'Cergy',
     'region parisienne': 'Région Parisienne',
     'ile de france': 'Région Parisienne',
+    'ile-de-france': 'Île-de-France',
+    'ile-de france': 'Île-de-France',
+    'île-de-france': 'Île-de-France',
     # DOM-TOM
     'réunion': 'La Réunion',
     'la réunion': 'La Réunion',
@@ -178,6 +181,9 @@ def normalize_city(city_raw):
     
     # Nettoyer et normaliser
     city_clean = city_raw.strip().lower()
+    # Variantes scraping CA/LCL : "Ile-De France", "Ile-de-France", "Île de France" (sans entrée mapping exacte)
+    if re.match(r'^î?le(\s|-)+de(\s|-)+france$', city_clean):
+        return 'Île-de-France'
     
     # Liste des pays connus à rejeter (ne doivent pas être traités comme villes)
     known_countries_lower = {

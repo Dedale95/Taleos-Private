@@ -191,6 +191,9 @@ def merge_from_databases():
         country = (parts[1] or '').strip()
         if not city or country.lower() != 'france':
             return loc
+        # Aligné front : "Ile-De France" / "Ile-de France" → libellé canonique (filtre Île-de-France)
+        if re.match(r'^î?le(\s|-)+de(\s|-)+france$', city, re.IGNORECASE):
+            return f"Île-de-France - {country}"
         correct_country = get_country_from_city(city)
         if correct_country:
             return f"{city} - {normalize_country(correct_country)}"
