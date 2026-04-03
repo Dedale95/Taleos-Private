@@ -38,7 +38,6 @@ const BANK_SCRIPT_MAP = {
 };
 
 const PROJECT_ID = 'project-taleos';
-const TALEOS_APPLY_PLAN_REGION = 'europe-west1';
 
 let authSyncResolve = null;
 const sgLastInject = new Map();
@@ -55,35 +54,6 @@ async function injectSgAutomation(tabId, profile) {
   try {
     await new Promise(r => setTimeout(r, 1500));
     const target = { tabId, allFrames: true };
-    let instr = null;
-    try {
-      const s = await chrome.storage.session.get('taleos_instruction_plan');
-      instr = s.taleos_instruction_plan;
-    } catch (_) {}
-    if (
-      instr &&
-      instr.scriptKey === 'societe_generale' &&
-      Array.isArray(instr.steps) &&
-      instr.steps.length &&
-      typeof instr.until === 'number' &&
-      Date.now() < instr.until
-    ) {
-      try {
-        await runInstructionSteps(
-          tabId,
-          profile,
-          instr.steps,
-          instr.scriptPath || BANK_SCRIPT_MAP.societe_generale,
-          'societe_generale',
-          2
-        );
-        console.log('[Taleos SG] OK — instructions serveur (coquille)');
-        return;
-      } catch (e) {
-        console.warn('[Taleos SG] Instructions → fallback bundle local', e?.message || e);
-        await persistInstructionFallback(e?.message || String(e), 2);
-      }
-    }
     let sessionRa = null;
     try {
       const s = await chrome.storage.session.get('taleos_remote_automation');
@@ -424,7 +394,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             pilotLabel: result.pilotLabel,
             routingSource: result.routingSource,
             automationSource: result.automationSource,
-            useInstructions: result.useInstructions
           });
         }
       })
@@ -693,7 +662,7 @@ async function runTestConnection(msg) {
   }
 }
 
-/** Routage candidature (identique au serveur getApplyPlan) — utilisé si le plan serveur est indisponible. */
+/** Routage local selon banque / URL d’offre */
 function computeLegacyRouteAs(bankId, offerUrl) {
   const url = String(offerUrl || '').toLowerCase();
   const bid = String(bankId || '').toLowerCase();
@@ -704,338 +673,20 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   return 'other';
 }
 
-/**
- * Plan serveur (Callable HTTPS) : routeAs, scriptKey, pilot (bundled vs URL distante).
- * Échec → le caller utilise computeLegacyRouteAs + scripts locaux.
- */
-async function fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken) {
-  const url = `https://${TALEOS_APPLY_PLAN_REGION}-${PROJECT_ID}.cloudfunctions.net/getApplyPlan`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${taleosIdToken}`
-    },
-    body: JSON.stringify({
-      data: {
-        bankId: bankId || '',
-        offerUrl: offerUrl || '',
-        jobId: jobId || '',
-        jobTitle: jobTitle || '',
-        companyName: companyName || ''
-      }
-    })
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = json?.error?.message || json?.message || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  const result = json.result !== undefined ? json.result : json;
-  if (!result || result.ok !== true) {
-    throw new Error(result?.message || 'Plan serveur invalide');
-  }
-  return result;
-}
-
-async function sha256HexUtf8(text) {
-  const buf = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function sanitizeInstructionStepsClient(raw) {
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  for (const s of raw) {
-    if (!s || typeof s !== 'object') continue;
-    const op = String(s.op || '').trim();
-    if (op === 'run_bundled_script') {
-      const sk = String(s.scriptKey || '').trim();
-      if (!Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, sk)) continue;
-      const ph = s.phase;
-      const phase = ph === 'any' || ph === undefined || ph === null ? 'any' : Number(ph);
-      out.push({ op, scriptKey: sk, phase, note: typeof s.note === 'string' ? s.note.slice(0, 240) : undefined });
-    } else if (op === 'wait_ms') {
-      const ms = Math.min(120000, Math.max(0, Math.floor(Number(s.ms) || 0)));
-      out.push({ op, ms });
-    } else if (op === 'click' || op === 'click_optional' || op === 'focus') {
-      const selector = String(s.selector || '').trim().slice(0, 500);
-      if (selector) out.push({ op, selector });
-    } else if (op === 'fill') {
-      const selector = String(s.selector || '').trim().slice(0, 500);
-      const valueFrom = String(s.valueFrom || '').trim().slice(0, 200);
-      if (selector && valueFrom) out.push({ op, selector, valueFrom });
-    }
-  }
-  return out;
-}
-
-function getProfilePath(obj, path) {
-  const parts = String(path || '').split('.').filter(Boolean);
-  let cur = obj;
-  for (const p of parts) {
-    if (cur == null) return undefined;
-    cur = cur[p];
-  }
-  return cur;
-}
-
-function filterStepsForPhase(steps, phase) {
-  const p = phase == null ? 2 : phase;
-  return steps.filter((s) => {
-    if (s.op !== 'run_bundled_script') return true;
-    const ph = s.phase;
-    if (ph === 'any' || ph === undefined || ph === null) return true;
-    return Number(ph) === Number(p);
-  });
-}
-
-/**
- * Exécute les instructions serveur (coquille). run_bundled_script délègue au fichier local de l’extension.
- */
-async function runInstructionSteps(tabId, profile, steps, defaultScriptPath, defaultScriptKey, phase) {
-  const filtered = filterStepsForPhase(steps, phase);
-  if (!filtered.length) throw new Error('Aucune étape valide pour cette phase');
-  for (let i = 0; i < filtered.length; i++) {
-    const step = filtered[i];
-    console.warn(`[Taleos Instructions] étape ${i + 1}/${filtered.length} · ${step.op}`);
-    if (step.op === 'run_bundled_script') {
-      const sk = step.scriptKey || defaultScriptKey;
-      const path = BANK_SCRIPT_MAP[sk] || defaultScriptPath;
-      if (sk === 'societe_generale') {
-        const target = { tabId, allFrames: true };
-        await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', path] });
-        await chrome.scripting.executeScript({
-          target,
-          func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
-          args: [profile]
-        });
-      } else {
-        await injectAutomationTab(tabId, profile, path, { useRemote: false, remoteSource: null });
-      }
-    } else if (step.op === 'wait_ms') {
-      await new Promise((r) => setTimeout(r, step.ms));
-    } else if (step.op === 'click') {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: (sel) => {
-          const el = document.querySelector(sel);
-          if (el) el.click();
-          else throw new Error('click: ' + sel);
-        },
-        args: [step.selector]
-      });
-    } else if (step.op === 'click_optional') {
-      const inj = await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: (sel) => {
-          const el = document.querySelector(sel);
-          if (el) {
-            el.click();
-            return 'clicked';
-          }
-          return 'absent';
-        },
-        args: [step.selector]
-      });
-      const tag = inj?.[0]?.result || '?';
-      console.warn('[Taleos Instructions] click_optional', step.selector, '→', tag);
-    } else if (step.op === 'focus') {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: (sel) => {
-          const el = document.querySelector(sel);
-          if (el) el.focus();
-          else throw new Error('focus: ' + sel);
-        },
-        args: [step.selector]
-      });
-    } else if (step.op === 'fill') {
-      const val = getProfilePath(profile, step.valueFrom);
-      const str = val != null ? String(val) : '';
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: (payload) => {
-          const el = document.querySelector(payload.selector);
-          if (!el) throw new Error('fill: ' + payload.selector);
-          if ('value' in el) el.value = payload.value;
-          else el.textContent = payload.value;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        },
-        args: [{ selector: step.selector, value: str }]
-      });
-    }
-  }
-}
-
-async function persistInstructionFallback(reason, phase) {
-  const { taleos_last_pilot = {} } = await chrome.storage.local.get('taleos_last_pilot');
-  await chrome.storage.local.set({
-    taleos_last_pilot: {
-      ...taleos_last_pilot,
-      tier: 'instruction_fallback_bundled',
-      label: 'Fallback · instructions serveur en erreur — prise en main bundle local (extension)',
-      detail: `phase ${phase} · ${(reason || '').slice(0, 220)}`,
-      automationSource: 'bundled',
-      instructionFallback: true,
-      at: Date.now()
-    }
-  });
-  console.warn('[Taleos Instructions] FALLBACK bundle extension | phase', phase, '|', reason);
-}
-
-async function runAutomationOrFallback(tabId, profile, scriptPath, pilotExec, phase) {
-  const bundledOnly = { useRemote: false, remoteSource: null };
-  if (pilotExec.useInstructions && pilotExec.instructionSteps?.length) {
-    try {
-      await runInstructionSteps(tabId, profile, pilotExec.instructionSteps, scriptPath, pilotExec.scriptKey, phase);
-      console.warn('[Taleos Instructions] OK (phase ' + phase + ') — aucun fallback');
-      return;
-    } catch (e) {
-      const msg = e?.message || String(e);
-      await persistInstructionFallback(msg, phase);
-      await injectAutomationTab(tabId, profile, scriptPath, bundledOnly);
-      return;
-    }
-  }
-  await injectAutomationTab(tabId, profile, scriptPath, pilotExec);
-}
-
-/**
- * tier: firebase_instructions | firebase_remote | firebase_bundled | fallback_* | local_only
- * pilot serveur v4 : automationMode === 'instructions' + steps[]
- */
-async function resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped, routeAs) {
-  const base = { scriptKey, scriptPath, planVersion: plan?.planVersion ?? null, useInstructions: false, instructionSteps: null, instructionSetVersion: null };
-  if (serverPlanSkipped) {
-    return {
-      ...base,
-      tier: 'local_only',
-      label: 'Local · getApplyPlan non appelé (option extension ou session)',
-      detail: '',
-      routingSource: 'local',
-      automationSource: 'bundled',
-      useRemote: false,
-      remoteSource: null
-    };
-  }
-  if (planFetchError || !plan) {
-    return {
-      ...base,
-      tier: 'fallback_routing',
-      label: 'Fallback · plan Firebase indisponible (routage + scripts locaux)',
-      detail: planFetchError || 'réponse vide',
-      routingSource: 'fallback',
-      automationSource: 'bundled',
-      useRemote: false,
-      remoteSource: null
-    };
-  }
-  const pilot = plan.pilot || {};
-  if (pilot.automationMode === 'instructions' && Array.isArray(pilot.steps) && pilot.steps.length) {
-    const cleaned = sanitizeInstructionStepsClient(pilot.steps);
-    if (cleaned.length) {
-      return {
-        ...base,
-        tier: 'firebase_instructions',
-        label: 'Firebase · instructions serveur (exécution coquille extension)',
-        detail: `${cleaned.length} étape(s) · jeu v${pilot.instructionSetVersion ?? 1}`,
-        routingSource: 'firebase',
-        automationSource: 'instructions',
-        useInstructions: true,
-        instructionSteps: cleaned,
-        instructionSetVersion: pilot.instructionSetVersion ?? 1,
-        useRemote: false,
-        remoteSource: null
-      };
-    }
-  }
-  const remoteSkippedForContentScriptOnly = routeAs === 'bpce' || routeAs === 'deloitte';
-  if (pilot.automationMode === 'remote' && remoteSkippedForContentScriptOnly) {
-    return {
-      ...base,
-      tier: 'firebase_bundled',
-      label: 'Firebase · BPCE/Deloitte = content scripts locaux (hors injection bundle distant)',
-      detail: routeAs || '',
-      routingSource: 'firebase',
-      automationSource: 'bundled',
-      useRemote: false,
-      remoteSource: null
-    };
-  }
-  if (pilot.automationMode !== 'remote' || !pilot.remoteScriptUrl || typeof pilot.remoteScriptUrl !== 'string') {
-    return {
-      ...base,
-      tier: 'firebase_bundled',
-      label: 'Firebase · routage serveur, script embarqué (extension)',
-      detail: '',
-      routingSource: 'firebase',
-      automationSource: 'bundled',
-      useRemote: false,
-      remoteSource: null
-    };
-  }
-  const url = pilot.remoteScriptUrl.trim();
-  if (!/^https:\/\//i.test(url)) {
-    return {
-      ...base,
-      tier: 'fallback_automation',
-      label: 'Fallback · URL script distant invalide (HTTPS requis)',
-      detail: url.slice(0, 100),
-      routingSource: 'firebase',
-      automationSource: 'bundled',
-      useRemote: false,
-      remoteSource: null
-    };
-  }
-  try {
-    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    if (pilot.remoteScriptSha256) {
-      const hex = await sha256HexUtf8(text);
-      const want = String(pilot.remoteScriptSha256).toLowerCase().replace(/\s/g, '');
-      if (hex !== want) {
-        return {
-          ...base,
-          tier: 'fallback_automation',
-          label: 'Fallback · empreinte SHA-256 du script distant incorrecte',
-          detail: 'vérifier TALEOS_REMOTE_SHA_*',
-          routingSource: 'firebase',
-          automationSource: 'bundled',
-          useRemote: false,
-          remoteSource: null
-        };
-      }
-    }
-    return {
-      ...base,
-      tier: 'firebase_remote',
-      label: 'Firebase · script distant (legacy URL)',
-      detail: url.slice(0, 140),
-      routingSource: 'firebase',
-      automationSource: 'remote',
-      useRemote: true,
-      remoteSource: text
-    };
-  } catch (e) {
-    return {
-      ...base,
-      tier: 'fallback_automation',
-      label: 'Fallback · téléchargement script distant impossible',
-      detail: (e?.message || String(e)).slice(0, 200),
-      routingSource: 'firebase',
-      automationSource: 'bundled',
-      useRemote: false,
-      remoteSource: null
-    };
-  }
+/** Pilotage local uniquement : pas d’appel Cloud Function pour le plan de candidature. */
+function buildLocalPilotExecution(scriptKey, scriptPath) {
+  return {
+    scriptKey,
+    scriptPath,
+    planVersion: null,
+    tier: 'local_only',
+    label: 'Scripts embarqués (extension)',
+    detail: '',
+    routingSource: 'local',
+    automationSource: 'bundled',
+    useRemote: false,
+    remoteSource: null
+  };
 }
 
 async function persistLastPilot(exec, meta) {
@@ -1046,47 +697,21 @@ async function persistLastPilot(exec, meta) {
     routingSource: exec.routingSource,
     automationSource: exec.automationSource,
     scriptKey: meta.scriptKey,
-    planVersion: exec.planVersion,
+    planVersion: exec.planVersion ?? null,
     routeAs: meta.routeAs,
     bankId: meta.bankId,
     jobId: meta.jobId,
     jobTitle: (meta.jobTitle || '').slice(0, 120),
     at: Date.now(),
-    offerUrlPreview: (meta.offerUrl || '').slice(0, 160),
-    instructionSetVersion: exec.instructionSetVersion ?? null,
-    instructionStepCount: exec.instructionSteps?.length ?? null,
-    instructionFallback: false
+    offerUrlPreview: (meta.offerUrl || '').slice(0, 160)
   };
   await chrome.storage.local.set({ taleos_last_pilot: record });
   try {
-    if (exec.useInstructions && exec.instructionSteps?.length) {
-      await chrome.storage.session.set({
-        taleos_instruction_plan: {
-          steps: exec.instructionSteps,
-          scriptKey: meta.scriptKey,
-          scriptPath: BANK_SCRIPT_MAP[meta.scriptKey] || BANK_SCRIPT_MAP.credit_agricole,
-          until: Date.now() + 20 * 60 * 1000
-        }
-      });
-    } else {
-      await chrome.storage.session.remove('taleos_instruction_plan');
-    }
+    await chrome.storage.session.remove('taleos_instruction_plan');
   } catch (_) {}
-  if (exec.tier === 'firebase_remote' && exec.useRemote && exec.remoteSource) {
-    try {
-      await chrome.storage.session.set({
-        taleos_remote_automation: {
-          scriptKey: meta.scriptKey,
-          remoteSource: exec.remoteSource,
-          until: Date.now() + 15 * 60 * 1000
-        }
-      });
-    } catch (_) {}
-  } else {
-    try {
-      await chrome.storage.session.remove('taleos_remote_automation');
-    } catch (_) {}
-  }
+  try {
+    await chrome.storage.session.remove('taleos_remote_automation');
+  } catch (_) {}
   console.warn('[Taleos Pilot]', exec.tier, '|', exec.label, exec.detail ? '| ' + exec.detail : '');
 }
 
@@ -1168,28 +793,10 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     } catch (_) {}
   }
 
-  let routeAs = computeLegacyRouteAs(bankId, offerUrl);
-  let scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, bankId) ? bankId : 'credit_agricole';
-  let plan = null;
-  let planFetchError = null;
-  let serverPlanSkipped = false;
-  try {
-    const { taleos_use_server_apply_plan } = await chrome.storage.local.get('taleos_use_server_apply_plan');
-    if (taleos_use_server_apply_plan !== false && taleosIdToken) {
-      plan = await fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken);
-      if (plan.routeAs) routeAs = plan.routeAs;
-      if (plan.scriptKey && Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, plan.scriptKey)) {
-        scriptKey = plan.scriptKey;
-      }
-    } else {
-      serverPlanSkipped = true;
-    }
-  } catch (e) {
-    planFetchError = e?.message || String(e);
-    console.warn('[Taleos] Plan serveur indisponible, fallback local:', planFetchError);
-  }
+  const routeAs = computeLegacyRouteAs(bankId, offerUrl);
+  const scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, bankId) ? bankId : 'credit_agricole';
   const scriptPath = BANK_SCRIPT_MAP[scriptKey] || BANK_SCRIPT_MAP.credit_agricole;
-  const pilotExec = await resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped, routeAs);
+  const pilotExec = buildLocalPilotExecution(scriptKey, scriptPath);
   await persistLastPilot(pilotExec, { bankId, jobId, jobTitle, routeAs, offerUrl, scriptKey });
   chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
 
@@ -1223,7 +830,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     const injectAndRun = (phase) => {
       const ph = phase ?? 2;
       const p = { ...profile, __phase: ph };
-      runAutomationOrFallback(tabId, p, scriptPath, pilotExec, ph).catch(e => console.error('[Taleos] Injection:', e));
+      injectAutomationTab(tabId, p, scriptPath, pilotExec).catch(e => console.error('[Taleos] Injection:', e));
     };
 
     const listener = async (id, info) => {
@@ -1350,7 +957,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       chrome.tabs.onUpdated.removeListener(listener);
       await new Promise(r => setTimeout(r, 1500));
       try {
-        await runAutomationOrFallback(tabId, profile, scriptPath, pilotExec, 2);
+        await injectAutomationTab(tabId, profile, scriptPath, pilotExec);
       } catch (e) {
         console.error('[Taleos] Injection:', e);
       }
@@ -1362,8 +969,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     pilotTier: pilotExec.tier,
     pilotLabel: pilotExec.label,
     routingSource: pilotExec.routingSource,
-    automationSource: pilotExec.automationSource,
-    useInstructions: !!pilotExec.useInstructions
+    automationSource: pilotExec.automationSource
   };
 }
 

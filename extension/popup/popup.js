@@ -138,13 +138,11 @@ function toFrenchAnalyticsLabel(eventName) {
 }
 
 const PILOT_TIER_STYLE = {
-  firebase_instructions: { color: '#059669', hint: 'Liste d’étapes depuis Firebase — exécution par la coquille extension.' },
-  instruction_fallback_bundled: { color: '#dc2626', hint: 'Erreur sur les instructions serveur — l’extension a utilisé le bundle local.' },
-  firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL (mode legacy).' },
-  firebase_bundled: { color: '#2563eb', hint: 'Routage Firebase ; automation = fichiers de l’extension.' },
-  local_only: { color: '#6b7280', hint: 'Pas d’appel getApplyPlan (réglage extension ou sans token).' },
-  fallback_routing: { color: '#d97706', hint: 'getApplyPlan appelé mais en erreur — routage local.' },
-  fallback_automation: { color: '#dc2626', hint: 'Plan Firebase OK mais script distant refusé — bundle local.' }
+  local_only: { color: '#6b7280', hint: 'Scripts embarqués dans l’extension (routage local).' },
+  firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL (ancien mode, si session).' },
+  firebase_bundled: { color: '#2563eb', hint: 'Ancien libellé pilotage Firebase.' },
+  fallback_routing: { color: '#d97706', hint: 'Ancien libellé (fallback routage).' },
+  fallback_automation: { color: '#dc2626', hint: 'Ancien libellé (fallback automation).' }
 };
 
 async function refreshPilotStatus() {

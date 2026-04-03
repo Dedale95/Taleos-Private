@@ -1,6 +1,0 @@
-Collection Firestore : apply_instruction_sets
-Document ID : credit_agricole
-Champ : steps (type tableau) — copier le contenu de credit_agricole.steps.json (tableau JSON).
-
-Si ce document existe, il remplace le défaut calculé par la Cloud Function.
-Pour revenir au défaut serveur : supprimer le document ou vider steps.
