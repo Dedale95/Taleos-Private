@@ -722,7 +722,7 @@ async function sha256HexUtf8(text) {
  * Résout le mode d'exécution : script HTTPS depuis Firebase ou bundle local.
  * tier: firebase_remote | firebase_bundled | fallback_routing | fallback_automation
  */
-async function resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped) {
+async function resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped, routeAs) {
   const base = { scriptKey, scriptPath, planVersion: plan?.planVersion ?? null };
   if (serverPlanSkipped) {
     return {
@@ -749,6 +749,20 @@ async function resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath
     };
   }
   const pilot = plan.pilot || {};
+  const remoteSkippedForContentScriptOnly =
+    routeAs === 'bpce' || routeAs === 'deloitte';
+  if (pilot.automationMode === 'remote' && remoteSkippedForContentScriptOnly) {
+    return {
+      ...base,
+      tier: 'firebase_bundled',
+      label: 'Firebase · routage serveur ; BPCE/Deloitte = content scripts locaux (pas d’injection executeScript du bundle distant)',
+      detail: routeAs || '',
+      routingSource: 'firebase',
+      automationSource: 'bundled',
+      useRemote: false,
+      remoteSource: null
+    };
+  }
   if (pilot.automationMode !== 'remote' || !pilot.remoteScriptUrl || typeof pilot.remoteScriptUrl !== 'string') {
     return {
       ...base,
@@ -952,7 +966,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     console.warn('[Taleos] Plan serveur indisponible, fallback local:', planFetchError);
   }
   const scriptPath = BANK_SCRIPT_MAP[scriptKey] || BANK_SCRIPT_MAP.credit_agricole;
-  const pilotExec = await resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped);
+  const pilotExec = await resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped, routeAs);
   await persistLastPilot(pilotExec, { bankId, jobId, jobTitle, routeAs, offerUrl, scriptKey });
   chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
 
