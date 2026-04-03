@@ -12,15 +12,38 @@ const ALLOWED_SCRIPT_KEYS = new Set([
   "bpce",
 ]);
 
+/**
+ * Crédit Agricole : préambule atomique (RGPD / DOM) puis délégation au bundle.
+ * Les clics optionnels évitent l’échec si la bannière a déjà été traitée.
+ */
+function defaultStepsCreditAgricole() {
+  return [
+    { op: "wait_ms", ms: 1200 },
+    { op: "click_optional", selector: "button.rgpd-btn-refuse" },
+    { op: "click_optional", selector: "button.rgpd-btn-accept" },
+    { op: "wait_ms", ms: 500 },
+    {
+      op: "run_bundled_script",
+      scriptKey: "credit_agricole",
+      phase: "any",
+      note:
+        "Suite : formulaire complet, combobox, PJ — logique métier dans scripts/credit_agricole.js",
+    },
+  ];
+}
+
 function defaultStepsForScriptKey(scriptKey) {
   const sk = ALLOWED_SCRIPT_KEYS.has(scriptKey) ? scriptKey : "credit_agricole";
+  if (sk === "credit_agricole") {
+    return defaultStepsCreditAgricole();
+  }
   return [
     {
       op: "run_bundled_script",
       scriptKey: sk,
       phase: "any",
       note:
-        "Délégation au bundle embarqué — remplacer progressivement par des opérations atomiques (click, fill, …)",
+        "Délégation au bundle embarqué — étapes atomiques dédiées à ajouter par banque si besoin",
     },
   ];
 }
@@ -49,7 +72,7 @@ function sanitizeStep(step) {
     const ms = Math.min(120000, Math.max(0, Math.floor(Number(step.ms) || 0)));
     return { op, ms };
   }
-  if (op === "click" || op === "focus") {
+  if (op === "click" || op === "click_optional" || op === "focus") {
     const selector = String(step.selector || "").trim().slice(0, 500);
     if (!selector) return null;
     return { op, selector };
@@ -103,4 +126,5 @@ module.exports = {
   buildInstructionSteps,
   sanitizeSteps,
   defaultStepsForScriptKey,
+  defaultStepsCreditAgricole,
 };

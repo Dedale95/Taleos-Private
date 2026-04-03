@@ -759,7 +759,7 @@ function sanitizeInstructionStepsClient(raw) {
     } else if (op === 'wait_ms') {
       const ms = Math.min(120000, Math.max(0, Math.floor(Number(s.ms) || 0)));
       out.push({ op, ms });
-    } else if (op === 'click' || op === 'focus') {
+    } else if (op === 'click' || op === 'click_optional' || op === 'focus') {
       const selector = String(s.selector || '').trim().slice(0, 500);
       if (selector) out.push({ op, selector });
     } else if (op === 'fill') {
@@ -827,6 +827,22 @@ async function runInstructionSteps(tabId, profile, steps, defaultScriptPath, def
         },
         args: [step.selector]
       });
+    } else if (step.op === 'click_optional') {
+      const inj = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: (sel) => {
+          const el = document.querySelector(sel);
+          if (el) {
+            el.click();
+            return 'clicked';
+          }
+          return 'absent';
+        },
+        args: [step.selector]
+      });
+      const tag = inj?.[0]?.result || '?';
+      console.warn('[Taleos Instructions] click_optional', step.selector, '→', tag);
     } else if (step.op === 'focus') {
       await chrome.scripting.executeScript({
         target: { tabId },

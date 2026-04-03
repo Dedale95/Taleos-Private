@@ -1,0 +1,12 @@
+[
+  { "op": "wait_ms", "ms": 1200 },
+  { "op": "click_optional", "selector": "button.rgpd-btn-refuse" },
+  { "op": "click_optional", "selector": "button.rgpd-btn-accept" },
+  { "op": "wait_ms", "ms": 500 },
+  {
+    "op": "run_bundled_script",
+    "scriptKey": "credit_agricole",
+    "phase": "any",
+    "note": "Suite : formulaire complet — scripts/credit_agricole.js"
+  }
+]

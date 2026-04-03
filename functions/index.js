@@ -101,7 +101,7 @@ exports.getApplyPlan = onCall(async (request) => {
 
   const pilot = {
     automationMode: "instructions",
-    instructionSetVersion: 1,
+    instructionSetVersion: 2,
     steps,
   };
 
