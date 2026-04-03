@@ -147,8 +147,70 @@
       const t = ((root.body?.innerText || '') + (root.title || '')).toLowerCase();
       if (/please answer the following questions|are you authorized to work in the european union|what is your notice period/i.test(t)) return true;
       if (/êtes-vous autorisé.*travailler.*union européenne|quel est votre préavis/i.test(t)) return true;
+      if (/what would be your start date|your start date\s*\?|date de (début|prise en poste|commence)/i.test(t)) return true;
     }
     return false;
+  }
+
+  /**
+   * Taleo SG (anglais) : « Immediately » ou date en anglais (ex. April 3, 2026).
+   * Même sources que le profil Taleos : Disponible à partir de (JJ/MM/AAAA, ISO, ou Immédiatement).
+   */
+  function formatSgStartDateEnglish(profile) {
+    const raw = String(
+      profile?.available_from ?? profile?.available_date ?? profile?.available_from_raw ?? profile?.disponibilite ?? ''
+    ).trim();
+    if (!raw) return 'Immediately';
+    const lower = raw.toLowerCase();
+    if (/^imm|immédiat|immediately|immediate|asap|sans\s*délai|right\s*away|dès\s*que\s*possible/i.test(lower)) return 'Immediately';
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      const d = new Date(+iso[1], +iso[2] - 1, +iso[3]);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      }
+    }
+    const dm = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\s*$/);
+    if (dm) {
+      let day = +dm[1], month = +dm[2], year = +dm[3];
+      if (year < 100) year += 2000;
+      if (month > 12 && day <= 12) {
+        const t = day;
+        day = month;
+        month = t;
+      }
+      const d = new Date(year, month - 1, day);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      }
+    }
+    return raw;
+  }
+
+  /** Textarea « What would be your start date ? » (préqualification Taleo SG). */
+  function findSgStartDateTextarea() {
+    for (const root of getSearchRoots()) {
+      const labels = root.querySelectorAll?.('label, td, th, span, legend, div') || [];
+      for (const lb of labels) {
+        const lab = (lb.textContent || '').toLowerCase();
+        if (!/what would be your start date|your start date\s*\?|start date.*required|date de début|date de prise en poste/i.test(lab)) continue;
+        const fid = lb.getAttribute?.('for');
+        if (fid) {
+          const byId = root.getElementById?.(fid);
+          if (byId?.tagName === 'TEXTAREA' && byId.offsetParent !== null) return byId;
+        }
+        const row = lb.closest?.('tr, div, fieldset, li, table');
+        const ta = row?.querySelector?.('textarea');
+        if (ta && ta.offsetParent !== null) return ta;
+      }
+      for (const ta of root.querySelectorAll?.('textarea') || []) {
+        if (ta.offsetParent === null) continue;
+        const scope = ta.closest?.('table, form, tbody, div[class*="content"], tr') || ta.parentElement;
+        const ctx = (scope?.textContent || '').slice(0, 8000);
+        if (/what would be your start date|your start date\s*\?/i.test(ctx)) return ta;
+      }
+    }
+    return null;
   }
 
   /** Oui/Non : sur Taleo SG les `value` sont des IDs (PossibleAnswer__…), seul le libellé compte. */
@@ -187,8 +249,9 @@
     const noticeRaw = String(profile?.sg_notice_period || '').trim();
     /** Taleo SG ne propose pas « aucun » : on coche l’option la plus proche (1 month). */
     const notice = noticeRaw === 'none' ? '1_month' : noticeRaw;
-    if (!eu && !noticeRaw) return false;
     if (!isSgScreeningQuestionsVisible()) return false;
+    const startTaPresent = !!findSgStartDateTextarea();
+    if (!eu && !noticeRaw && !startTaPresent) return false;
 
     let filledEu = false;
     let filledNotice = false;
@@ -309,7 +372,21 @@
       }
     }
 
-    const did = filledEu || filledNotice;
+    let filledStart = false;
+    const startAnswerEn = formatSgStartDateEnglish(profile);
+    const startTa = findSgStartDateTextarea();
+    if (startTa && startTa.offsetParent !== null) {
+      const cur = (startTa.value || '').trim();
+      if (cur !== startAnswerEn) {
+        startTa.value = startAnswerEn;
+        startTa.dispatchEvent(new Event('input', { bubbles: true }));
+        startTa.dispatchEvent(new Event('change', { bubbles: true }));
+        log(`   ✅ Start date : ${startAnswerEn} (profil → anglais)`);
+      }
+      filledStart = true;
+    }
+
+    const did = filledEu || filledNotice || filledStart;
     if (did) await delay(600);
     return did;
   }
