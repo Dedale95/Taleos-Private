@@ -185,17 +185,34 @@
         smartFillInput('Prénom', document.querySelector('input[id*="firstName"]') || document.querySelector('input[autocomplete="given-name"]'), profile.first_name || profile.firstname);
         
         const civ = (profile.civility || '').toLowerCase();
-        if (civ.includes('monsieur')) smartClickButton('Titre', 'M.');
-        else if (civ.includes('madame')) smartClickButton('Titre', 'Mme');
+        if (!filledFields.has('bpce_civility_done')) {
+          let cr = false;
+          if (civ.includes('monsieur')) cr = smartClickButton('Titre', 'M.');
+          else if (civ.includes('madame')) cr = smartClickButton('Titre', 'Mme');
+          if (cr === true || cr === 'already_selected') filledFields.add('bpce_civility_done');
+        }
 
         smartFillInput('Téléphone', document.querySelector('input[type="tel"]'), profile.phone || profile.phone_number);
         smartFillInput('Code Pays', document.querySelector('input[id*="country-codes-dropdown"]'), profile.phone_country_code || '+33');
 
-        // Questions
+        // Questions (une seule fois par champ pill — sinon setInterval reclique en boucle et bascule Oui/Non)
         logOnce('📋 Étape 3 : Questions de candidature', 3);
-        const handicapVal = (profile.bpce_handicap || 'Non').trim();
-        const handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => el.textContent.toLowerCase().includes('handicap'));
-        if (handicapContainer) smartClickButton('Handicap', handicapVal, handicapContainer);
+        if (!filledFields.has('bpce_handicap_done')) {
+          const handicapVal = (profile.bpce_handicap || 'Non').trim();
+          let handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) =>
+            /titre de reconnaissance administrative|reconnaissance administrative.*situation de handicap/i.test(el.textContent || '')
+          );
+          if (!handicapContainer) {
+            handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) => {
+              const t = (el.textContent || '').toLowerCase();
+              return t.includes('handicap') && !t.includes('natixis') && !/vivier|conserve mon profil/i.test(t);
+            });
+          }
+          if (handicapContainer) {
+            const hr = smartClickButton('Handicap', handicapVal, handicapContainer);
+            if (hr === true || hr === 'already_selected') filledFields.add('bpce_handicap_done');
+          }
+        }
 
         // Disponibilité
         const disponibiliteTextarea = document.querySelector('textarea[name="300000620007177"]') || 
@@ -208,14 +225,17 @@
         }
 
         // Vivier Natixis
-        const vivierVal = (profile.bpce_vivier_natixis || 'Oui').trim();
-        const vivierContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => 
-          el.textContent.toLowerCase().includes('vivier') || 
-          el.textContent.toLowerCase().includes('natixis') ||
-          el.textContent.toLowerCase().includes('conserve mon profil')
-        );
-        if (vivierContainer) {
-          smartClickButton('Vivier Natixis', vivierVal, vivierContainer);
+        if (!filledFields.has('bpce_vivier_done')) {
+          const vivierVal = (profile.bpce_vivier_natixis || 'Oui').trim();
+          const vivierContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => 
+            el.textContent.toLowerCase().includes('vivier') || 
+            el.textContent.toLowerCase().includes('natixis') ||
+            el.textContent.toLowerCase().includes('conserve mon profil')
+          );
+          if (vivierContainer) {
+            const vr = smartClickButton('Vivier Natixis', vivierVal, vivierContainer);
+            if (vr === true || vr === 'already_selected') filledFields.add('bpce_vivier_done');
+          }
         }
 
         // LinkedIn
