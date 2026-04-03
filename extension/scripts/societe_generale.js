@@ -184,24 +184,15 @@
 
   async function fillSgScreeningQuestionsFromProfile(profile) {
     const eu = String(profile?.sg_eu_work_authorization || '').trim().toLowerCase();
-    const notice = String(profile?.sg_notice_period || '').trim();
-    if (!eu && !notice) return false;
+    const noticeRaw = String(profile?.sg_notice_period || '').trim();
+    /** Taleo SG ne propose pas « aucun » : on coche l’option la plus proche (1 month). */
+    const notice = noticeRaw === 'none' ? '1_month' : noticeRaw;
+    if (!eu && !noticeRaw) return false;
     if (!isSgScreeningQuestionsVisible()) return false;
 
     let filledEu = false;
     let filledNotice = false;
     const noticePatterns = {
-      none: [
-        /\bnone\b/i,
-        /\baucun\b/i,
-        /\bimmediate\b/i,
-        /\bno\s+notice\b/i,
-        /\bnot\s+applicable\b/i,
-        /\bn\/a\b/i,
-        /0\s*months?/i,
-        /\bsans\s+préavis\b/i,
-        /départ\s+immédiat/i
-      ],
       '1_month': [/1\s*month/i, /1\s*mois/i, /^\s*1\s*$/],
       '2_months': [/2\s*months?/i, /2\s*mois/i, /^\s*2\s*$/],
       '3_months': [/3\s*months?/i, /3\s*mois/i, /^\s*3\s*$/],
@@ -254,7 +245,9 @@
               const raw = sgRadioLabelText(r);
               if (pats.some((re) => re.test(raw))) {
                 r.click();
-                log(`   ✅ Préavis : ${notice} (profil, libellés Taleo)`);
+                log(noticeRaw === 'none'
+                  ? '   ✅ Préavis : profil « aucun / non applicable » → 1 month sur Taleo SG (option la plus proche)'
+                  : `   ✅ Préavis : ${notice} (profil, libellés Taleo)`);
                 filledNotice = true;
                 break;
               }
@@ -266,7 +259,7 @@
 
     tryFillFromRadioGroups();
 
-    if ((eu && !filledEu) || (notice && !filledNotice)) {
+    if ((eu && !filledEu) || (noticeRaw && !filledNotice)) {
       for (const root of getSearchRoots()) {
         const blocks = root.querySelectorAll?.('table, div, form, fieldset, tr, tbody') || [];
         for (const block of blocks) {
@@ -289,7 +282,9 @@
               const raw = sgRadioLabelText(r);
               if (pats.some((re) => re.test(raw))) {
                 r.click();
-                log(`   ✅ Préavis : ${notice} (profil)`);
+                log(noticeRaw === 'none'
+                  ? '   ✅ Préavis : profil « aucun » → 1 month (fallback blocs)'
+                  : `   ✅ Préavis : ${notice} (profil)`);
                 filledNotice = true;
                 break;
               }
@@ -301,7 +296,9 @@
                 if (pats.some((re) => re.test(otxt))) {
                   sel.value = opt.value;
                   sel.dispatchEvent(new Event('change', { bubbles: true }));
-                  log(`   ✅ Préavis (liste) : ${notice}`);
+                  log(noticeRaw === 'none'
+                    ? '   ✅ Préavis (liste) : aucun → 1 mois'
+                    : `   ✅ Préavis (liste) : ${notice}`);
                   filledNotice = true;
                   break;
                 }
