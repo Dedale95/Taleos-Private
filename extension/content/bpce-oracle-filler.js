@@ -71,6 +71,39 @@
     }
   }
 
+  /** Numéro national seul pour le champ téléphone (Oracle valide souvent sans le 0 initial quand l’indicatif +33 est séparé). */
+  function normalizeNationalPhoneDigits(rawPhone, countryCode) {
+    let d = String(rawPhone || '').replace(/\D/g, '');
+    const cc = String(countryCode || '+33').trim().replace(/\s/g, '');
+    if (cc === '+33' || cc === '33') {
+      if (d.length >= 10 && d.startsWith('0')) d = d.slice(1);
+      if (d.length >= 11 && d.startsWith('33')) d = d.slice(2);
+    }
+    return d;
+  }
+
+  /** Case « alertes opportunités » — une seule fois (évite cocher/décocher en boucle). */
+  function applyJobAlertsCheckboxOnce(profile) {
+    if (filledFields.has('bpce_job_alerts_done')) return;
+    const want = !!profile.bpce_job_alerts;
+    for (const row of document.querySelectorAll('.apply-flow-block, .input-row, .apply-flow-question')) {
+      const t = (row.textContent || '');
+      if (!/mises à jour|opportunités|nouvelles opportunités|recevoir les mises/i.test(t)) continue;
+      const btn = row.querySelector('.apply-flow-input-checkbox__button');
+      if (!btn || btn.offsetParent === null) continue;
+      const checked = btn.classList.contains('apply-flow-input-checkbox__button--checked');
+      if (checked === want) {
+        filledFields.add('bpce_job_alerts_done');
+        logOnce(`   — Alertes emploi → déjà ${want ? 'coché' : 'décoché'} (Skip)`);
+        return;
+      }
+      btn.click();
+      filledFields.add('bpce_job_alerts_done');
+      logOnce(`   ✅ Alertes emploi → ${want ? 'coché' : 'décoché'}`);
+      return;
+    }
+  }
+
   function smartClickButton(label, textToFind, container = document) {
     const elements = container.querySelectorAll('button, .cx-select-pill-section, .cx-select-pill-name, [role="button"]');
     const target = String(textToFind || '').trim().toLowerCase();
@@ -121,12 +154,23 @@
         filledFields.add('apply_start_tracked');
       }
 
-      // --- Étape 1 : Email + CGU ---
+      // --- Étape 1 : Email + CGU (uniquement avant le formulaire identité — sinon le 1er checkbox serait une autre case, ex. alertes emploi) ---
+      const hasFullApplicationForm = !!document.querySelector('input[id*="lastName"]');
       const emailInput = document.querySelector('#primary-email-0') || document.querySelector('input[type="email"]');
-      if (emailInput && emailInput.offsetParent !== null && !document.querySelector('[id*="pin-code"]')) {
+      const onEmailStepOnly =
+        emailInput &&
+        emailInput.offsetParent !== null &&
+        !document.querySelector('[id*="pin-code"]') &&
+        !hasFullApplicationForm;
+      if (onEmailStepOnly) {
         logOnce('📋 Étape 1 : Email + CGU', 1);
         smartFillInput('Email', emailInput, profile.email || profile.auth_email);
-        const cgu = document.querySelector('span.apply-flow-input-checkbox__button') || document.querySelector('.apply-flow-input-checkbox__button');
+        const cguRow = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) =>
+          /conditions|politique de confidentialité|cgu|terms|confidentialité/i.test(el.textContent || '')
+        );
+        const cgu = cguRow?.querySelector('.apply-flow-input-checkbox__button') ||
+          document.querySelector('span.apply-flow-input-checkbox__button') ||
+          document.querySelector('.apply-flow-input-checkbox__button');
         if (cgu && !cgu.classList.contains('apply-flow-input-checkbox__button--checked')) {
           cgu.click();
           logOnce('   ✅ CGU cochée');
@@ -192,8 +236,17 @@
           if (cr === true || cr === 'already_selected') filledFields.add('bpce_civility_done');
         }
 
-        smartFillInput('Téléphone', document.querySelector('input[type="tel"]'), profile.phone || profile.phone_number);
-        smartFillInput('Code Pays', document.querySelector('input[id*="country-codes-dropdown"]'), profile.phone_country_code || '+33');
+        const phoneCc = (profile.phone_country_code || '+33').trim();
+        const nationalDigits = normalizeNationalPhoneDigits(profile.phone || profile.phone_number || '', phoneCc);
+        const countryInput = document.querySelector('input[id*="country-codes-dropdown"]');
+        const telInput = document.querySelector('input[type="tel"]');
+        if (countryInput && countryInput.offsetParent !== null) {
+          smartFillInput('Code Pays', countryInput, phoneCc);
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        if (telInput && telInput.offsetParent !== null && nationalDigits) {
+          smartFillInput('Téléphone', telInput, nationalDigits);
+        }
 
         // Questions (une seule fois par champ pill — sinon setInterval reclique en boucle et bascule Oui/Non)
         logOnce('📋 Étape 3 : Questions de candidature', 3);
@@ -241,6 +294,8 @@
         // LinkedIn
         const linkedinInput = document.querySelector('input[id*="siteLink"]');
         if (linkedinInput) smartFillInput('LinkedIn', linkedinInput, profile.linkedin_url);
+
+        applyJobAlertsCheckboxOnce(profile);
 
         logOnce('✅ Formulaire rempli ! Veuillez vérifier et SOUMETTRE.', 2);
         
