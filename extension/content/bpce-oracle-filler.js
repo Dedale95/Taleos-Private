@@ -104,6 +104,40 @@
     }
   }
 
+  /**
+   * Une seule ligne de question (pas tout le bloc apply-flow) : sinon le 1er « Oui »/« Non »
+   * du DOM peut appartenir à une autre question → faux « déjà Non » alors que le handicap est sur Oui.
+   */
+  function findHandicapQuestionRow() {
+    for (const row of document.querySelectorAll('.apply-flow-block .input-row, .apply-flow-question, .input-row')) {
+      const label = row.querySelector('.input-row__label, [class*="label"], label, legend, .apply-flow-question-title');
+      const t = ((label?.textContent || '') + '\n' + (row.textContent || '')).toLowerCase();
+      if (!/handicap|reconnaissance administrative|titre de reconnaissance/.test(t)) continue;
+      if (/natixis|\bvivier\b|conserve mon profil|mises à jour|nouvelles opportunités/i.test(t)) continue;
+      return row;
+    }
+    return null;
+  }
+
+  function findVivierQuestionRow() {
+    for (const row of document.querySelectorAll('.apply-flow-block .input-row, .apply-flow-question, .input-row')) {
+      const t = (row.textContent || '').toLowerCase();
+      if (!/vivier|natixis|conserve mon profil/.test(t)) continue;
+      return row;
+    }
+    return null;
+  }
+
+  /** Valeur profil Taleos → libellé pilule Oracle ; « Je ne souhaite pas répondre » → ne pas forcer le clic. */
+  function resolveBpceOuiNonPill(raw, defaultPill) {
+    const s = String(raw || '').trim();
+    if (!s) return { pill: defaultPill, abstain: false };
+    if (/^oui$/i.test(s)) return { pill: 'Oui', abstain: false };
+    if (/^non$/i.test(s)) return { pill: 'Non', abstain: false };
+    if (/je ne souhaite pas répondre/i.test(s)) return { pill: null, abstain: true };
+    return { pill: defaultPill, abstain: false };
+  }
+
   function smartClickButton(label, textToFind, container = document) {
     const elements = container.querySelectorAll('button, .cx-select-pill-section, .cx-select-pill-name, [role="button"]');
     const target = String(textToFind || '').trim().toLowerCase();
@@ -251,18 +285,24 @@
         // Questions (une seule fois par champ pill — sinon setInterval reclique en boucle et bascule Oui/Non)
         logOnce('📋 Étape 3 : Questions de candidature', 3);
         if (!filledFields.has('bpce_handicap_done')) {
-          const handicapVal = (profile.bpce_handicap || 'Non').trim();
-          let handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) =>
-            /titre de reconnaissance administrative|reconnaissance administrative.*situation de handicap/i.test(el.textContent || '')
-          );
-          if (!handicapContainer) {
-            handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) => {
-              const t = (el.textContent || '').toLowerCase();
-              return t.includes('handicap') && !t.includes('natixis') && !/vivier|conserve mon profil/i.test(t);
-            });
+          const { pill: handicapPill, abstain: handicapAbstain } = resolveBpceOuiNonPill(profile.bpce_handicap, 'Non');
+          let handicapRow = findHandicapQuestionRow();
+          if (!handicapRow) {
+            handicapRow = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) =>
+              /titre de reconnaissance administrative|reconnaissance administrative.*situation de handicap/i.test(el.textContent || '')
+            );
+            if (!handicapRow) {
+              handicapRow = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) => {
+                const t = (el.textContent || '').toLowerCase();
+                return t.includes('handicap') && !t.includes('natixis') && !/vivier|conserve mon profil/i.test(t);
+              });
+            }
           }
-          if (handicapContainer) {
-            const hr = smartClickButton('Handicap', handicapVal, handicapContainer);
+          if (handicapAbstain) {
+            filledFields.add('bpce_handicap_done');
+            logOnce('   — Handicap → « Je ne souhaite pas répondre » (profil), pilules non modifiées');
+          } else if (handicapRow && handicapPill) {
+            const hr = smartClickButton('Handicap', handicapPill, handicapRow);
             if (hr === true || hr === 'already_selected') filledFields.add('bpce_handicap_done');
           }
         }
@@ -279,14 +319,16 @@
 
         // Vivier Natixis
         if (!filledFields.has('bpce_vivier_done')) {
-          const vivierVal = (profile.bpce_vivier_natixis || 'Oui').trim();
-          const vivierContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => 
-            el.textContent.toLowerCase().includes('vivier') || 
-            el.textContent.toLowerCase().includes('natixis') ||
-            el.textContent.toLowerCase().includes('conserve mon profil')
-          );
-          if (vivierContainer) {
-            const vr = smartClickButton('Vivier Natixis', vivierVal, vivierContainer);
+          const { pill: vivierPill } = resolveBpceOuiNonPill(profile.bpce_vivier_natixis, 'Oui');
+          let vivierRow = findVivierQuestionRow();
+          if (!vivierRow) {
+            vivierRow = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) => {
+              const t = el.textContent.toLowerCase();
+              return t.includes('vivier') || t.includes('natixis') || t.includes('conserve mon profil');
+            });
+          }
+          if (vivierRow && vivierPill) {
+            const vr = smartClickButton('Vivier Natixis', vivierPill, vivierRow);
             if (vr === true || vr === 'already_selected') filledFields.add('bpce_vivier_done');
           }
         }
