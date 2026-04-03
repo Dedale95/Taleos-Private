@@ -104,6 +104,29 @@ gcloud functions deploy test-bank-connection \
   --max-instances=10
 ```
 
+### 5 bis. (Optionnel) Rapports « candidature bloquée » → e-mail contact@taleos.co
+
+L’extension envoie après **2 minutes** une capture JPEG + métadonnées (UID, URL, id offre) vers une seconde fonction HTTP `report-stuck-automation` (fichier `stuck_report.py`). Les e-mails partent vers **contact@taleos.co** si vous configurez SMTP (sinon la fonction répond 200 avec un message indiquant que SMTP n’est pas configuré).
+
+Variables d’environnement : `SMTP_HOST`, `SMTP_PORT` (défaut 587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+
+```bash
+cd PYTHON/cloud_function
+gcloud functions deploy report-stuck-automation \
+  --gen2 \
+  --runtime=python311 \
+  --region=europe-west1 \
+  --source=. \
+  --entry-point=report_stuck_main \
+  --trigger-http \
+  --allow-unauthenticated \
+  --timeout=60s \
+  --memory=256MB \
+  --set-env-vars="SMTP_HOST=...,SMTP_USER=...,SMTP_PASSWORD=...,SMTP_FROM=..."
+```
+
+L’URL attendue par l’extension est : `https://europe-west1-project-taleos.cloudfunctions.net/report-stuck-automation` (adapter le projet / région si besoin). En parallèle, l’extension enregistre aussi un document Firestore dans la collection `stuck_automation_reports` (et éventuellement une image dans Storage) pour consultation si l’e-mail échoue.
+
 ### 6. Récupérer l'URL de la fonction
 
 Après le déploiement, vous verrez l'URL de la fonction dans la sortie, ou récupérez-la avec :
