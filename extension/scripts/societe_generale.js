@@ -151,6 +151,7 @@
     return false;
   }
 
+  /** Oui/Non : sur Taleo SG les `value` sont des IDs (PossibleAnswer__…), seul le libellé compte. */
   function clickRadioMatchingLabel(radio, wantYes) {
     if (!radio || radio.type !== 'radio' || radio.offsetParent === null) return false;
     const lab = radio.closest('label');
@@ -161,10 +162,9 @@
         forLab = doc.querySelector(`label[for="${radio.id}"]`);
       }
     } catch (_) {}
-    const raw = ((lab?.textContent || '') + ' ' + (forLab?.textContent || '') + ' ' + (radio.value || '')).trim().toLowerCase();
-    const v = (radio.value || '').trim().toLowerCase();
-    const isYes = v === 'yes' || v === 'y' || v === 'oui' || /^yes\b|^oui\b/i.test(raw);
-    const isNo = v === 'no' || v === 'n' || v === 'non' || /^no\b|^non\b/i.test(raw);
+    const labelText = ((lab?.textContent || '') + ' ' + (forLab?.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+    const isYes = /\byes\b/i.test(labelText) || /\boui\b/i.test(labelText);
+    const isNo = /\bno\b/i.test(labelText) || /\bnon\b/i.test(labelText);
     if (wantYes && isYes) {
       radio.click();
       return true;
@@ -176,57 +176,75 @@
     return false;
   }
 
+  function sgRadioLabelText(radio) {
+    const lab = radio.closest('label') ||
+      (radio.id ? (radio.ownerDocument || document).querySelector(`label[for="${radio.id}"]`) : null);
+    return (lab?.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
   async function fillSgScreeningQuestionsFromProfile(profile) {
     const eu = String(profile?.sg_eu_work_authorization || '').trim().toLowerCase();
     const notice = String(profile?.sg_notice_period || '').trim();
     if (!eu && !notice) return false;
     if (!isSgScreeningQuestionsVisible()) return false;
 
-    let did = false;
+    let filledEu = false;
+    let filledNotice = false;
     const noticePatterns = {
-      '1_month': [/1\s*month/i, /1\s*mois/i, /^1$/],
-      '2_months': [/2\s*months?/i, /2\s*mois/i, /^2$/],
-      '3_months': [/3\s*months?/i, /3\s*mois/i, /^3$/],
-      'more_than_3_months': [/>?\s*3\s*months/i, /more than 3/i, /plus de 3/i, />3/i]
+      '1_month': [/1\s*month/i, /1\s*mois/i, /^\s*1\s*$/],
+      '2_months': [/2\s*months?/i, /2\s*mois/i, /^\s*2\s*$/],
+      '3_months': [/3\s*months?/i, /3\s*mois/i, /^\s*3\s*$/],
+      'more_than_3_months': [
+        />\s*3\s*months/i,
+        /more\s+than\s+3/i,
+        /plus\s+de\s+3/i,
+        />?\s*3\s*months/i,
+        /&gt;\s*3\s*months/i
+      ]
     };
 
-    for (const root of getSearchRoots()) {
-      const blocks = root.querySelectorAll?.('table, div, form, fieldset, tr, tbody') || [];
-      for (const block of blocks) {
-        const bt = (block.textContent || '').toLowerCase();
-        if (eu && /authorized to work in the european union|autorisé.*travailler.*union européenne|travail.*union européenne/i.test(bt)) {
-          const wantYes = eu === 'yes' || eu === 'oui';
-          const radios = block.querySelectorAll?.('input[type="radio"]') || [];
-          for (const r of radios) {
-            if (clickRadioMatchingLabel(r, wantYes)) {
-              log(`   ✅ Question UE : ${wantYes ? 'Oui' : 'Non'} (profil)`);
-              did = true;
-              break;
-            }
-          }
+    function tryFillFromRadioGroups() {
+      for (const root of getSearchRoots()) {
+        const byName = new Map();
+        const all = root.querySelectorAll?.('input[type="radio"]') || [];
+        for (const r of all) {
+          if (!r.name || r.offsetParent === null) continue;
+          if (!byName.has(r.name)) byName.set(r.name, []);
+          byName.get(r.name).push(r);
         }
-        if (notice && noticePatterns[notice] && /notice period|préavis|délai de préavis/i.test(bt)) {
-          const pats = noticePatterns[notice];
-          const radios = block.querySelectorAll?.('input[type="radio"]') || [];
-          for (const r of radios) {
-            const lab = r.closest('label') || (r.id ? (r.ownerDocument || root).querySelector(`label[for="${r.id}"]`) : null);
-            const raw = ((lab?.textContent || '') + ' ' + (r.value || '')).trim();
-            if (pats.some((re) => re.test(raw))) {
-              r.click();
-              log(`   ✅ Préavis : ${notice} (profil)`);
-              did = true;
-              break;
+
+        for (const [, group] of byName) {
+          const labels = group.map(sgRadioLabelText);
+          if (eu && group.length === 2) {
+            const hasY = labels.some((t) => /\byes\b/i.test(t) || /\boui\b/i.test(t));
+            const hasN = labels.some((t) => /\bno\b/i.test(t) || /\bnon\b/i.test(t));
+            if (!hasY || !hasN) continue;
+            const scope = group[0].closest?.('div, form, fieldset, table, tbody, section') || root.body;
+            const st = (scope?.textContent || '').slice(0, 6000);
+            if (!/european union|union européenne|authorized to work|autorisé.*travailler/i.test(st)) continue;
+            const wantYes = eu === 'yes' || eu === 'oui';
+            for (const r of group) {
+              if (clickRadioMatchingLabel(r, wantYes)) {
+                log(`   ✅ Question UE : ${wantYes ? 'Oui' : 'Non'} (profil, libellés Taleo)`);
+                filledEu = true;
+                break;
+              }
             }
+            continue;
           }
-          const sels = block.querySelectorAll?.('select') || [];
-          for (const sel of sels) {
-            for (const opt of sel.options || []) {
-              const otxt = (opt.text || opt.value || '').trim();
-              if (pats.some((re) => re.test(otxt))) {
-                sel.value = opt.value;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                log(`   ✅ Préavis (liste) : ${notice}`);
-                did = true;
+
+          if (notice && noticePatterns[notice] && group.length >= 3 && group.length <= 8) {
+            const looksLikeMonths = labels.some((t) => /\bmonth/i.test(t) || /mois/i.test(t) || />/.test(t) || /&gt;/.test(t));
+            if (!looksLikeMonths) continue;
+            const scope = group[0].closest?.('div, form, fieldset, table, tbody') || root.body;
+            if (!/notice period|préavis|délai de préavis/i.test(scope?.textContent || '')) continue;
+            const pats = noticePatterns[notice];
+            for (const r of group) {
+              const raw = sgRadioLabelText(r);
+              if (pats.some((re) => re.test(raw))) {
+                r.click();
+                log(`   ✅ Préavis : ${notice} (profil, libellés Taleo)`);
+                filledNotice = true;
                 break;
               }
             }
@@ -235,6 +253,55 @@
       }
     }
 
+    tryFillFromRadioGroups();
+
+    if ((eu && !filledEu) || (notice && !filledNotice)) {
+      for (const root of getSearchRoots()) {
+        const blocks = root.querySelectorAll?.('table, div, form, fieldset, tr, tbody') || [];
+        for (const block of blocks) {
+          const bt = (block.textContent || '').toLowerCase();
+          if (eu && !filledEu && /authorized to work in the european union|autorisé.*travailler.*union européenne|travail.*union européenne/i.test(bt)) {
+            const wantYes = eu === 'yes' || eu === 'oui';
+            const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+            for (const r of radios) {
+              if (clickRadioMatchingLabel(r, wantYes)) {
+                log(`   ✅ Question UE : ${wantYes ? 'Oui' : 'Non'} (profil)`);
+                filledEu = true;
+                break;
+              }
+            }
+          }
+          if (notice && !filledNotice && noticePatterns[notice] && /notice period|préavis|délai de préavis/i.test(bt)) {
+            const pats = noticePatterns[notice];
+            const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+            for (const r of radios) {
+              const raw = sgRadioLabelText(r);
+              if (pats.some((re) => re.test(raw))) {
+                r.click();
+                log(`   ✅ Préavis : ${notice} (profil)`);
+                filledNotice = true;
+                break;
+              }
+            }
+            const sels = block.querySelectorAll?.('select') || [];
+            for (const sel of sels) {
+              for (const opt of sel.options || []) {
+                const otxt = (opt.text || opt.value || '').trim();
+                if (pats.some((re) => re.test(otxt))) {
+                  sel.value = opt.value;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  log(`   ✅ Préavis (liste) : ${notice}`);
+                  filledNotice = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const did = filledEu || filledNotice;
     if (did) await delay(600);
     return did;
   }
