@@ -902,7 +902,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     }
   } else if (routeAs === 'sg') {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
-    const createOpts = { url: offerUrl, active: true };
+    const createOpts = { url: offerUrl, active: false };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);
@@ -910,6 +910,12 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(createOpts);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach(ms => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
     chrome.storage.local.remove('taleos_sg_navigate_profile_attempted');
     chrome.storage.local.set({
       taleos_pending_sg: {
@@ -921,7 +927,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     });
   } else if (routeAs === 'bpce') {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
-    const createOpts = { url: offerUrl, active: true };
+    const createOpts = { url: offerUrl, active: false };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);
@@ -929,6 +935,12 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(createOpts);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach(ms => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
     chrome.storage.local.set({
       taleos_pending_bpce: {
         profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'BPCE', __offerUrl: offerUrl },
@@ -1293,7 +1305,9 @@ async function fetchProfile(uid, bankId, token) {
     bpce_handicap: profile.bpce_handicap || '',
     bpce_vivier_natixis: profile.bpce_vivier_natixis || '',
     linkedin_url: (profile.linkedin_url || '').trim(),
-    bpce_job_alerts: !!profile.bpce_job_alerts
+    bpce_job_alerts: !!profile.bpce_job_alerts,
+    sg_eu_work_authorization: profile.sg_eu_work_authorization || '',
+    sg_notice_period: profile.sg_notice_period || ''
   };
 }
 

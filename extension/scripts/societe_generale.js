@@ -141,6 +141,104 @@
     return false;
   }
 
+  /** Questions d’écranage SG (souvent en anglais pour offres hors France) — valeurs depuis le profil Firebase */
+  function isSgScreeningQuestionsVisible() {
+    for (const root of getSearchRoots()) {
+      const t = ((root.body?.innerText || '') + (root.title || '')).toLowerCase();
+      if (/please answer the following questions|are you authorized to work in the european union|what is your notice period/i.test(t)) return true;
+      if (/êtes-vous autorisé.*travailler.*union européenne|quel est votre préavis/i.test(t)) return true;
+    }
+    return false;
+  }
+
+  function clickRadioMatchingLabel(radio, wantYes) {
+    if (!radio || radio.type !== 'radio' || radio.offsetParent === null) return false;
+    const lab = radio.closest('label');
+    let forLab = null;
+    try {
+      if (radio.id) {
+        const doc = radio.ownerDocument || document;
+        forLab = doc.querySelector(`label[for="${radio.id}"]`);
+      }
+    } catch (_) {}
+    const raw = ((lab?.textContent || '') + ' ' + (forLab?.textContent || '') + ' ' + (radio.value || '')).trim().toLowerCase();
+    const v = (radio.value || '').trim().toLowerCase();
+    const isYes = v === 'yes' || v === 'y' || v === 'oui' || /^yes\b|^oui\b/i.test(raw);
+    const isNo = v === 'no' || v === 'n' || v === 'non' || /^no\b|^non\b/i.test(raw);
+    if (wantYes && isYes) {
+      radio.click();
+      return true;
+    }
+    if (!wantYes && isNo) {
+      radio.click();
+      return true;
+    }
+    return false;
+  }
+
+  async function fillSgScreeningQuestionsFromProfile(profile) {
+    const eu = String(profile?.sg_eu_work_authorization || '').trim().toLowerCase();
+    const notice = String(profile?.sg_notice_period || '').trim();
+    if (!eu && !notice) return false;
+    if (!isSgScreeningQuestionsVisible()) return false;
+
+    let did = false;
+    const noticePatterns = {
+      '1_month': [/1\s*month/i, /1\s*mois/i, /^1$/],
+      '2_months': [/2\s*months?/i, /2\s*mois/i, /^2$/],
+      '3_months': [/3\s*months?/i, /3\s*mois/i, /^3$/],
+      'more_than_3_months': [/>?\s*3\s*months/i, /more than 3/i, /plus de 3/i, />3/i]
+    };
+
+    for (const root of getSearchRoots()) {
+      const blocks = root.querySelectorAll?.('table, div, form, fieldset, tr, tbody') || [];
+      for (const block of blocks) {
+        const bt = (block.textContent || '').toLowerCase();
+        if (eu && /authorized to work in the european union|autorisé.*travailler.*union européenne|travail.*union européenne/i.test(bt)) {
+          const wantYes = eu === 'yes' || eu === 'oui';
+          const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+          for (const r of radios) {
+            if (clickRadioMatchingLabel(r, wantYes)) {
+              log(`   ✅ Question UE : ${wantYes ? 'Oui' : 'Non'} (profil)`);
+              did = true;
+              break;
+            }
+          }
+        }
+        if (notice && noticePatterns[notice] && /notice period|préavis|délai de préavis/i.test(bt)) {
+          const pats = noticePatterns[notice];
+          const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+          for (const r of radios) {
+            const lab = r.closest('label') || (r.id ? (r.ownerDocument || root).querySelector(`label[for="${r.id}"]`) : null);
+            const raw = ((lab?.textContent || '') + ' ' + (r.value || '')).trim();
+            if (pats.some((re) => re.test(raw))) {
+              r.click();
+              log(`   ✅ Préavis : ${notice} (profil)`);
+              did = true;
+              break;
+            }
+          }
+          const sels = block.querySelectorAll?.('select') || [];
+          for (const sel of sels) {
+            for (const opt of sel.options || []) {
+              const otxt = (opt.text || opt.value || '').trim();
+              if (pats.some((re) => re.test(otxt))) {
+                sel.value = opt.value;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                log(`   ✅ Préavis (liste) : ${notice}`);
+                did = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (did) await delay(600);
+    return did;
+  }
+
   function is404OfferPage() {
     for (const root of getSearchRoots()) {
       const txt = (root.body?.innerText || root.body?.innerHTML || root.documentElement?.innerHTML || '').toLowerCase();
@@ -492,6 +590,25 @@
         const firstNameInput = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
         if (firstNameInput && firstNameInput.offsetParent !== null) break;
         if (isPiecesJointesPage()) break;
+        if (isSgScreeningQuestionsVisible()) {
+          const filledScreening = await fillSgScreeningQuestionsFromProfile(profile);
+          if (filledScreening) {
+            const afterScreeningBtn = findFlowStartOrContinueBtn() || findDisclaimerOrContinueBtn();
+            if (afterScreeningBtn) {
+              if (DEBUG) log(`   Clic après questions d’écranage SG (${i + 1})`);
+              afterScreeningBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+              await delay(300);
+              afterScreeningBtn.focus();
+              if (typeof window.cmdSubmit === 'function' && afterScreeningBtn.id) {
+                try { window.cmdSubmit('et-ef', afterScreeningBtn.id, null, null, true); } catch (_) { afterScreeningBtn.click(); }
+              } else {
+                afterScreeningBtn.click();
+              }
+              await delay(4500);
+            }
+            continue;
+          }
+        }
         if (isConfidentialityAgreementPage() && !confidentialityPageLogged) {
           confidentialityPageLogged = true;
         }
@@ -514,6 +631,24 @@
           await delay(4500);
         } else {
           await delay(2000);
+        }
+      }
+
+      if (isSgScreeningQuestionsVisible() && !hasProfileFormVisible() && !isPiecesJointesPage()) {
+        const filledAfterLoop = await fillSgScreeningQuestionsFromProfile(profile);
+        if (filledAfterLoop) {
+          const afterScreeningBtn = findFlowStartOrContinueBtn() || findDisclaimerOrContinueBtn();
+          if (afterScreeningBtn) {
+            log('   ✅ Questions d’écranage SG — poursuite du flux');
+            afterScreeningBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+            await delay(300);
+            if (typeof window.cmdSubmit === 'function' && afterScreeningBtn.id) {
+              try { window.cmdSubmit('et-ef', afterScreeningBtn.id, null, null, true); } catch (_) { afterScreeningBtn.click(); }
+            } else {
+              afterScreeningBtn.click();
+            }
+            await delay(5000);
+          }
         }
       }
 
