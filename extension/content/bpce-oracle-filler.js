@@ -9,6 +9,8 @@
   let isAutomationRunning = false;
   let loggedMessages = new Set();
   let filledFields = new Set();
+  /** Dernier cv_storage_path pour lequel l’upload Firebase a réussi (permet re-upload si le profil change). */
+  let bpceCvUploadedStoragePath = null;
 
   function logOnce(msg, stepNum) {
     const prefix = stepNum ? `[STEP ${stepNum}] ` : '';
@@ -136,6 +138,120 @@
     if (/^non$/i.test(s)) return { pill: 'Non', abstain: false };
     if (/je ne souhaite pas répondre/i.test(s)) return { pill: null, abstain: true };
     return { pill: defaultPill, abstain: false };
+  }
+
+  /** Télécharge le fichier depuis Firebase Storage (via background) et l’assigne à l’input file (comme Deloitte / CA). */
+  async function setFileInputFromStorage(inputEl, storagePath, filename) {
+    if (!inputEl || !storagePath) return false;
+    try {
+      const r = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }, resolve);
+      });
+      if (r && r.error) throw new Error(r.error);
+      if (!r || !r.base64) {
+        logOnce('   ❌ CV → fichier introuvable sur Firebase (réponse vide)');
+        return false;
+      }
+      const bin = atob(r.base64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const blob = new Blob([arr], { type: r.type || 'application/pdf' });
+      const file = new File([blob], filename || 'cv.pdf', { type: blob.type });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      inputEl.files = dt.files;
+      inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    } catch (e) {
+      logOnce(`   ❌ CV / fichier → ${e && e.message ? e.message : 'erreur'}`);
+      return false;
+    }
+  }
+
+  function findBpceCvFileInput() {
+    const tryVisible = (el) => (el && el.offsetParent !== null ? el : null);
+    let el = tryVisible(document.querySelector('input.file-form-element__input.upload-button[type="file"]'));
+    if (el) return el;
+    el = tryVisible(document.querySelector('input[name="attachment-upload"][type="file"]'));
+    if (el) return el;
+    el = tryVisible(document.querySelector('input[id^="attachment-upload"][type="file"]'));
+    if (el) return el;
+    return Array.from(document.querySelectorAll('input[type="file"]')).find((inp) => {
+      if (inp.offsetParent === null) return false;
+      const id = inp.getAttribute('id');
+      const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
+      const forLabel = id ? document.querySelector(`label[for="${esc}"]`) : null;
+      const lab = (forLabel?.textContent || '').toLowerCase();
+      return /c\.?\s*v|curriculum|resume|charger un/.test(lab);
+    }) || null;
+  }
+
+  /**
+   * Retire une pièce déjà listée par Oracle (bouton Supprimer / remove à proximité du champ CV).
+   * Sinon l’ancien fichier reste et le nouveau n’est pas pris en compte.
+   */
+  async function removeExistingBpceCvNearInput(fileInput) {
+    if (!fileInput) return false;
+    const wrap = fileInput.closest('.file-form-element') || fileInput.parentElement;
+    const roots = [wrap, wrap && wrap.parentElement].filter(Boolean);
+    for (const root of roots) {
+      const buttons = root.querySelectorAll('button, a[role="button"], [role="button"]');
+      for (const btn of buttons) {
+        if (btn.offsetParent === null) continue;
+        const hint = `${btn.getAttribute('aria-label') || ''} ${btn.getAttribute('title') || ''} ${btn.textContent || ''}`;
+        if (!/supprimer|retirer|remove|delete|effacer/i.test(hint)) continue;
+        btn.click();
+        await new Promise((r) => setTimeout(r, 500));
+        return true;
+      }
+      const trash = root.querySelector('[class*="remove"][class*="attach"], [class*="delete"][class*="file"], .oj-button[aria-label*="Supprimer" i]');
+      if (trash && trash.offsetParent !== null) {
+        trash.click();
+        await new Promise((r) => setTimeout(r, 500));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function uploadBpceCvFromProfile(profile) {
+    const storagePath = (profile && profile.cv_storage_path) ? String(profile.cv_storage_path).trim() : '';
+    if (!storagePath) {
+      logOnce('   ⏭️ CV → pas de cv_storage_path sur le profil Taleos');
+      return;
+    }
+    if (filledFields.has('bpce_cv_upload_done') && bpceCvUploadedStoragePath === storagePath) return;
+    if (bpceCvUploadedStoragePath !== storagePath) {
+      filledFields.delete('bpce_cv_upload_done');
+      filledFields.delete('bpce_cv_remove_tried');
+    }
+
+    const fileInput = findBpceCvFileInput();
+    if (!fileInput) {
+      logOnce('   ⏳ CV → champ « Charger un C.V. » non visible pour l’instant');
+      return;
+    }
+
+    try {
+      fileInput.scrollIntoView({ block: 'center', behavior: 'instant' });
+    } catch (_) {}
+
+    if (!filledFields.has('bpce_cv_remove_tried')) {
+      const removed = await removeExistingBpceCvNearInput(fileInput);
+      if (removed) logOnce('   ✅ CV → ancienne pièce retirée (Oracle)');
+      filledFields.add('bpce_cv_remove_tried');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const cvName = (profile.cv_filename || storagePath.split('/').pop() || 'cv.pdf').trim();
+    const inputAgain = findBpceCvFileInput() || fileInput;
+    const ok = await setFileInputFromStorage(inputAgain, storagePath, cvName);
+    if (ok) {
+      filledFields.add('bpce_cv_upload_done');
+      bpceCvUploadedStoragePath = storagePath;
+      logOnce(`   ✅ CV → ${cvName} (Firebase)`);
+    }
   }
 
   function smartClickButton(label, textToFind, container = document) {
@@ -281,6 +397,9 @@
         if (telInput && telInput.offsetParent !== null && nationalDigits) {
           smartFillInput('Téléphone', telInput, nationalDigits);
         }
+
+        logOnce('📋 Étape 2b : CV (Firebase)', 2);
+        await uploadBpceCvFromProfile(profile);
 
         // Questions (une seule fois par champ pill — sinon setInterval reclique en boucle et bascule Oui/Non)
         logOnce('📋 Étape 3 : Questions de candidature', 3);
