@@ -322,28 +322,45 @@
     return false;
   }
 
-  function isSuccessPage() {
+  /** Page de confirmation finale uniquement — pas de mots génériques type « success » (présents partout dans Taleo). */
+  function isSgFinalConfirmationPage() {
     for (const root of getSearchRoots()) {
       const txt = (root.body?.innerText || root.body?.innerHTML || '').toLowerCase();
-      if (/dans la boîte|votre candidature.*boîte|recruteurs va l'étudier|accéder à votre profil/i.test(txt)) return true;
-      if (/your submission|thank you!|thank you for your submission/i.test(txt)) return true;
+      if (/c'est dans la boîte|dans la boîte aux lettres|votre candidature a bien été|votre candidature.*a été soumise|candidature.*envoyée|recruteurs va l'étudier|accéder à votre profil/i.test(txt)) return true;
+      if (/thank you for (your )?application|your application (has been |was )?submitted|application (has been |was )?received|we have received your application/i.test(txt)) return true;
     }
     return false;
   }
 
+  function isStrictSgSubmissionMessage(bodyText) {
+    const t = String(bodyText || '').toLowerCase();
+    if (/c'est dans la boîte|dans la boîte aux lettres|votre candidature a bien été|votre candidature.*a été soumise|candidature.*envoyée avec succès/i.test(t)) return true;
+    if (/thank you for (your )?application|your application (has been |was )?submitted|we have received your application/i.test(t)) return true;
+    return false;
+  }
+
+  /** Un seul envoi par offre (session) pour éviter doubles comptages si plusieurs chemins détectent le succès. */
+  function trySendSgCandidatureSuccess(jobId, jobTitle, companyName, offerUrl) {
+    if (!jobId && !offerUrl) return;
+    const key = jobId
+      ? `taleos_sg_candidature_ok_${jobId}`
+      : `taleos_sg_candidature_ok_${String(offerUrl || '').slice(0, 160)}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+      chrome.runtime.sendMessage({ action: 'candidature_success', jobId, jobTitle, companyName, offerUrl });
+    } catch (_) {}
+  }
+
   async function main(profile) {
     if (DEBUG) log(`main() - frame: ${window === window.top ? 'main' : 'iframe'}`);
-    if (isSuccessPage()) {
+    if (isSgFinalConfirmationPage()) {
       const jobId = profile?.__jobId || profile?.jobId || '';
       const jobTitle = profile?.__jobTitle || profile?.jobTitle || '';
       const companyName = profile?.__companyName || profile?.companyName || 'Société Générale';
       const offerUrl = profile?.__offerUrl || profile?.offerUrl || '';
-      log('🎉 Page succès détectée — Candidature envoyée avec succès !');
-      if (jobId || offerUrl) {
-        try {
-          chrome.runtime.sendMessage({ action: 'candidature_success', jobId, jobTitle, companyName, offerUrl });
-        } catch (_) {}
-      }
+      log('🎉 Page de confirmation finale — Candidature envoyée.');
+      trySendSgCandidatureSuccess(jobId, jobTitle, companyName, offerUrl);
       return;
     }
     if (is404OfferPage()) {
@@ -462,17 +479,6 @@
         }
       }
 
-      function isPiecesJointesPage() {
-        const profileForm = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
-        if (profileForm && profileForm.offsetParent !== null) return false;
-        for (const root of getSearchRoots()) {
-          const table = root.querySelector?.('table.attachment-list');
-          const upload = root.querySelector?.('input[id*="uploadedFile"], input[id*="attachFileCommand"]');
-          if ((table && table.offsetParent !== null) || (upload && upload.offsetParent !== null)) return true;
-        }
-        return false;
-      }
-
       function hasProfileFormVisible() {
         const fn = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
         if (fn && fn.offsetParent !== null) return true;
@@ -491,10 +497,28 @@
             if (!isSelected) continue;
             if (/informations personnelles|personal information/i.test(t)) return 'informations';
             if (/pièces jointes|attachments|document/i.test(t)) return 'pieces';
-            if (/vérifier et postuler|review and submit|submit/i.test(t)) return 'verifier';
+            if (/vérifier et postuler|review and submit/i.test(t)) return 'verifier';
           }
         }
         return null;
+      }
+
+      function isPiecesJointesPage() {
+        const profileForm = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
+        if (profileForm && profileForm.offsetParent !== null) return false;
+        const nav = getCurrentStepFromNav();
+        if (nav === 'pieces') return true;
+        for (const root of getSearchRoots()) {
+          const table = root.querySelector?.('table.attachment-list');
+          const upload = root.querySelector?.(
+            'input[id*="uploadedFile"], input[id*="attachFileCommand"], input[id*="AttachedFilesBlock"], input[type="file"][name*="upload"]'
+          );
+          if ((table && table.offsetParent !== null) || (upload && upload.offsetParent !== null)) return true;
+          const blob = (root.body?.innerText || '').toLowerCase();
+          if (/attachments|pièces jointes|resume\s*\/\s*cv|upload.*resume|curriculum vitae/i.test(blob) &&
+            root.querySelector?.('input[type="file"]') && !isSgScreeningQuestionsVisible()) return true;
+        }
+        return false;
       }
 
       /** Fallback : détecte l'étape 2 via le texte visible de la page */
@@ -972,56 +996,25 @@
       await delay(5000);
       }
 
-      const postulerBtn = (() => {
+      /** Clic « Postuler » final uniquement sur l’étape « Vérifier et postuler » — pas de bouton générique « submit ». */
+      function findFinalSgPostulerButton() {
         for (const root of getSearchRoots()) {
-          const btn = root.getElementById?.('et-ef-content-ftf-submitCmdBottom') ||
-            root.querySelector?.('input[id*="submitCmdBottom"][value*="Postuler"]') ||
-            root.querySelector?.('input[value="Postuler"]') ||
-            Array.from(root.querySelectorAll?.('input[type="button"], input[type="submit"], button') || []).find(el =>
-              /^postuler$/i.test((el.value || el.textContent || '').trim())
-            );
-          if (btn && btn.offsetParent !== null) return btn;
+          const byId = root.getElementById?.('et-ef-content-ftf-submitCmdBottom');
+          if (byId && byId.offsetParent !== null) {
+            const v = (byId.value || byId.textContent || '').trim().toLowerCase();
+            if (/postuler|submit application|^apply$|send application/i.test(v)) return byId;
+          }
+          const post = root.querySelector?.('input[id*="submitCmdBottom"][value*="Postuler"], input[value="Postuler"]');
+          if (post && post.offsetParent !== null) return post;
         }
         return null;
-      })();
-      if (postulerBtn || currentStep === 'verifier') {
-        const btn = postulerBtn || (() => {
-          for (const root of getSearchRoots()) {
-            const b = root.querySelector?.('input[id*="submitCmdBottom"]') ||
-              Array.from(root.querySelectorAll?.('input[type="button"], button') || []).find(el =>
-                /postuler|submit|terminer/i.test((el.value || el.textContent || el.title || '').trim())
-              );
-            if (b && b.offsetParent !== null) return b;
-          }
-          return null;
-        })();
-        if (btn) {
-          log('📂 [4/4] Validation finale — Clic "Postuler"');
-          btn.scrollIntoView({ behavior: 'instant', block: 'center' });
-          await delay(500);
-          if (typeof window.cmdSubmit === 'function' && btn.id) {
-            try { window.cmdSubmit('et-ef', btn.id, null, null, true); } catch (_) { btn.click(); }
-          } else {
-            btn.click();
-          }
-          log('   ✅ Candidature envoyée.');
-          await delay(8000);
-          const successMsg = (document.body?.textContent || '').toLowerCase();
-          if (successMsg.includes('submitted') || successMsg.includes('envoyée') || successMsg.includes('success') || successMsg.includes('merci') || successMsg.includes("c'est dans la boîte") || successMsg.includes('thank you for your submission') || successMsg.includes('your submission')) {
-            log('🎉 Candidature envoyée avec succès !');
-            if (jobId && offerUrl) {
-              try {
-                chrome.runtime.sendMessage({ action: 'candidature_success', jobId, jobTitle, companyName, offerUrl });
-              } catch (_) {}
-            }
-          }
-          return;
-        }
       }
 
-      if (!isPiecesJointesPage()) return;
+      if (isPiecesJointesPage()) {
       log('📂 [3/4] Pièces jointes (CV)');
-      if (window !== window.top) return;
+      if (window !== window.top) {
+        if (DEBUG) log('   ⏭️ Pièces jointes : iframe — traitement principal dans la frame du haut');
+      } else {
       const cvInput = document.querySelector('input[id*="AttachedFilesBlock-uploadedFile"]') ||
         document.querySelector('input[id*="uploadedFile"]');
       await delay(3000);
@@ -1289,23 +1282,30 @@
           }
         }
       }
+      }
+      }
 
-      log('🏁 Automatisation terminée. Vérifiez la page.');
-      await delay(10000);
-
-      const successMsg = document.body?.textContent?.toLowerCase() || '';
-      if (successMsg.includes('submitted') || successMsg.includes('envoyée') || successMsg.includes('success') || successMsg.includes('thank you for your submission') || successMsg.includes('your submission')) {
-        log('🎉 Candidature envoyée avec succès !');
-        if (jobId && offerUrl) {
-          chrome.runtime.sendMessage({
-            action: 'candidature_success',
-            jobId,
-            jobTitle,
-            companyName,
-            offerUrl
-          });
+      const stepNavNow = getCurrentStepFromNav();
+      const finalPostuler = findFinalSgPostulerButton();
+      if (window === window.top && stepNavNow === 'verifier' && finalPostuler) {
+        log('📂 [4/4] Validation finale — Clic « Postuler » (étape vérifier)');
+        finalPostuler.scrollIntoView({ behavior: 'instant', block: 'center' });
+        await delay(500);
+        if (typeof window.cmdSubmit === 'function' && finalPostuler.id) {
+          try { window.cmdSubmit('et-ef', finalPostuler.id, null, null, true); } catch (_) { finalPostuler.click(); }
+        } else {
+          finalPostuler.click();
+        }
+        await delay(8000);
+        const bodyTxt = document.body?.textContent || '';
+        if ((isStrictSgSubmissionMessage(bodyTxt) || isSgFinalConfirmationPage()) && (jobId || offerUrl)) {
+          log('🎉 Confirmation de soumission détectée — candidature_success');
+          trySendSgCandidatureSuccess(jobId, jobTitle, companyName, offerUrl);
         }
       }
+
+      log('🏁 Automatisation terminée. Vérifiez la page.');
+      await delay(2000);
 
     } catch (e) {
       log(`❌ Erreur : ${e.message}`);
