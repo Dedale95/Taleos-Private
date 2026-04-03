@@ -191,6 +191,17 @@
     let filledEu = false;
     let filledNotice = false;
     const noticePatterns = {
+      none: [
+        /\bnone\b/i,
+        /\baucun\b/i,
+        /\bimmediate\b/i,
+        /\bno\s+notice\b/i,
+        /\bnot\s+applicable\b/i,
+        /\bn\/a\b/i,
+        /0\s*months?/i,
+        /\bsans\s+préavis\b/i,
+        /départ\s+immédiat/i
+      ],
       '1_month': [/1\s*month/i, /1\s*mois/i, /^\s*1\s*$/],
       '2_months': [/2\s*months?/i, /2\s*mois/i, /^\s*2\s*$/],
       '3_months': [/3\s*months?/i, /3\s*mois/i, /^\s*3\s*$/],
