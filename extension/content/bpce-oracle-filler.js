@@ -111,12 +111,27 @@
    * du DOM peut appartenir à une autre question → faux « déjà Non » alors que le handicap est sur Oui.
    */
   function findHandicapQuestionRow() {
-    for (const row of document.querySelectorAll('.apply-flow-block .input-row, .apply-flow-question, .input-row')) {
+    const cand = document.querySelectorAll('.apply-flow-block .input-row, .apply-flow-question, .input-row');
+    for (const row of cand) {
       const label = row.querySelector('.input-row__label, [class*="label"], label, legend, .apply-flow-question-title');
       const t = ((label?.textContent || '') + '\n' + (row.textContent || '')).toLowerCase();
-      if (!/handicap|reconnaissance administrative|titre de reconnaissance/.test(t)) continue;
+      if (!/handicap|reconnaissance administrative|titre de reconnaissance|travailleur en situation|engagement en faveur/i.test(t)) continue;
       if (/natixis|\bvivier\b|conserve mon profil|mises à jour|nouvelles opportunités/i.test(t)) continue;
       return row;
+    }
+    for (const row of document.querySelectorAll('.apply-flow-block, .input-row')) {
+      const t = (row.textContent || '').toLowerCase();
+      if (/disposez-vous.*titre.*handicap|titre de reconnaissance administrative/i.test(t)) return row;
+    }
+    return null;
+  }
+
+  /** Ligne « Quelle a été l'origine de votre candidature ? » / Source (Natixis). */
+  function findApplicationSourceRow() {
+    for (const row of document.querySelectorAll('.apply-flow-block .input-row, .apply-flow-question, .input-row, .apply-flow-block')) {
+      const t = (row.textContent || '').toLowerCase();
+      if (/origine de votre candidature|quelle a été l'origine|origine.*candidature/.test(t)) return row;
+      if (/source\s*:/i.test(t) && /indeed|linkedin|glassdoor|referral|handshake|employee|posting|website|other|internal|natixis|contacted/i.test(t)) return row;
     }
     return null;
   }
@@ -130,14 +145,97 @@
     return null;
   }
 
-  /** Valeur profil Taleos → libellé pilule Oracle ; « Je ne souhaite pas répondre » → ne pas forcer le clic. */
+  /** Vivier : Oui / Non uniquement. */
   function resolveBpceOuiNonPill(raw, defaultPill) {
     const s = String(raw || '').trim();
     if (!s) return { pill: defaultPill, abstain: false };
     if (/^oui$/i.test(s)) return { pill: 'Oui', abstain: false };
     if (/^non$/i.test(s)) return { pill: 'Non', abstain: false };
-    if (/je ne souhaite pas répondre/i.test(s)) return { pill: null, abstain: true };
     return { pill: defaultPill, abstain: false };
+  }
+
+  /** Handicap : 3 pilules Oracle (Oui / Non / Je ne souhaite pas répondre). */
+  function resolveBpceHandicapPill(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return { pillText: 'Non' };
+    if (/^oui$/i.test(s)) return { pillText: 'Oui' };
+    if (/^non$/i.test(s)) return { pillText: 'Non' };
+    if (/je ne souhaite pas répondre/i.test(s)) return { pillText: 'Je ne souhaite pas répondre' };
+    return { pillText: 'Non' };
+  }
+
+  const NORM = (x) => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  /**
+   * Clic sur une pilule : égalité stricte pour Oui/Non/M. ; libellés longs (handicap, origine EN) par correspondance souple.
+   */
+  function smartClickPillFlexible(label, desiredText, container) {
+    if (!container || desiredText == null) return false;
+    const target = NORM(desiredText);
+    if (!target) return false;
+    const elements = container.querySelectorAll('button, .cx-select-pill-section, .cx-select-pill-name, [role="button"]');
+
+    function pillMatches(elText) {
+      if (!elText) return false;
+      if (elText === target) return true;
+      if (target === 'oui' || target === 'non' || target === 'm.' || target === 'mme') return elText === target;
+      if (target.includes('je ne souhaite')) return elText.includes('je ne souhaite') || elText === target;
+      if (target.length >= 8) return elText === target || elText.includes(target) || target.includes(elText);
+      return elText === target;
+    }
+
+    for (const el of elements) {
+      const elText = NORM(el.textContent);
+      if (!pillMatches(elText)) continue;
+      const btn = el.closest('button') || el.closest('.cx-select-pill-section') || el;
+      const isSelected = btn.classList.contains('cx-select-pill-section--selected') ||
+        btn.getAttribute('aria-pressed') === 'true' ||
+        btn.getAttribute('aria-checked') === 'true' ||
+        btn.classList.contains('active');
+      if (isSelected) {
+        logOnce(`   — ${label} → déjà « ${desiredText} » (Skip)`);
+        return 'already_selected';
+      }
+      btn.click();
+      logOnce(`   ✅ ${label} → « ${desiredText} » (Cliqué)`);
+      return true;
+    }
+    return false;
+  }
+
+  /** Liste déroulante Oracle (oj-select / listbox) si les options ne sont pas des pilules. */
+  async function selectApplicationSourceFromProfile(profile) {
+    const raw = (profile.bpce_application_source || '').trim() || 'LinkedIn';
+    const row = findApplicationSourceRow();
+    if (!row || row.offsetParent === null) {
+      logOnce('   ⏳ Origine candidature → question non visible encore');
+      return false;
+    }
+
+    let r = smartClickPillFlexible('Origine candidature', raw, row);
+    if (r === true || r === 'already_selected') return true;
+
+    const combo = row.querySelector('button[aria-haspopup="listbox"], [role="combobox"], .oj-select-choice, .oj-inputtext-input, .oj-select-chrome');
+    if (combo && combo.offsetParent !== null) {
+      combo.click();
+      await new Promise((res) => setTimeout(res, 500));
+      const want = NORM(raw);
+      const opts = document.querySelectorAll(
+        '[role="option"], li[role="option"], .oj-listitem-layout, .oj-listview-item, .oj-listview-cell-element, ul[role="listbox"] li, .oj-popup-layer [role="option"]'
+      );
+      for (const o of opts) {
+        if (o.offsetParent === null) continue;
+        const t = NORM(o.textContent);
+        if (!t) continue;
+        if (t === want || t.includes(want) || want.includes(t)) {
+          o.click();
+          logOnce(`   ✅ Origine candidature → « ${raw} » (liste)`);
+          return true;
+        }
+      }
+    }
+    logOnce('   ⏳ Origine candidature → option introuvable (pilules ou liste Oracle)');
+    return false;
   }
 
   /** Télécharge le fichier depuis Firebase Storage (via background) et l’assigne à l’input file (comme Deloitte / CA). */
@@ -404,7 +502,7 @@
         // Questions (une seule fois par champ pill — sinon setInterval reclique en boucle et bascule Oui/Non)
         logOnce('📋 Étape 3 : Questions de candidature', 3);
         if (!filledFields.has('bpce_handicap_done')) {
-          const { pill: handicapPill, abstain: handicapAbstain } = resolveBpceOuiNonPill(profile.bpce_handicap, 'Non');
+          const { pillText: handicapPillText } = resolveBpceHandicapPill(profile.bpce_handicap);
           let handicapRow = findHandicapQuestionRow();
           if (!handicapRow) {
             handicapRow = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) =>
@@ -417,13 +515,15 @@
               });
             }
           }
-          if (handicapAbstain) {
-            filledFields.add('bpce_handicap_done');
-            logOnce('   — Handicap → « Je ne souhaite pas répondre » (profil), pilules non modifiées');
-          } else if (handicapRow && handicapPill) {
-            const hr = smartClickButton('Handicap', handicapPill, handicapRow);
+          if (handicapRow && handicapPillText) {
+            const hr = smartClickPillFlexible('Handicap', handicapPillText, handicapRow);
             if (hr === true || hr === 'already_selected') filledFields.add('bpce_handicap_done');
           }
+        }
+
+        if (!filledFields.has('bpce_application_source_done')) {
+          const okSrc = await selectApplicationSourceFromProfile(profile);
+          if (okSrc) filledFields.add('bpce_application_source_done');
         }
 
         // Disponibilité

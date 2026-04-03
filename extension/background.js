@@ -1492,7 +1492,7 @@ async function checkProfileCompletenessFromFirestore(bankId) {
   if (!profileRes.ok) return { complete: false, missingFields: ['Profil'] };
   const profile = parseFirestoreDoc(await profileRes.json());
   const isBpce = bankId === 'bpce' || (typeof bankId === 'string' && bankId.toLowerCase().includes('bpce'));
-  const bpceHasContent = !!((profile.bpce_handicap || '').trim() || (profile.bpce_vivier_natixis || '').trim() || (profile.linkedin_url || '').trim() || profile.bpce_job_alerts);
+  const bpceHasContent = !!((profile.bpce_handicap || '').trim() || (profile.bpce_vivier_natixis || '').trim() || (profile.bpce_application_source || '').trim() || (profile.linkedin_url || '').trim() || profile.bpce_job_alerts);
   const required = {
     civility: profile.civility,
     firstName: profile.first_name,
@@ -1634,6 +1634,7 @@ async function fetchProfile(uid, bankId, token) {
     deloitte_country: profile.deloitte_country || '',
     bpce_handicap: profile.bpce_handicap || '',
     bpce_vivier_natixis: profile.bpce_vivier_natixis || '',
+    bpce_application_source: (profile.bpce_application_source || '').trim(),
     linkedin_url: (profile.linkedin_url || '').trim(),
     bpce_job_alerts: !!profile.bpce_job_alerts,
     sg_eu_work_authorization: profile.sg_eu_work_authorization || '',
