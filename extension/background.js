@@ -415,6 +415,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ error: 'Utilisateur non connecté' });
           return;
         }
+        const profileCheck = await checkProfileCompletenessFromFirestore(bankId || 'societe_generale');
+        if (!profileCheck?.complete) {
+          sendResponse({
+            error: 'Profil incomplet. Complétez toutes les informations requises dans Mon profil sur Taleos avant de candidater.',
+            missingFields: profileCheck?.missingFields || []
+          });
+          return;
+        }
         const profile = await fetchProfile(taleosUserId, bankId || 'societe_generale', taleosIdToken);
         profile.__jobId = jobId;
         profile.__jobTitle = jobTitle || '';

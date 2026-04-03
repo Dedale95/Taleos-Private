@@ -209,6 +209,23 @@
     document.body.appendChild(overlay);
   }
 
+  function showApplyRetryToast(message) {
+    const t = document.createElement('div');
+    t.textContent = message || 'La candidature automatique n\'a pas pu démarrer. Réessayez dans un instant ou vérifiez votre profil.';
+    Object.assign(t.style, {
+      position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 2147483647,
+      background: '#1f2937', color: '#fff', padding: '12px 20px', borderRadius: '8px', fontSize: '14px',
+      fontFamily: 'system-ui,sans-serif', boxShadow: '0 4px 12px rgba(0,0,0,0.25)', maxWidth: '420px', textAlign: 'center'
+    });
+    document.body.appendChild(t);
+    setTimeout(function() { t.remove(); }, 7000);
+  }
+
+  function isProfileIncompleteApplyError(errText) {
+    const s = String(errText || '').toLowerCase();
+    return /profil\s+incomplet|profil\s+introuvable|informations\s+manquantes|complétez.*profil|champs?\s+obligatoires|requis.*profil|avant\s+de\s+lancer\s+une\s+candidature/i.test(s);
+  }
+
   function setButtonProcessing(btn, jobId) {
     if (!btn.dataset.taleosOriginalText) btn.dataset.taleosOriginalText = btn.textContent || '📝 Candidater';
     btn.textContent = '⏳ En cours...';
@@ -250,6 +267,9 @@
     let bankId = getBankIdFromUrl(jobUrl);
     if (jobUrl && String(jobUrl).toLowerCase().includes('groupecreditagricole.jobs')) {
       bankId = 'credit_agricole';
+    }
+    if (bankId === 'credit_agricole' && /société\s+générale|societe\s+generale|société\s+generale/i.test(companyName || '')) {
+      bankId = 'societe_generale';
     }
 
     if (!jobId) return;
@@ -318,8 +338,20 @@
       ? 'https://groupecreditagricole.jobs/fr/connexion/'
       : jobUrl;
 
-    const fallbackOpen = () => {
+    /** Ouvre l’URL d’offre uniquement si le profil Firestore est complet (revérification systématique). */
+    async function openOfferUrlOnlyIfProfileComplete() {
       clearProcessing(jobId, true);
+      let checkRes;
+      try {
+        checkRes = await chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete', bankId });
+      } catch (e) {
+        showProfileIncompletePopup([]);
+        return;
+      }
+      if (!checkRes || checkRes.complete !== true) {
+        showProfileIncompletePopup(checkRes?.missingFields || []);
+        return;
+      }
       if (bankId === 'societe_generale' || jobUrl.includes('careers.societegenerale.com') || jobUrl.includes('socgen.taleo.net')) {
         chrome.storage.local.set({
           taleos_apply_fallback: {
@@ -347,7 +379,7 @@
         });
       }
       window.open(openUrl, '_blank');
-    };
+    }
 
     async function tryApply() {
       await chrome.runtime.sendMessage({ action: 'ping' }).catch(() => {});
@@ -375,13 +407,13 @@
       }
       if (response?.error) {
         console.warn('[Taleos] handleApply:', response.error);
-        if (/profil incomplet|profil introuvable/i.test(response.error)) {
+        if (isProfileIncompleteApplyError(response.error)) {
           clearProcessing(jobId, true);
-          const match = response.error.match(/avant de lancer une candidature[:\s]+(.+)$/);
+          const match = String(response.error).match(/avant de lancer une candidature[:\s]+(.+)$/i);
           const missingFields = match ? match[1].split(',').map(m => m.trim()).filter(Boolean) : [];
           showProfileIncompletePopup(missingFields.length ? missingFields : []);
         } else {
-          fallbackOpen();
+          await openOfferUrlOnlyIfProfileComplete();
         }
       }
     } catch (err) {
@@ -400,8 +432,21 @@
         setTimeout(function() { window.location.reload(); }, 2000);
         return;
       }
-      console.warn('[Taleos] Extension non disponible ou timeout — ouverture manuelle:', err?.message || err);
-      fallbackOpen();
+      console.warn('[Taleos] Candidature — timeout ou erreur:', err?.message || err);
+      clearProcessing(jobId, true);
+      try {
+        const checkRes = await chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete', bankId });
+        if (!checkRes || checkRes.complete !== true) {
+          showProfileIncompletePopup(checkRes?.missingFields || []);
+          return;
+        }
+      } catch (_) {
+        showProfileIncompletePopup([]);
+        return;
+      }
+      showApplyRetryToast(/timeout/i.test(msg)
+        ? 'Délai dépassé : la candidature n\'a pas pu démarrer. Réessayez. Si le problème continue, enregistrez votre profil sur Taleos puis réessayez.'
+        : 'Impossible de lancer la candidature pour le moment. Réessayez ou vérifiez que votre profil est à jour sur Taleos.');
     }
   }
 
