@@ -1153,6 +1153,8 @@ const PROFILE_FIELD_LABELS = {
   institutionType: 'Type d\'établissement',
   diplomaStatus: 'Statut du diplôme',
   deloitteWorked: 'Avez-vous déjà travaillé pour Deloitte ?',
+  sg_eu_work_authorization: 'Autorisation de travail dans l’UE',
+  sg_notice_period: 'Préavis de départ',
   cv: 'CV (Documents)',
   bpcePreferences: 'Préférences BPCE'
 };
@@ -1187,6 +1189,10 @@ async function checkProfileCompletenessFromFirestore(bankId) {
     institutionType: profile.institution_type,
     diplomaStatus: profile.diploma_status,
     deloitteWorked: profile.deloitte_worked === 'yes' || profile.deloitte_worked === 'no',
+    sg_eu_work_authorization: profile.sg_eu_work_authorization === 'yes' || profile.sg_eu_work_authorization === 'no',
+    sg_notice_period: ['none', '1_month', '2_months', '3_months', 'more_than_3_months'].includes(
+      String(profile.sg_notice_period || '').trim()
+    ),
     cv: !!((profile.cv_storage_path || profile.cv_url || '').trim())
   };
   if (isBpce) {
