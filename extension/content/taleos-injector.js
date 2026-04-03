@@ -153,7 +153,27 @@
     }
   }
 
-  function showProfileIncompletePopup(missingFields) {
+  function normalizeSiteForGa(bankId) {
+    const raw = String(bankId || 'unknown').toLowerCase();
+    if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
+    if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
+    if (raw.includes('bpce')) return 'bpce';
+    if (raw.includes('deloitte')) return 'deloitte';
+    return raw || 'unknown';
+  }
+
+  function showProfileIncompletePopup(missingFields, bankIdForTracking) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'track_event',
+        eventName: 'apply_blocked_profile',
+        params: {
+          site: normalizeSiteForGa(bankIdForTracking),
+          missing_count: Array.isArray(missingFields) ? missingFields.length : 0
+        }
+      }).catch(function() {});
+    } catch (_) {}
+
     const msg = missingFields && missingFields.length > 0
       ? 'Votre profil est incomplet. Veuillez compléter toutes les informations requises dans Mon profil avant de lancer une candidature : ' + missingFields.join(', ')
       : 'Votre profil est incomplet. Complétez toutes les informations requises dans Mon profil avant de lancer une candidature.';
@@ -316,7 +336,7 @@
       if (!checkRes || checkRes.complete !== true) {
         delete btn.dataset.taleosProcessing;
         btn.removeAttribute('data-taleos-processing');
-        showProfileIncompletePopup(checkRes?.missingFields || []);
+        showProfileIncompletePopup(checkRes?.missingFields || [], bankId);
         return;
       }
     } catch (err) {
@@ -327,7 +347,7 @@
         showReloadToast();
         return;
       }
-      showProfileIncompletePopup([]);
+      showProfileIncompletePopup([], bankId);
       return;
     }
 
@@ -345,11 +365,11 @@
       try {
         checkRes = await chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete', bankId });
       } catch (e) {
-        showProfileIncompletePopup([]);
+        showProfileIncompletePopup([], bankId);
         return;
       }
       if (!checkRes || checkRes.complete !== true) {
-        showProfileIncompletePopup(checkRes?.missingFields || []);
+        showProfileIncompletePopup(checkRes?.missingFields || [], bankId);
         return;
       }
       if (bankId === 'societe_generale' || jobUrl.includes('careers.societegenerale.com') || jobUrl.includes('socgen.taleo.net')) {
@@ -411,7 +431,7 @@
           clearProcessing(jobId, true);
           const match = String(response.error).match(/avant de lancer une candidature[:\s]+(.+)$/i);
           const missingFields = match ? match[1].split(',').map(m => m.trim()).filter(Boolean) : [];
-          showProfileIncompletePopup(missingFields.length ? missingFields : []);
+          showProfileIncompletePopup(missingFields.length ? missingFields : [], bankId);
         } else {
           await openOfferUrlOnlyIfProfileComplete();
         }
@@ -437,11 +457,11 @@
       try {
         const checkRes = await chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete', bankId });
         if (!checkRes || checkRes.complete !== true) {
-          showProfileIncompletePopup(checkRes?.missingFields || []);
+          showProfileIncompletePopup(checkRes?.missingFields || [], bankId);
           return;
         }
       } catch (_) {
-        showProfileIncompletePopup([]);
+        showProfileIncompletePopup([], bankId);
         return;
       }
       showApplyRetryToast(/timeout/i.test(msg)

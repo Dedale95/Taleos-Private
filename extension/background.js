@@ -1487,6 +1487,41 @@ async function getTrackingUserContext() {
   }
 }
 
+const GA4_SESSION_KEYS = { id: 'ga4_mp_session_id', at: 'ga4_mp_session_at' };
+const GA4_SESSION_TTL_MS = 30 * 60 * 1000;
+
+/** session_id GA4 MP : entier (secondes), stable ~30 min — évite des sessions fantômes par événement. */
+async function getGa4SessionIdForPayload() {
+  const now = Date.now();
+  const sid = Math.floor(now / 1000);
+  try {
+    if (chrome.storage?.session) {
+      const o = await chrome.storage.session.get([GA4_SESSION_KEYS.id, GA4_SESSION_KEYS.at]);
+      if (o[GA4_SESSION_KEYS.id] != null && o[GA4_SESSION_KEYS.at] != null && now - o[GA4_SESSION_KEYS.at] < GA4_SESSION_TTL_MS) {
+        return Number(o[GA4_SESSION_KEYS.id]);
+      }
+      await chrome.storage.session.set({
+        [GA4_SESSION_KEYS.id]: sid,
+        [GA4_SESSION_KEYS.at]: now
+      });
+      return sid;
+    }
+  } catch (_) {}
+  try {
+    const o = await chrome.storage.local.get([GA4_SESSION_KEYS.id, GA4_SESSION_KEYS.at]);
+    if (o[GA4_SESSION_KEYS.id] != null && o[GA4_SESSION_KEYS.at] != null && now - o[GA4_SESSION_KEYS.at] < GA4_SESSION_TTL_MS) {
+      return Number(o[GA4_SESSION_KEYS.id]);
+    }
+    await chrome.storage.local.set({
+      [GA4_SESSION_KEYS.id]: sid,
+      [GA4_SESSION_KEYS.at]: now
+    });
+    return sid;
+  } catch (_) {
+    return sid;
+  }
+}
+
 /**
  * Envoie un événement à Google Analytics 4 via le Measurement Protocol
  * @param {string} eventName - Nom de l'événement (ex: 'apply_start', 'apply_success')
@@ -1505,8 +1540,10 @@ async function sendGA4Event(eventName, params = {}, userId = null) {
     userUid = userCtx.uid || String(userId || 'anonymous');
 
     const extVer = getExtensionVersionForGa4();
+    const sessionIdNum = await getGa4SessionIdForPayload();
 
-    // Construction du payload GA4 (extension_version sur chaque événement pour filtrer les anciennes builds)
+    // MP GA4 : engagement_time_msec + session_id numérique requis pour la prise en compte fiable des rapports.
+    // Ne pas envoyer timestamp_micros dans params (réservé / rejets possibles côté validation).
     const payload = {
       client_id: userUid,
       user_id: userUid,
@@ -1517,8 +1554,8 @@ async function sendGA4Event(eventName, params = {}, userId = null) {
             ...params,
             ...extVer,
             user_uid: userUid,
-            timestamp_micros: Date.now() * 1000,
-            session_id: `session_${Date.now()}`
+            engagement_time_msec: 100,
+            session_id: sessionIdNum
           }
         }
       ]

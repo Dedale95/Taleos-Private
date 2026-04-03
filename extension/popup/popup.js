@@ -134,6 +134,7 @@ function toFrenchAnalyticsLabel(eventName) {
   if (key === 'apply_expired') return 'Offre expirée';
   if (key === 'pin_received') return 'Code PIN reçu';
   if (key === 'form_filled') return 'Formulaire rempli';
+  if (key === 'apply_blocked_profile') return 'Candidature bloquée (profil incomplet)';
   return 'Événement analytique';
 }
 
