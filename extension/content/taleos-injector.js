@@ -222,7 +222,10 @@
   }
 
   async function onApplyClick(e) {
-    const btn = e.target.closest?.('.job-apply-btn');
+    // Certains clics ciblent un TextNode (emoji/texte du bouton), qui n'a pas closest().
+    const rawTarget = e.target;
+    const targetEl = rawTarget && rawTarget.nodeType === Node.TEXT_NODE ? rawTarget.parentElement : rawTarget;
+    const btn = targetEl?.closest?.('.job-apply-btn, button[onclick*="applyToJob"]');
     if (!btn) return;
 
     const found = findJobCard(btn);
@@ -232,6 +235,18 @@
     const jobId = extractJobIdFromOnClick(btn) || (card.querySelector('.job-id')?.textContent || '').trim();
     const jobTitle = (card.querySelector('.job-title')?.textContent || '').trim();
     const companyName = (card.querySelector('.company-name-wrapper span, .job-company span')?.textContent || '').trim();
+    const publicationDate = (card.querySelector('.job-date')?.textContent || '').replace(/^Publiée le\s*/i, '').trim();
+    const location = (card.querySelector('.tag-location')?.textContent || '').replace(/^🌍\s*/, '').trim();
+    const contractType = (card.querySelector('.tag-contract')?.textContent || '').replace(/^📄\s*/, '').trim();
+    const experienceLevel = (card.querySelector('.tag-experience')?.textContent || '').replace(/^💼\s*/, '').trim();
+    const jobFamily = (card.querySelector('.tag-family')?.textContent || '').replace(/^🎯\s*/, '').trim();
+    const offerMeta = {
+      location: location || '',
+      contractType: contractType || '',
+      experienceLevel: experienceLevel || '',
+      jobFamily: jobFamily || '',
+      publicationDate: publicationDate || ''
+    };
     let bankId = getBankIdFromUrl(jobUrl);
     if (jobUrl && String(jobUrl).toLowerCase().includes('groupecreditagricole.jobs')) {
       bankId = 'credit_agricole';
@@ -313,6 +328,7 @@
             jobId,
             jobTitle,
             companyName,
+            offerMeta,
             timestamp: Date.now()
           }
         });
@@ -325,6 +341,7 @@
             jobId,
             jobTitle,
             companyName,
+            offerMeta,
             timestamp: Date.now()
           }
         });
@@ -341,7 +358,8 @@
           bankId,
           jobId,
           jobTitle,
-          companyName
+          companyName,
+          offerMeta
         }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 12000))
       ]);

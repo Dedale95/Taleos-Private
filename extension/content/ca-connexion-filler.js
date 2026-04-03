@@ -8,6 +8,34 @@
   const path = window.location.pathname.toLowerCase();
 
   const BANNER_ID = 'taleos-ca-automation-banner';
+  function isUnavailablePage() {
+    const txt = (document.body?.textContent || '').toLowerCase();
+    const href = (window.location?.href || '').toLowerCase();
+    const p = (window.location?.pathname || '').toLowerCase();
+    if (p === '/404' || p === '/404/' || /\/404(\/|$)/.test(href)) return true;
+    return /la page que vous recherchez est introuvable|page introuvable|offre non disponible|offre n'est plus en ligne|offre expirée|page not found|error 404|job position is no longer online|the requested page no longer exists/.test(txt);
+  }
+
+  function notifyUnavailableAndStop(reason) {
+    chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback']).then((s) => {
+      const pending = s.taleos_pending_offer || {};
+      const jobId = pending?.profile?.__jobId || pending?.jobId || '';
+      const jobTitle = pending?.profile?.__jobTitle || pending?.jobTitle || '';
+      const offerUrl = pending?.offerUrl || s.taleos_redirect_fallback || window.location.href;
+      chrome.storage.local.remove(['taleos_pending_offer', 'taleos_redirect_fallback']);
+      if (jobId || offerUrl) {
+        chrome.runtime.sendMessage({
+          action: 'candidature_failure',
+          jobId,
+          jobTitle,
+          offerUrl,
+          offerExpired: true,
+          error: reason || 'Offre non disponible (404) — L\'offre n\'est plus en ligne.'
+        }).catch(() => {});
+      }
+    });
+  }
+
   function showAutomationBanner() {
     if (document.getElementById(BANNER_ID)) return;
     const banner = document.createElement('div');
@@ -22,6 +50,11 @@
     });
     const root = document.body || document.documentElement;
     if (root) (root.firstChild ? root.insertBefore(banner, root.firstChild) : root.appendChild(banner));
+  }
+
+  if (isUnavailablePage()) {
+    notifyUnavailableAndStop('Offre non disponible (404) — L\'offre n\'est plus en ligne.');
+    return;
   }
 
   if (path.includes('candidature-validee')) {
@@ -72,8 +105,18 @@
   if (!path.includes('connexion') && !path.includes('login') && !path.includes('connection')) {
     const isOfferPage = path.includes('nos-offres-emploi') || path.includes('our-offers') || path.includes('our-offres');
     const isCandidaturePage = path.includes('/candidature/') || path.includes('/application/') || path.includes('/apply/');
+    if (isUnavailablePage()) {
+      notifyUnavailableAndStop('Offre non disponible (404) — L\'offre n\'est plus en ligne.');
+      return;
+    }
     chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback']).then((s) => {
       const url = s.taleos_pending_offer?.offerUrl || s.taleos_redirect_fallback;
+      const normalized = String(url || '').toLowerCase();
+      const is404Target = /\/404(\/|$)/.test(normalized);
+      if (is404Target) {
+        notifyUnavailableAndStop('Offre non disponible (404) — L\'offre n\'est plus en ligne.');
+        return;
+      }
       if (url && url.includes('groupecreditagricole.jobs') && !isOfferPage && !isCandidaturePage) {
         console.log('[Taleos CA Connexion] Redirection vers l\'offre après connexion (page d\'accueil détectée)...');
         window.location.replace(url);

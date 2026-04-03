@@ -11,15 +11,14 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
+const { buildInstructionSteps } = require("./instruction-plan");
 
 initializeApp();
 
-// Région proche de tes utilisateurs FR ; modifiable.
 setGlobalOptions({ region: "europe-west1", maxInstances: 100 });
 
 /**
  * Point d’entrée minimal pour valider Auth + latence.
- * Appel depuis le client : httpsCallable(functions, 'ping') avec utilisateur connecté.
  */
 exports.ping = onCall(async (request) => {
   if (!request.auth) {
@@ -39,7 +38,7 @@ exports.ping = onCall(async (request) => {
   };
 });
 
-/** Même logique de routage que l’extension (fallback local) — à enrichir côté serveur sans mettre à jour le client. */
+/** Même logique de routage que l’extension (fallback local) — à enrichir côté serveur. */
 function legacyRouteAs(bankId, offerUrl) {
   const url = String(offerUrl || "").toLowerCase();
   const bid = String(bankId || "").toLowerCase();
@@ -78,34 +77,8 @@ function legacyScriptKey(bankId, offerUrl) {
 }
 
 /**
- * Pilotage automation : par défaut script embarqué dans l’extension.
- * Pour activer un script hébergé (Storage / URL HTTPS), définir les variables d’environnement au déploiement :
- *   TALEOS_REMOTE_SCRIPT_CREDIT_AGRICOLE=https://...
- *   TALEOS_REMOTE_SHA_CREDIT_AGRICOLE=hex64   (recommandé ; SHA-256 du fichier UTF-8)
- * Même schéma pour SOCIETE_GENERALE, DELOITTE, BPCE (clé = scriptKey en majuscules).
- */
-function buildPilotPayload(scriptKey) {
-  const k = String(scriptKey || "credit_agricole")
-    .replace(/[^a-z0-9_]/gi, "_")
-    .toUpperCase();
-  const url = (process.env[`TALEOS_REMOTE_SCRIPT_${k}`] || "").trim();
-  const sha = (process.env[`TALEOS_REMOTE_SHA_${k}`] || "").trim();
-  if (url && /^https:\/\//i.test(url)) {
-    return {
-      automationMode: "remote",
-      remoteScriptUrl: url,
-      remoteScriptSha256: sha || null,
-    };
-  }
-  return {
-    automationMode: "bundled",
-    remoteScriptUrl: null,
-    remoteScriptSha256: null,
-  };
-}
-
-/**
- * Plan de candidature : routage + clé script + mode pilotage (bundled vs URL distante).
+ * Plan de candidature : routage + scriptKey + pilot.mode = instructions (liste d’étapes).
+ * Les étapes peuvent être surchargées dans Firestore : apply_instruction_sets/{scriptKey}
  */
 exports.getApplyPlan = onCall(async (request) => {
   if (!request.auth) {
@@ -124,11 +97,17 @@ exports.getApplyPlan = onCall(async (request) => {
 
   const routeAs = legacyRouteAs(bankId, offerUrl);
   const scriptKey = legacyScriptKey(bankId, offerUrl);
-  const pilot = buildPilotPayload(scriptKey);
+  const steps = await buildInstructionSteps(scriptKey);
+
+  const pilot = {
+    automationMode: "instructions",
+    instructionSetVersion: 1,
+    steps,
+  };
 
   return {
     ok: true,
-    planVersion: 2,
+    planVersion: 4,
     routeAs,
     scriptKey,
     pilot,

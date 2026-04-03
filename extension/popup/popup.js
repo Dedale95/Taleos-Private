@@ -138,7 +138,9 @@ function toFrenchAnalyticsLabel(eventName) {
 }
 
 const PILOT_TIER_STYLE = {
-  firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL renvoyée par getApplyPlan.' },
+  firebase_instructions: { color: '#059669', hint: 'Liste d’étapes depuis Firebase — exécution par la coquille extension.' },
+  instruction_fallback_bundled: { color: '#dc2626', hint: 'Erreur sur les instructions serveur — l’extension a utilisé le bundle local.' },
+  firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL (mode legacy).' },
   firebase_bundled: { color: '#2563eb', hint: 'Routage Firebase ; automation = fichiers de l’extension.' },
   local_only: { color: '#6b7280', hint: 'Pas d’appel getApplyPlan (réglage extension ou sans token).' },
   fallback_routing: { color: '#d97706', hint: 'getApplyPlan appelé mais en erreur — routage local.' },
