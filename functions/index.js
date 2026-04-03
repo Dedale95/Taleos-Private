@@ -78,8 +78,34 @@ function legacyScriptKey(bankId, offerUrl) {
 }
 
 /**
- * Plan de candidature : routage + clé script extension (fichiers toujours locaux pour l’instant).
- * L’extension appelle en priorité ; peut évoluer (règles métier, abonnement) sans publier une nouvelle extension.
+ * Pilotage automation : par défaut script embarqué dans l’extension.
+ * Pour activer un script hébergé (Storage / URL HTTPS), définir les variables d’environnement au déploiement :
+ *   TALEOS_REMOTE_SCRIPT_CREDIT_AGRICOLE=https://...
+ *   TALEOS_REMOTE_SHA_CREDIT_AGRICOLE=hex64   (recommandé ; SHA-256 du fichier UTF-8)
+ * Même schéma pour SOCIETE_GENERALE, DELOITTE, BPCE (clé = scriptKey en majuscules).
+ */
+function buildPilotPayload(scriptKey) {
+  const k = String(scriptKey || "credit_agricole")
+    .replace(/[^a-z0-9_]/gi, "_")
+    .toUpperCase();
+  const url = (process.env[`TALEOS_REMOTE_SCRIPT_${k}`] || "").trim();
+  const sha = (process.env[`TALEOS_REMOTE_SHA_${k}`] || "").trim();
+  if (url && /^https:\/\//i.test(url)) {
+    return {
+      automationMode: "remote",
+      remoteScriptUrl: url,
+      remoteScriptSha256: sha || null,
+    };
+  }
+  return {
+    automationMode: "bundled",
+    remoteScriptUrl: null,
+    remoteScriptSha256: null,
+  };
+}
+
+/**
+ * Plan de candidature : routage + clé script + mode pilotage (bundled vs URL distante).
  */
 exports.getApplyPlan = onCall(async (request) => {
   if (!request.auth) {
@@ -98,12 +124,14 @@ exports.getApplyPlan = onCall(async (request) => {
 
   const routeAs = legacyRouteAs(bankId, offerUrl);
   const scriptKey = legacyScriptKey(bankId, offerUrl);
+  const pilot = buildPilotPayload(scriptKey);
 
   return {
     ok: true,
-    planVersion: 1,
+    planVersion: 2,
     routeAs,
     scriptKey,
+    pilot,
     serverTime: Date.now(),
   };
 });

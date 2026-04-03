@@ -72,11 +72,13 @@ async function setVersion() {
   try {
     const manifest = chrome?.runtime?.getManifest?.() || {};
     const v = manifest.version || '?';
+    const versionName = manifest.version_name || '';
+    const versionLabel = versionName ? `v${v} (${versionName})` : `v${v}`;
     const badge = document.getElementById('version-badge');
     const badgeLogged = document.getElementById('version-badge-logged');
     const dateEl = document.getElementById('version-date');
-    if (badge) badge.textContent = `v${v}`;
-    if (badgeLogged) badgeLogged.textContent = `Version ${v}`;
+    if (badge) badge.textContent = versionLabel;
+    if (badgeLogged) badgeLogged.textContent = `Version ${versionLabel.replace(/^v/, '')}`;
     if (dateEl) {
       const { taleosLastUpdate } = await chrome.storage.local.get('taleosLastUpdate');
       dateEl.textContent = taleosLastUpdate ? `Mise à jour : ${taleosLastUpdate}` : '';
@@ -112,6 +114,115 @@ async function runDiagnostic() {
       ? '❌ Extension déconnectée — Rafraîchissez les pages Taleos'
       : `❌ Erreur : ${(e?.message || String(e)).slice(0, 50)}`;
     statusEl.style.color = '#dc2626';
+  }
+}
+
+function formatLastEventTime(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleTimeString('fr-FR');
+  } catch (_) {
+    return '';
+  }
+}
+
+function toFrenchAnalyticsLabel(eventName) {
+  const key = String(eventName || '').toLowerCase();
+  if (key === 'apply_start') return 'Démarrage de candidature';
+  if (key === 'apply_success') return 'Candidature envoyée';
+  if (key === 'apply_error') return 'Erreur de candidature';
+  if (key === 'apply_expired') return 'Offre expirée';
+  if (key === 'pin_received') return 'Code PIN reçu';
+  if (key === 'form_filled') return 'Formulaire rempli';
+  return 'Événement analytique';
+}
+
+const PILOT_TIER_STYLE = {
+  firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL renvoyée par getApplyPlan.' },
+  firebase_bundled: { color: '#2563eb', hint: 'Routage Firebase ; automation = fichiers de l’extension.' },
+  local_only: { color: '#6b7280', hint: 'Pas d’appel getApplyPlan (réglage extension ou sans token).' },
+  fallback_routing: { color: '#d97706', hint: 'getApplyPlan appelé mais en erreur — routage local.' },
+  fallback_automation: { color: '#dc2626', hint: 'Plan Firebase OK mais script distant refusé — bundle local.' }
+};
+
+async function refreshPilotStatus() {
+  const el = document.getElementById('pilot-status');
+  if (!el) return;
+  try {
+    const { taleos_last_pilot } = await chrome.storage.local.get('taleos_last_pilot');
+    if (!taleos_last_pilot || !taleos_last_pilot.tier) {
+      el.textContent = 'Pilotage : aucune candidature enregistrée depuis l’ouverture du popup.';
+      el.style.color = '#6b7280';
+      el.title = '';
+      return;
+    }
+    const t = taleos_last_pilot.at ? formatLastEventTime(taleos_last_pilot.at) : '';
+    const tier = taleos_last_pilot.tier;
+    const st = PILOT_TIER_STYLE[tier] || { color: '#6b7280', hint: '' };
+    el.style.color = st.color;
+    el.title = st.hint || '';
+    const line = `${taleos_last_pilot.label || tier}${t ? ` (${t})` : ''}`;
+    el.textContent = 'Pilotage : ' + line;
+  } catch (e) {
+    el.textContent = 'Pilotage : erreur lecture';
+    el.style.color = '#dc2626';
+  }
+}
+
+async function refreshAnalyticsStatus() {
+  const analyticsEl = document.getElementById('analytics-status');
+  if (!analyticsEl) return;
+  try {
+    const { taleos_ga4_last_event } = await chrome.storage.local.get('taleos_ga4_last_event');
+    if (!taleos_ga4_last_event) {
+      analyticsEl.textContent = 'Analytics: aucun événement encore';
+      analyticsEl.style.color = '#6b7280';
+      return;
+    }
+    const t = formatLastEventTime(taleos_ga4_last_event.at);
+    const eventName = taleos_ga4_last_event.name || 'unknown';
+    const eventLabel = toFrenchAnalyticsLabel(eventName);
+    if (taleos_ga4_last_event.ok) {
+      if (taleos_ga4_last_event.debug_valid === false) {
+        const issue = (taleos_ga4_last_event.debug_issue || 'événement à corriger').slice(0, 70);
+        analyticsEl.textContent = `Analytics: ${eventLabel} envoyé, mais invalide (${issue})`;
+        analyticsEl.style.color = '#d97706';
+      } else {
+        analyticsEl.textContent = `Analytics: ${eventLabel} validé (${t})`;
+        analyticsEl.style.color = '#059669';
+      }
+    } else {
+      const reason = taleos_ga4_last_event.status || taleos_ga4_last_event.error || 'erreur';
+      analyticsEl.textContent = `Analytics: ${eventLabel} en échec (${reason})`;
+      analyticsEl.style.color = '#dc2626';
+    }
+  } catch (e) {
+    analyticsEl.textContent = `Analytics: erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    analyticsEl.style.color = '#dc2626';
+  }
+}
+
+async function refreshAnalyticsLog() {
+  const logEl = document.getElementById('analytics-log');
+  if (!logEl) return;
+  try {
+    const { taleos_ga4_event_log = [] } = await chrome.storage.local.get('taleos_ga4_event_log');
+    if (!taleos_ga4_event_log.length) {
+      logEl.textContent = 'Aucun envoi enregistré.';
+      return;
+    }
+    const lines = taleos_ga4_event_log.slice(0, 8).map((e) => {
+      const t = formatLastEventTime(e.at);
+      const label = toFrenchAnalyticsLabel(e.name);
+      const state = e.ok ? 'OK' : 'KO';
+      const status = e.status ? `HTTP ${e.status}` : '';
+      const dbg = e.debug_valid === false ? 'debug invalide' : 'debug ok';
+      const errType = e.error_type ? ` | ${e.error_type}` : '';
+      return `${t} | ${label} | ${state} ${status} | ${dbg}${errType}`;
+    });
+    logEl.textContent = lines.join('\n');
+  } catch (e) {
+    logEl.textContent = `Erreur log analytics: ${(e?.message || 'unknown').slice(0, 40)}`;
   }
 }
 
@@ -154,6 +265,20 @@ async function init() {
   document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
   setupLogout();
   runDiagnostic();
+  refreshPilotStatus();
+  refreshAnalyticsStatus();
+  refreshAnalyticsLog();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.taleos_ga4_last_event) {
+      refreshAnalyticsStatus();
+    }
+    if (area === 'local' && changes.taleos_ga4_event_log) {
+      refreshAnalyticsLog();
+    }
+    if (area === 'local' && changes.taleos_last_pilot) {
+      refreshPilotStatus();
+    }
+  });
 
   const { taleosUserId, taleosIdToken, taleosUserEmail } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleosUserEmail']);
   if (taleosUserId && taleosIdToken) {

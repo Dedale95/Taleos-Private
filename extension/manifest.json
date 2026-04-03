@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.15",
-  "version_name": "1.1.15-server-apply-plan-getApplyPlan",
+  "version": "1.1.16",
+  "version_name": "1.1.16-pilot-firebase-remote-fallback",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -32,7 +32,10 @@
     "https://*.github.io/*",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.google-analytics.com/*",
-    "https://europe-west1-project-taleos.cloudfunctions.net/*"
+    "https://europe-west1-project-taleos.cloudfunctions.net/*",
+    "https://storage.googleapis.com/*",
+    "https://firebasestorage.googleapis.com/*",
+    "https://*.firebasestorage.app/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",

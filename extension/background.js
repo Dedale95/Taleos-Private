@@ -55,13 +55,40 @@ async function injectSgAutomation(tabId, profile) {
   try {
     await new Promise(r => setTimeout(r, 1500));
     const target = { tabId, allFrames: true };
-    await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', BANK_SCRIPT_MAP.societe_generale] });
-    await chrome.scripting.executeScript({
-      target,
-      func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
-      args: [profile]
-    });
-    console.log('[Taleos SG] Injection OK');
+    let sessionRa = null;
+    try {
+      const s = await chrome.storage.session.get('taleos_remote_automation');
+      sessionRa = s.taleos_remote_automation;
+    } catch (_) {}
+    const useRemoteSg =
+      sessionRa &&
+      sessionRa.scriptKey === 'societe_generale' &&
+      sessionRa.remoteSource &&
+      typeof sessionRa.until === 'number' &&
+      Date.now() < sessionRa.until;
+    if (useRemoteSg) {
+      const pilotExec = {
+        useRemote: true,
+        remoteSource: sessionRa.remoteSource
+      };
+      await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', 'scripts/remote-loader.js'] });
+      await chrome.scripting.executeScript({
+        target,
+        func: (payload) => {
+          if (window.__taleosInjectRemote) window.__taleosInjectRemote(payload.source, payload.data);
+        },
+        args: [{ source: pilotExec.remoteSource, data: profile }]
+      });
+      console.log('[Taleos SG] Injection OK (script distant Firebase)');
+    } else {
+      await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', BANK_SCRIPT_MAP.societe_generale] });
+      await chrome.scripting.executeScript({
+        target,
+        func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+        args: [profile]
+      });
+      console.log('[Taleos SG] Injection OK (bundle local)');
+    }
   } catch (e) {
     console.error('[Taleos SG] Erreur injection:', e);
   }
@@ -363,7 +390,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Tracking non bloquant du démarrage de candidature.
     trackApplyStart(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
     handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId, msg.offerMeta || null)
-      .then((result) => sendResponse(result?.error ? { error: result.error, openUrl: true } : { ok: true }))
+      .then((result) => {
+        if (result?.error) sendResponse({ error: result.error, openUrl: true });
+        else {
+          sendResponse({
+            ok: true,
+            pilotTier: result.pilotTier,
+            pilotLabel: result.pilotLabel,
+            routingSource: result.routingSource,
+            automationSource: result.automationSource
+          });
+        }
+      })
       .catch(e => sendResponse({ error: e.message || 'Erreur', openUrl: true }));
     return true;
   }
@@ -641,8 +679,8 @@ function computeLegacyRouteAs(bankId, offerUrl) {
 }
 
 /**
- * Plan serveur (Callable HTTPS). Ne remplace pas les scripts locaux : fournit routeAs + scriptKey.
- * Échec → fallback silencieux sur computeLegacyRouteAs.
+ * Plan serveur (Callable HTTPS) : routeAs, scriptKey, pilot (bundled vs URL distante).
+ * Échec → le caller utilise computeLegacyRouteAs + scripts locaux.
  */
 async function fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken) {
   const url = `https://${TALEOS_APPLY_PLAN_REGION}-${PROJECT_ID}.cloudfunctions.net/getApplyPlan`;
@@ -672,6 +710,167 @@ async function fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, compa
     throw new Error(result?.message || 'Plan serveur invalide');
   }
   return result;
+}
+
+async function sha256HexUtf8(text) {
+  const buf = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Résout le mode d'exécution : script HTTPS depuis Firebase ou bundle local.
+ * tier: firebase_remote | firebase_bundled | fallback_routing | fallback_automation
+ */
+async function resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped) {
+  const base = { scriptKey, scriptPath, planVersion: plan?.planVersion ?? null };
+  if (serverPlanSkipped) {
+    return {
+      ...base,
+      tier: 'local_only',
+      label: 'Local · getApplyPlan non appelé (option extension ou session)',
+      detail: '',
+      routingSource: 'local',
+      automationSource: 'bundled',
+      useRemote: false,
+      remoteSource: null
+    };
+  }
+  if (planFetchError || !plan) {
+    return {
+      ...base,
+      tier: 'fallback_routing',
+      label: 'Fallback · plan Firebase indisponible (routage + scripts locaux)',
+      detail: planFetchError || 'réponse vide',
+      routingSource: 'fallback',
+      automationSource: 'bundled',
+      useRemote: false,
+      remoteSource: null
+    };
+  }
+  const pilot = plan.pilot || {};
+  if (pilot.automationMode !== 'remote' || !pilot.remoteScriptUrl || typeof pilot.remoteScriptUrl !== 'string') {
+    return {
+      ...base,
+      tier: 'firebase_bundled',
+      label: 'Firebase · routage serveur, script embarqué (extension)',
+      detail: '',
+      routingSource: 'firebase',
+      automationSource: 'bundled',
+      useRemote: false,
+      remoteSource: null
+    };
+  }
+  const url = pilot.remoteScriptUrl.trim();
+  if (!/^https:\/\//i.test(url)) {
+    return {
+      ...base,
+      tier: 'fallback_automation',
+      label: 'Fallback · URL script distant invalide (HTTPS requis)',
+      detail: url.slice(0, 100),
+      routingSource: 'firebase',
+      automationSource: 'bundled',
+      useRemote: false,
+      remoteSource: null
+    };
+  }
+  try {
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    if (pilot.remoteScriptSha256) {
+      const hex = await sha256HexUtf8(text);
+      const want = String(pilot.remoteScriptSha256).toLowerCase().replace(/\s/g, '');
+      if (hex !== want) {
+        return {
+          ...base,
+          tier: 'fallback_automation',
+          label: 'Fallback · empreinte SHA-256 du script distant incorrecte',
+          detail: 'vérifier TALEOS_REMOTE_SHA_* côté Cloud Function',
+          routingSource: 'firebase',
+          automationSource: 'bundled',
+          useRemote: false,
+          remoteSource: null
+        };
+      }
+    }
+    return {
+      ...base,
+      tier: 'firebase_remote',
+      label: 'Firebase · automation chargée depuis le réseau (URL serveur)',
+      detail: url.slice(0, 140),
+      routingSource: 'firebase',
+      automationSource: 'remote',
+      useRemote: true,
+      remoteSource: text
+    };
+  } catch (e) {
+    return {
+      ...base,
+      tier: 'fallback_automation',
+      label: 'Fallback · téléchargement du script distant impossible',
+      detail: (e?.message || String(e)).slice(0, 200),
+      routingSource: 'firebase',
+      automationSource: 'bundled',
+      useRemote: false,
+      remoteSource: null
+    };
+  }
+}
+
+async function persistLastPilot(exec, meta) {
+  const record = {
+    tier: exec.tier,
+    label: exec.label,
+    detail: exec.detail || '',
+    routingSource: exec.routingSource,
+    automationSource: exec.automationSource,
+    scriptKey: meta.scriptKey,
+    planVersion: exec.planVersion,
+    routeAs: meta.routeAs,
+    bankId: meta.bankId,
+    jobId: meta.jobId,
+    jobTitle: (meta.jobTitle || '').slice(0, 120),
+    at: Date.now(),
+    offerUrlPreview: (meta.offerUrl || '').slice(0, 160)
+  };
+  await chrome.storage.local.set({ taleos_last_pilot: record });
+  if (exec.tier === 'firebase_remote' && exec.useRemote && exec.remoteSource) {
+    try {
+      await chrome.storage.session.set({
+        taleos_remote_automation: {
+          scriptKey: meta.scriptKey,
+          remoteSource: exec.remoteSource,
+          until: Date.now() + 15 * 60 * 1000
+        }
+      });
+    } catch (_) {}
+  } else {
+    try {
+      await chrome.storage.session.remove('taleos_remote_automation');
+    } catch (_) {}
+  }
+  console.warn('[Taleos Pilot]', exec.tier, '|', exec.label, exec.detail ? '| ' + exec.detail : '');
+}
+
+async function injectAutomationTab(tabId, profile, scriptPath, pilotExec) {
+  if (pilotExec.useRemote && pilotExec.remoteSource) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/remote-loader.js'] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (payload) => {
+        if (window.__taleosInjectRemote) window.__taleosInjectRemote(payload.source, payload.data);
+      },
+      args: [{ source: pilotExec.remoteSource, data: profile }]
+    });
+    return;
+  }
+  await chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] });
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
+    args: [profile]
+  });
 }
 
 async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId, offerMeta = null) {
@@ -734,19 +933,27 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
 
   let routeAs = computeLegacyRouteAs(bankId, offerUrl);
   let scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, bankId) ? bankId : 'credit_agricole';
+  let plan = null;
+  let planFetchError = null;
+  let serverPlanSkipped = false;
   try {
     const { taleos_use_server_apply_plan } = await chrome.storage.local.get('taleos_use_server_apply_plan');
     if (taleos_use_server_apply_plan !== false && taleosIdToken) {
-      const plan = await fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken);
+      plan = await fetchApplyPlanFromServer(bankId, offerUrl, jobId, jobTitle, companyName, taleosIdToken);
       if (plan.routeAs) routeAs = plan.routeAs;
       if (plan.scriptKey && Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, plan.scriptKey)) {
         scriptKey = plan.scriptKey;
       }
+    } else {
+      serverPlanSkipped = true;
     }
   } catch (e) {
-    console.warn('[Taleos] Plan serveur indisponible, fallback local:', e?.message || e);
+    planFetchError = e?.message || String(e);
+    console.warn('[Taleos] Plan serveur indisponible, fallback local:', planFetchError);
   }
   const scriptPath = BANK_SCRIPT_MAP[scriptKey] || BANK_SCRIPT_MAP.credit_agricole;
+  const pilotExec = await resolvePilotExecution(plan, planFetchError, scriptKey, scriptPath, serverPlanSkipped);
+  await persistLastPilot(pilotExec, { bankId, jobId, jobTitle, routeAs, offerUrl, scriptKey });
   chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
 
   if (routeAs === 'ca') {
@@ -778,13 +985,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
 
     const injectAndRun = (phase) => {
       const p = { ...profile, __phase: phase ?? 2 };
-      chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] }).then(() =>
-        chrome.scripting.executeScript({
-          target: { tabId },
-          func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
-          args: [p]
-        })
-      ).catch(e => console.error('[Taleos] Injection:', e));
+      injectAutomationTab(tabId, p, scriptPath, pilotExec).catch(e => console.error('[Taleos] Injection:', e));
     };
 
     const listener = async (id, info) => {
@@ -911,18 +1112,20 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       chrome.tabs.onUpdated.removeListener(listener);
       await new Promise(r => setTimeout(r, 1500));
       try {
-        await chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] });
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
-          args: [profile]
-        });
+        await injectAutomationTab(tabId, profile, scriptPath, pilotExec);
       } catch (e) {
         console.error('[Taleos] Injection:', e);
       }
     };
     chrome.tabs.onUpdated.addListener(listener);
   }
+  return {
+    ok: true,
+    pilotTier: pilotExec.tier,
+    pilotLabel: pilotExec.label,
+    routingSource: pilotExec.routingSource,
+    automationSource: pilotExec.automationSource
+  };
 }
 
 async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
