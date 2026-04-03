@@ -485,15 +485,21 @@
         return false;
       }
 
-      /** Détecte la page courante via les liens dtGotoPageLink (sélectionné = pas command-link-visited ou parent .selected/.current) */
+      /** Détecte la page courante via les liens dtGotoPageLink (étape courante = parent .selected/.current ou aria-current). */
       function getCurrentStepFromNav() {
         for (const root of getSearchRoots()) {
           const links = root.querySelectorAll?.('a[id*="dtGotoPageLink"]') || [];
           for (const a of links) {
             const t = ((a.title || a.textContent || '').toLowerCase());
-            const parent = a.closest?.('td, li, div');
-            const isSelected = parent?.classList?.contains?.('selected') || parent?.classList?.contains?.('current') ||
-              parent?.classList?.contains?.('active') || !a.classList?.contains?.('command-link-visited');
+            const parent = a.closest?.('td, li, div, tr');
+            const isSelected =
+              parent?.classList?.contains?.('selected') ||
+              parent?.classList?.contains?.('current') ||
+              parent?.classList?.contains?.('active') ||
+              a.classList?.contains?.('selected') ||
+              a.classList?.contains?.('active') ||
+              a.getAttribute?.('aria-current') === 'step' ||
+              a.getAttribute?.('aria-current') === 'true';
             if (!isSelected) continue;
             if (/informations personnelles|personal information/i.test(t)) return 'informations';
             if (/pièces jointes|attachments|document/i.test(t)) return 'pieces';
@@ -503,7 +509,24 @@
         return null;
       }
 
+      /**
+       * Récap final avant envoi : on y voit « Informations personnelles » / « Pièces jointes » en lecture seule,
+       * mais ce n’est pas l’étape 2 à remplir — ne pas relancer l’audit prénom/nom.
+       */
+      function isSgVerifierReviewPage() {
+        if (getCurrentStepFromNav() === 'verifier') return true;
+        for (const root of getSearchRoots()) {
+          const txt = (root.body?.innerText || '').slice(0, 22000).toLowerCase();
+          if (!/vérifier et postuler|review and submit/i.test(txt)) continue;
+          const fn = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
+          if (fn && fn.offsetParent !== null && !fn.readOnly && (fn.type === 'text' || fn.type === '')) return false;
+          return true;
+        }
+        return false;
+      }
+
       function isPiecesJointesPage() {
+        if (getCurrentStepFromNav() === 'verifier' || isSgVerifierReviewPage()) return false;
         const profileForm = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
         if (profileForm && profileForm.offsetParent !== null) return false;
         const nav = getCurrentStepFromNav();
@@ -521,8 +544,9 @@
         return false;
       }
 
-      /** Fallback : détecte l'étape 2 via le texte visible de la page */
+      /** Fallback : détecte l'étape 2 via le texte visible de la page (pas le récap « Vérifier et postuler »). */
       function isInformationsPersonnellesPage() {
+        if (isSgVerifierReviewPage()) return false;
         for (const root of getSearchRoots()) {
           const txt = ((root.title || '') + ' ' + (root.body?.innerText || '') + ' ' + (root.body?.innerHTML || '')).toLowerCase();
           if (/informations personnelles|personal information|persönliche angaben|información personal|informazioni personali/i.test(txt)) return true;
@@ -549,8 +573,9 @@
         return null;
       }
 
-      const step2Active = getCurrentStepFromNav() === 'informations' || hasProfileFormVisible() || isInformationsPersonnellesPage();
-      if (window === window.top && isFlowPage() && !isPiecesJointesPage() && !step2Active) {
+      const step2Active = !isSgVerifierReviewPage() &&
+        (getCurrentStepFromNav() === 'informations' || hasProfileFormVisible() || isInformationsPersonnellesPage());
+      if (window === window.top && isFlowPage() && !isSgVerifierReviewPage() && !isPiecesJointesPage() && !step2Active) {
         if (DEBUG) log('   Page flow.jsf (après reset)');
         await delay(2000);
         const flowBtn = findFlowStartOrContinueBtn();
@@ -680,12 +705,14 @@
       }
       if (DEBUG) log('📋 Validation disclaimer...');
       for (let wait = 0; wait < 8; wait++) {
+        if (isSgVerifierReviewPage()) break;
         if (hasProfileFormVisible() || isPiecesJointesPage()) break;
         await delay(1500);
       }
       let confidentialityPageLogged = false;
       for (let i = 0; i < 25; i++) {
         if (step2Active) break;
+        if (isSgVerifierReviewPage()) break;
         const firstNameInput = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
         if (firstNameInput && firstNameInput.offsetParent !== null) break;
         if (isPiecesJointesPage()) break;
@@ -884,7 +911,8 @@
         }
       }
 
-      const onStep2NotStep3 = (hasProfileFormVisible() || isInformationsPersonnellesPage()) && currentStep !== 'pieces' && !isPiecesJointesPage() && !profileFilled;
+      const onStep2NotStep3 = !isSgVerifierReviewPage() &&
+        (hasProfileFormVisible() || isInformationsPersonnellesPage()) && currentStep !== 'pieces' && !isPiecesJointesPage() && !profileFilled;
       if (onStep2NotStep3) {
       log('📂 [2/4] Informations personnelles');
       let fn = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
@@ -998,13 +1026,17 @@
 
       /** Clic « Postuler » final uniquement sur l’étape « Vérifier et postuler » — pas de bouton générique « submit ». */
       function findFinalSgPostulerButton() {
+        const onRecap = getCurrentStepFromNav() === 'verifier' || isSgVerifierReviewPage();
         for (const root of getSearchRoots()) {
           const byId = root.getElementById?.('et-ef-content-ftf-submitCmdBottom');
           if (byId && byId.offsetParent !== null) {
             const v = (byId.value || byId.textContent || '').trim().toLowerCase();
-            if (/postuler|submit application|^apply$|send application/i.test(v)) return byId;
+            if (/postuler|submit application|^apply$|send application|soumettre|envoyer/i.test(v)) return byId;
+            if (onRecap && /submitCmdBottom/i.test(byId.id || '')) return byId;
           }
-          const post = root.querySelector?.('input[id*="submitCmdBottom"][value*="Postuler"], input[value="Postuler"]');
+          const post = root.querySelector?.(
+            'input[id*="submitCmdBottom"][value*="Postuler"], input[value="Postuler"], input[id*="submitCmdBottom"][value*="Soumettre"]'
+          );
           if (post && post.offsetParent !== null) return post;
         }
         return null;
@@ -1287,8 +1319,9 @@
 
       const stepNavNow = getCurrentStepFromNav();
       const finalPostuler = findFinalSgPostulerButton();
-      if (window === window.top && stepNavNow === 'verifier' && finalPostuler) {
-        log('📂 [4/4] Validation finale — Clic « Postuler » (étape vérifier)');
+      const onVerifierRecap = stepNavNow === 'verifier' || isSgVerifierReviewPage();
+      if (window === window.top && onVerifierRecap && finalPostuler) {
+        log('📂 [4/4] Validation finale — Clic « Postuler » (récap Vérifier et postuler)');
         finalPostuler.scrollIntoView({ behavior: 'instant', block: 'center' });
         await delay(500);
         if (typeof window.cmdSubmit === 'function' && finalPostuler.id) {

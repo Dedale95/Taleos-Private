@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.27",
-  "version_name": "1.1.27-local-automation-only",
+  "version": "1.1.28",
+  "version_name": "1.1.28-local-automation-only",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
