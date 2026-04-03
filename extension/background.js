@@ -46,6 +46,15 @@ const BANK_SCRIPT_MAP = {
 
 const PROJECT_ID = 'project-taleos';
 
+/** Injecté avant chaque script d'automatisation banque (bannière commune). */
+const TALEOS_BANNER_SCRIPT = 'scripts/taleos-automation-banner.js';
+
+function injectFilesWithBanner(mainFiles) {
+  const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
+  if (arr[0] === TALEOS_BANNER_SCRIPT) return arr;
+  return [TALEOS_BANNER_SCRIPT, ...arr];
+}
+
 let authSyncResolve = null;
 const sgLastInject = new Map();
 const caLastInject = new Map();
@@ -350,7 +359,10 @@ async function injectSgAutomation(tabId, profile) {
       typeof sessionRa.until === 'number' &&
       Date.now() < sessionRa.until;
     if (useRemoteSg) {
-      await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', 'scripts/remote-loader.js'] });
+      await chrome.scripting.executeScript({
+        target,
+        files: injectFilesWithBanner(['scripts/job-family-mapping.js', 'scripts/remote-loader.js'])
+      });
       await chrome.scripting.executeScript({
         target,
         func: (payload) => {
@@ -360,7 +372,10 @@ async function injectSgAutomation(tabId, profile) {
       });
       console.log('[Taleos SG] OK — script distant (legacy URL)');
     } else {
-      await chrome.scripting.executeScript({ target, files: ['scripts/job-family-mapping.js', BANK_SCRIPT_MAP.societe_generale] });
+      await chrome.scripting.executeScript({
+        target,
+        files: injectFilesWithBanner(['scripts/job-family-mapping.js', BANK_SCRIPT_MAP.societe_generale])
+      });
       await chrome.scripting.executeScript({
         target,
         func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -436,7 +451,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   console.log('[Taleos CA] Injection phase 3 (listener persistant candidature)');
   await new Promise(r => setTimeout(r, 6000));
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.credit_agricole] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: injectFilesWithBanner([BANK_SCRIPT_MAP.credit_agricole])
+    });
     await chrome.scripting.executeScript({
       target: { tabId },
       func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -467,7 +485,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   console.log('[Taleos CA] Injection page offre (listener persistant)');
   await new Promise(r => setTimeout(r, 2000));
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.credit_agricole] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: injectFilesWithBanner([BANK_SCRIPT_MAP.credit_agricole])
+    });
     await chrome.scripting.executeScript({
       target: { tabId },
       func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -501,7 +522,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       console.log('[Taleos CA] Injection page offre (message ca_offer_page_ready)');
       await new Promise(r => setTimeout(r, 1500));
       try {
-        await chrome.scripting.executeScript({ target: { tabId }, files: [BANK_SCRIPT_MAP.credit_agricole] });
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: injectFilesWithBanner([BANK_SCRIPT_MAP.credit_agricole])
+        });
         await chrome.scripting.executeScript({
           target: { tabId },
           func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -540,7 +564,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
       const injectAndRun = (phase) => {
         const p = { ...profile, __phase: phase, __jobId: profile.__jobId, __jobTitle: profile.__jobTitle, __companyName: profile.__companyName, __offerUrl: offerUrl };
-        chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] }).then(() =>
+        chrome.scripting.executeScript({ target: { tabId }, files: injectFilesWithBanner([scriptPath]) }).then(() =>
           chrome.scripting.executeScript({
             target: { tabId },
             func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -783,7 +807,7 @@ async function reloadAndContinue(tabId, offerUrl, bankId, profile) {
     if (id !== tabId || info.status !== 'complete') return;
     chrome.tabs.onUpdated.removeListener(listener);
     const scriptPath = BANK_SCRIPT_MAP[bankId] || BANK_SCRIPT_MAP.credit_agricole;
-    chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] }).then(() =>
+    chrome.scripting.executeScript({ target: { tabId }, files: injectFilesWithBanner([scriptPath]) }).then(() =>
       chrome.scripting.executeScript({
         target: { tabId },
         func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
@@ -1012,7 +1036,7 @@ async function persistLastPilot(exec, meta) {
 
 async function injectAutomationTab(tabId, profile, scriptPath, pilotExec) {
   if (pilotExec.useRemote && pilotExec.remoteSource) {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/remote-loader.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: injectFilesWithBanner(['scripts/remote-loader.js']) });
     await chrome.scripting.executeScript({
       target: { tabId },
       func: (payload) => {
@@ -1022,7 +1046,7 @@ async function injectAutomationTab(tabId, profile, scriptPath, pilotExec) {
     });
     return;
   }
-  await chrome.scripting.executeScript({ target: { tabId }, files: [scriptPath] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: injectFilesWithBanner([scriptPath]) });
   await chrome.scripting.executeScript({
     target: { tabId },
     func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },

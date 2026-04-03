@@ -35,16 +35,20 @@
   const BANNER_ID = 'taleos-ca-automation-banner';
   function showAutomationBanner() {
     if (document.getElementById(BANNER_ID)) return;
+    const api = globalThis.__TALEOS_AUTOMATION_BANNER__;
     const banner = document.createElement('div');
     banner.id = BANNER_ID;
-    banner.innerHTML = '⚠️ Automatisation Taleos en cours — Ne touchez à rien, cela pourrait perturber le processus.';
-    Object.assign(banner.style, {
-      position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483647',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white',
-      padding: '10px 20px', fontSize: '14px', fontWeight: '600', textAlign: 'center',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
-    });
+    banner.textContent = api ? api.getText() : '⏳ Automatisation Taleos en cours — Ne touchez à rien.';
+    if (api) api.applyStyle(banner);
+    else {
+      Object.assign(banner.style, {
+        position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483647',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white',
+        padding: '10px 20px', fontSize: '14px', fontWeight: '600', textAlign: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
+      });
+    }
     const root = document.body || document.documentElement;
     root.insertBefore(banner, root.firstChild);
   }
