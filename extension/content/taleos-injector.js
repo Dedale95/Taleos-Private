@@ -561,4 +561,44 @@
       }));
     });
   });
+
+  window.addEventListener('taleos-request-outlook-status', function() {
+    chrome.runtime.sendMessage({ action: 'outlook_get_link_status' }).then(function(res) {
+      window.dispatchEvent(new CustomEvent('taleos-outlook-status-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function(err) {
+      window.dispatchEvent(new CustomEvent('taleos-outlook-status-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
+
+  window.addEventListener('taleos-request-outlook-link', function(e) {
+    const d = e.detail || {};
+    chrome.runtime.sendMessage({
+      action: 'outlook_link',
+      outlookEmail: d.outlookEmail || ''
+    }).then(function(res) {
+      window.dispatchEvent(new CustomEvent('taleos-outlook-link-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function(err) {
+      window.dispatchEvent(new CustomEvent('taleos-outlook-link-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
+
+  window.addEventListener('taleos-request-outlook-unlink', function() {
+    chrome.runtime.sendMessage({ action: 'outlook_unlink' }).then(function(res) {
+      window.dispatchEvent(new CustomEvent('taleos-outlook-unlink-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function(err) {
+      window.dispatchEvent(new CustomEvent('taleos-outlook-unlink-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
 })();

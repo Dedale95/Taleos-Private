@@ -747,6 +747,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  if (msg.action === 'outlook_get_link_status') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, message: 'Session Taleos manquante' });
+          return;
+        }
+        const st = await getOutlookIntegrationState(taleosUserId, taleosIdToken);
+        sendResponse({ ok: true, ...st });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur statut Outlook' });
+      }
+    })();
+    return true;
+  }
+  if (msg.action === 'outlook_link') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken, taleosUserEmail } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleosUserEmail']);
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, message: 'Session Taleos manquante' });
+          return;
+        }
+        await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
+          status: 'connected',
+          outlook_email: String(msg.outlookEmail || taleosUserEmail || '').trim()
+        });
+        chrome.tabs.create({ url: 'https://outlook.live.com/mail/0/', active: false }).catch(() => {});
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur liaison Outlook' });
+      }
+    })();
+    return true;
+  }
+  if (msg.action === 'outlook_unlink') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, message: 'Session Taleos manquante' });
+          return;
+        }
+        await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
+          status: 'disconnected',
+          outlook_email: ''
+        });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur déliaison Outlook' });
+      }
+    })();
+    return true;
+  }
+  if (msg.action === 'bpce_pin_code') {
+    const pinCode = String(msg.pinCode || '').trim();
+    if (/^\d{6}$/.test(pinCode)) {
+      chrome.storage.local.set({ taleos_bpce_pin_code: pinCode });
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false, message: 'PIN invalide' });
+    }
+    return true;
+  }
   if (msg.action === 'test_credentials') {
     testCredentials(msg.bankId).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
     return true;
@@ -960,6 +1025,41 @@ async function saveGmailIntegrationToFirestore(uid, idToken, data) {
     body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error('Erreur sauvegarde intégration Gmail');
+}
+
+async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
+  const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const docPath = `profiles/${uid}/integrations/outlook`;
+  const body = {
+    fields: {
+      provider: { stringValue: 'outlook' },
+      status: { stringValue: data.status || 'connected' },
+      outlook_email: { stringValue: String(data.outlook_email || '') },
+      linked_at: { timestampValue: new Date().toISOString() },
+      updated_at: { timestampValue: new Date().toISOString() }
+    }
+  };
+  const res = await fetch(`${base}/${docPath}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('Erreur sauvegarde intégration Outlook');
+}
+
+async function getOutlookIntegrationState(uid, idToken) {
+  const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const docPath = `profiles/${uid}/integrations/outlook`;
+  const res = await fetch(`${base}/${docPath}`, { headers: { Authorization: `Bearer ${idToken}` } });
+  if (!res.ok) return { connected: false, outlook_email: '' };
+  const data = parseFirestoreDoc(await res.json());
+  return {
+    connected: (data.status || '') === 'connected',
+    outlook_email: data.outlook_email || ''
+  };
 }
 
 async function getGmailAuthState(uid, idToken) {
