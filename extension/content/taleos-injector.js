@@ -519,4 +519,46 @@
       }));
     });
   });
+
+  window.addEventListener('taleos-request-gmail-status', function() {
+    chrome.runtime.sendMessage({ action: 'gmail_get_link_status' }).then(function(res) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-status-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function(err) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-status-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
+
+  window.addEventListener('taleos-request-gmail-link-save', function(e) {
+    const d = e.detail || {};
+    chrome.runtime.sendMessage({
+      action: 'gmail_link_save_token',
+      accessToken: d.accessToken || '',
+      expiresInSec: d.expiresInSec || 3600,
+      gmailEmail: d.gmailEmail || ''
+    }).then(function(res) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-link-save-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function(err) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-link-save-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
+
+  window.addEventListener('taleos-request-gmail-unlink', function() {
+    chrome.runtime.sendMessage({ action: 'gmail_unlink' }).then(function(res) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-unlink-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function(err) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-unlink-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
 })();

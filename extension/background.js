@@ -45,6 +45,8 @@ const BANK_SCRIPT_MAP = {
 };
 
 const PROJECT_ID = 'project-taleos';
+const GMAIL_STORAGE_KEY_PREFIX = 'taleos_gmail_auth_';
+const GMAIL_REQUIRED_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 
 /** Injecté avant chaque script d'automatisation banque (bannière commune). */
 const TALEOS_BANNER_SCRIPT = 'scripts/taleos-automation-banner.js';
@@ -674,6 +676,77 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  if (msg.action === 'gmail_get_link_status') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId) {
+          sendResponse({ ok: false, message: 'Utilisateur non connecté' });
+          return;
+        }
+        const status = await getGmailAuthState(taleosUserId, taleosIdToken);
+        sendResponse({ ok: true, ...status });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur statut Gmail' });
+      }
+    })();
+    return true;
+  }
+  if (msg.action === 'gmail_link_save_token') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, message: 'Session Taleos manquante' });
+          return;
+        }
+        const accessToken = String(msg.accessToken || '').trim();
+        if (!accessToken) {
+          sendResponse({ ok: false, message: 'Token Gmail manquant' });
+          return;
+        }
+        const ttl = Number(msg.expiresInSec || 3600);
+        const authObj = {
+          access_token: accessToken,
+          gmail_email: String(msg.gmailEmail || '').trim(),
+          scope: GMAIL_REQUIRED_SCOPE,
+          created_at: Date.now(),
+          expires_at: Date.now() + Math.max(300, ttl) * 1000
+        };
+        await chrome.storage.local.set({ [getGmailStorageKey(taleosUserId)]: authObj });
+        await saveGmailIntegrationToFirestore(taleosUserId, taleosIdToken, {
+          status: 'connected',
+          gmail_email: authObj.gmail_email
+        });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur liaison Gmail' });
+      }
+    })();
+    return true;
+  }
+  if (msg.action === 'gmail_unlink') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, message: 'Session Taleos manquante' });
+          return;
+        }
+        const key = getGmailStorageKey(taleosUserId);
+        const oldAuth = (await chrome.storage.local.get(key))[key] || null;
+        await chrome.storage.local.remove(key);
+        if (oldAuth && oldAuth.access_token) {
+          fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(oldAuth.access_token)}`, { method: 'POST' }).catch(() => {});
+        }
+        await saveGmailIntegrationToFirestore(taleosUserId, taleosIdToken, { status: 'disconnected', gmail_email: '' });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur déliaison Gmail' });
+      }
+    })();
+    return true;
+  }
   if (msg.action === 'test_credentials') {
     testCredentials(msg.bankId).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
     return true;
@@ -859,6 +932,60 @@ async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, ema
     });
   }
   if (!res.ok) throw new Error(await res.text());
+}
+
+function getGmailStorageKey(uid) {
+  return `${GMAIL_STORAGE_KEY_PREFIX}${uid}`;
+}
+
+async function saveGmailIntegrationToFirestore(uid, idToken, data) {
+  const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const docPath = `profiles/${uid}/integrations/gmail`;
+  const body = {
+    fields: {
+      provider: { stringValue: 'gmail' },
+      status: { stringValue: data.status || 'connected' },
+      gmail_email: { stringValue: String(data.gmail_email || '') },
+      scope: { stringValue: GMAIL_REQUIRED_SCOPE },
+      linked_at: { timestampValue: new Date().toISOString() },
+      updated_at: { timestampValue: new Date().toISOString() }
+    }
+  };
+  const res = await fetch(`${base}/${docPath}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('Erreur sauvegarde intégration Gmail');
+}
+
+async function getGmailAuthState(uid, idToken) {
+  const key = getGmailStorageKey(uid);
+  const local = (await chrome.storage.local.get(key))[key] || null;
+  let firestoreState = null;
+  if (idToken) {
+    const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+    const docPath = `profiles/${uid}/integrations/gmail`;
+    const res = await fetch(`${base}/${docPath}`, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (res.ok) {
+      const data = parseFirestoreDoc(await res.json());
+      firestoreState = {
+        status: data.status || 'connected',
+        gmail_email: data.gmail_email || ''
+      };
+    }
+  }
+  const now = Date.now();
+  const tokenValid = !!(local && local.access_token && local.expires_at && local.expires_at > now + 60 * 1000);
+  return {
+    connected: !!((firestoreState && firestoreState.status === 'connected') || tokenValid),
+    tokenValid,
+    gmail_email: (local && local.gmail_email) || (firestoreState && firestoreState.gmail_email) || '',
+    expires_at: local && local.expires_at ? local.expires_at : null
+  };
 }
 
 async function runTestConnection(msg) {
@@ -1703,15 +1830,23 @@ async function fetchStorageFileAsBase64(storagePath) {
  */
 async function checkGmailForBpcePin(tabId) {
   try {
-    const { taleosIdToken } = await chrome.storage.local.get('taleosIdToken');
-    if (!taleosIdToken) return;
+    const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+    if (!taleosUserId) return;
+    const key = getGmailStorageKey(taleosUserId);
+    const gmailAuth = (await chrome.storage.local.get(key))[key] || null;
+    const hasGmailToken = !!(gmailAuth && gmailAuth.access_token && gmailAuth.expires_at > Date.now() + 30 * 1000);
+    const bearerToken = hasGmailToken ? gmailAuth.access_token : taleosIdToken;
+    if (!bearerToken) return;
+    if (!hasGmailToken) {
+      console.warn('[Taleos BPCE] Gmail non lié ou token expiré - liaison Gmail recommandée dans Connexions.');
+    }
 
     console.log('[Taleos BPCE] Recherche du code PIN dans Gmail...');
     
     // Requête Gmail : chercher les emails de l'expéditeur Oracle BPCE reçus récemment
     const q = encodeURIComponent('from:ekez.fa.sender@workflow.mail.em2.cloud.oracle.com "Confirmer votre identité"');
     const res = await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=1`, {
-      headers: { Authorization: `Bearer ${taleosIdToken}` }
+      headers: { Authorization: `Bearer ${bearerToken}` }
     });
     
     if (!res.ok) return;
@@ -1720,7 +1855,7 @@ async function checkGmailForBpcePin(tabId) {
     if (data.messages && data.messages.length > 0) {
       const msgId = data.messages[0].id;
       const msgRes = await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${msgId}`, {
-        headers: { Authorization: `Bearer ${taleosIdToken}` }
+        headers: { Authorization: `Bearer ${bearerToken}` }
       });
       const msgData = await msgRes.json();
       
