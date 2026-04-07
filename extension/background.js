@@ -46,6 +46,7 @@ const BANK_SCRIPT_MAP = {
 
 const PROJECT_ID = 'project-taleos';
 const GMAIL_STORAGE_KEY_PREFIX = 'taleos_gmail_auth_';
+const OUTLOOK_LINK_STATE_KEY_PREFIX = 'taleos_outlook_link_state_';
 const GMAIL_REQUIRED_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const OUTLOOK_OAUTH_SCOPE = 'offline_access Mail.Read User.Read openid profile email';
 const OUTLOOK_CONFIG_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/outlookOAuthConfig';
@@ -786,7 +787,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const code = u.searchParams.get('code');
         if (!code) throw new Error('Code OAuth Outlook introuvable');
         await exchangeOutlookCodeWithBackend(code, verifier, redirectUri);
-        await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, { status: 'connected', outlook_email: '' });
+        await setOutlookLocalState(taleosUserId, { connected: true, outlook_email: '' });
+        try {
+          await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, { status: 'connected', outlook_email: '' });
+        } catch (_) {
+          // Le lien OAuth est déjà actif côté backend; on garde un état local si Firestore refuse.
+        }
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur liaison Outlook' });
@@ -807,10 +813,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${taleosIdToken}` },
           body: JSON.stringify({})
         }).catch(() => {});
-        await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
-          status: 'disconnected',
-          outlook_email: ''
-        });
+        await setOutlookLocalState(taleosUserId, { connected: false, outlook_email: '' });
+        try {
+          await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
+            status: 'disconnected',
+            outlook_email: ''
+          });
+        } catch (_) {
+          // Non bloquant: la déliaison backend est demandée et l'état local est vidé.
+        }
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur déliaison Outlook' });
@@ -1019,6 +1030,33 @@ function getGmailStorageKey(uid) {
   return `${GMAIL_STORAGE_KEY_PREFIX}${uid}`;
 }
 
+function getOutlookStorageKey(uid) {
+  return `${OUTLOOK_LINK_STATE_KEY_PREFIX}${uid}`;
+}
+
+async function setOutlookLocalState(uid, state) {
+  if (!uid) return;
+  const key = getOutlookStorageKey(uid);
+  await chrome.storage.local.set({
+    [key]: {
+      connected: !!(state && state.connected),
+      outlook_email: String((state && state.outlook_email) || ''),
+      updated_at: Date.now()
+    }
+  });
+}
+
+async function getOutlookLocalState(uid) {
+  if (!uid) return { connected: false, outlook_email: '' };
+  const key = getOutlookStorageKey(uid);
+  const local = (await chrome.storage.local.get(key))[key] || null;
+  if (!local) return { connected: false, outlook_email: '' };
+  return {
+    connected: !!local.connected,
+    outlook_email: String(local.outlook_email || '')
+  };
+}
+
 async function saveGmailIntegrationToFirestore(uid, idToken, data) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const docPath = `profiles/${uid}/integrations/gmail`;
@@ -1099,7 +1137,7 @@ async function getOutlookIntegrationState(uid, idToken) {
       outlook_email: data.outlook_email || data.email || ''
     };
   }
-  return { connected: false, outlook_email: '' };
+  return getOutlookLocalState(uid);
 }
 
 function b64UrlEncode(bytes) {
