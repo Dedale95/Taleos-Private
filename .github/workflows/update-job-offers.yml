@@ -24,6 +24,10 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # Limite la revalidation HTTP par base (voir update_all_jobs.py) pour finir dans les temps
       TALEOS_REVALIDATE_MAX_PER_SOURCE: "600"
+      # Ne jamais publier si la base BNP n'a pas été produite ce run (évite les chiffres obsolètes).
+      TALEOS_REQUIRE_BNP_DB: "1"
+      # Interdit le fallback "préserver ancien BNP" en CI.
+      TALEOS_PRESERVE_BNP_IF_MISSING: "0"
 
     steps:
       - name: Checkout

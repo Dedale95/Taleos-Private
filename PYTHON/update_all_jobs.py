@@ -169,6 +169,14 @@ def run_script(script_name, cwd=PYTHON_DIR, timeout=3600):
         print(f"❌ Erreur lors de l'exécution de {script_name}: {e}")
         return False
 
+def _ensure_db_exists_or_fail(db_path: Path, label: str):
+    if db_path.exists():
+        return
+    raise RuntimeError(
+        f"Base {label} manquante ({db_path}). "
+        "Arrêt pour éviter un export partiel avec données obsolètes."
+    )
+
 def merge_from_databases():
     """Fusionne les données depuis les bases SQLite (dont job_description = texte complet pour recherche par mots-clés)."""
     print(f"🔄 Fusion des données depuis les bases SQLite vers {OUTPUT_CSV}...")
@@ -388,29 +396,49 @@ if __name__ == "__main__":
     print(f"Date : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
+    failures = []
+    require_bnp_db = (os.environ.get("TALEOS_REQUIRE_BNP_DB", "").strip() == "1")
+
     # 1. Scraper Crédit Agricole
-    run_script("credit_agricole_scraper.py")
+    if not run_script("credit_agricole_scraper.py"):
+        failures.append("credit_agricole_scraper.py")
     
     # 2. Scraper Société Générale
-    run_script("societe_generale_scraper_improved.py")
+    if not run_script("societe_generale_scraper_improved.py"):
+        failures.append("societe_generale_scraper_improved.py")
 
     # 3. Scraper Deloitte
-    run_script("deloitte_scraper.py")
+    if not run_script("deloitte_scraper.py"):
+        failures.append("deloitte_scraper.py")
 
     # 4. Scraper BNP Paribas
-    run_script("bnp_paribas_scraper.py")
+    if not run_script("bnp_paribas_scraper.py"):
+        failures.append("bnp_paribas_scraper.py")
+    if require_bnp_db:
+        _ensure_db_exists_or_fail(BNP_DB, "BNP Paribas")
 
     # 5. Scraper BPCE
-    run_script("bpce_scraper.py")
+    if not run_script("bpce_scraper.py"):
+        failures.append("bpce_scraper.py")
 
     # 6. Scraper Bpifrance
-    run_script("bpifrance_scraper.py")
+    if not run_script("bpifrance_scraper.py"):
+        failures.append("bpifrance_scraper.py")
 
     # 7. Scraper Crédit Mutuel
-    run_script("credit_mutuel_scraper.py")
+    if not run_script("credit_mutuel_scraper.py"):
+        failures.append("credit_mutuel_scraper.py")
 
     # 7b. Scraper ODDO BHF
-    run_script("oddo_bhf_scraper.py")
+    if not run_script("oddo_bhf_scraper.py"):
+        failures.append("oddo_bhf_scraper.py")
+
+    if failures:
+        print("\n❌ Scrapers en échec:")
+        for s in failures:
+            print(f"   - {s}")
+        if require_bnp_db:
+            raise RuntimeError("Au moins un scraper a échoué en mode strict (TALEOS_REQUIRE_BNP_DB=1).")
 
     # 8. Revalidation globale des offres encore marquées Live
     revalidate_live_offers_all_sources()

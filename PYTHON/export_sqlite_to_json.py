@@ -19,6 +19,7 @@ import re
 import sqlite3
 import json
 import unicodedata
+import os
 from pathlib import Path
 from datetime import datetime
 from country_normalizer import get_country_from_city, normalize_country
@@ -427,20 +428,29 @@ def main():
         ("ODDO BHF", ODDO_BHF_DB),
     ]
 
-    # Si BNP_DB absent : préserver les offres BNP du JSON existant (évite de les écraser en local)
+    # Mode strict pour éviter d'exporter des données BNP obsolètes en cas d'échec scraper/base manquante.
+    require_bnp_db = (os.environ.get("TALEOS_REQUIRE_BNP_DB", "").strip() == "1")
+    preserve_bnp_if_missing = (os.environ.get("TALEOS_PRESERVE_BNP_IF_MISSING", "").strip() == "1")
+
+    # Si BNP_DB absent : préserver les offres BNP du JSON existant uniquement en mode explicite.
     bnp_jobs_preserved = []
     if not BNP_DB.exists():
-        live_path = HTML_DIR / "scraped_jobs_live.json"
-        if live_path.exists():
-            try:
-                with open(live_path, 'r', encoding='utf-8') as f:
-                    existing = json.load(f)
-                bnp_jobs_preserved = [j for j in existing
-                                      if any(p in (j.get('company_name') or '').lower() for p in BNP_PATTERNS)]
-                if bnp_jobs_preserved:
-                    print(f"   📌 {len(bnp_jobs_preserved)} offres BNP préservées du JSON existant (base absente)")
-            except Exception:
-                pass
+        if require_bnp_db:
+            raise RuntimeError(
+                f"BNP DB manquante: {BNP_DB}. Abandon export (TALEOS_REQUIRE_BNP_DB=1) pour éviter des offres BNP obsolètes."
+            )
+        if preserve_bnp_if_missing:
+            live_path = HTML_DIR / "scraped_jobs_live.json"
+            if live_path.exists():
+                try:
+                    with open(live_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                    bnp_jobs_preserved = [j for j in existing
+                                          if any(p in (j.get('company_name') or '').lower() for p in BNP_PATTERNS)]
+                    if bnp_jobs_preserved:
+                        print(f"   📌 {len(bnp_jobs_preserved)} offres BNP préservées du JSON existant (base absente)")
+                except Exception:
+                    pass
 
     for name, db_path in sources_info:
         print(f"📁 Lecture de {name} depuis {db_path.name}...")
