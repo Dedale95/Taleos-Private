@@ -22,6 +22,18 @@ const loginError = document.getElementById('login-error');
 const loginLoading = document.getElementById('login-loading');
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
+const passwordInput = document.getElementById('password');
+const passwordToggleBtn = document.getElementById('password-toggle-btn');
+
+function setupPasswordToggle() {
+  if (!passwordInput || !passwordToggleBtn) return;
+  passwordToggleBtn.addEventListener('click', () => {
+    const visible = passwordInput.type === 'text';
+    passwordInput.type = visible ? 'password' : 'text';
+    passwordToggleBtn.classList.toggle('is-visible', !visible);
+    passwordToggleBtn.setAttribute('aria-label', visible ? 'Afficher le mot de passe' : 'Masquer le mot de passe');
+  });
+}
 
 function showLogin() {
   if (pendingLoginTimeout) {
@@ -255,6 +267,7 @@ async function refreshTaleosTabs() {
 
 async function init() {
   await setVersion();
+  setupPasswordToggle();
   const doReload = async () => {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeTab?.id) chrome.tabs.reload(activeTab.id).catch(() => {});
