@@ -47,7 +47,11 @@ const BANK_SCRIPT_MAP = {
 const PROJECT_ID = 'project-taleos';
 const GMAIL_STORAGE_KEY_PREFIX = 'taleos_gmail_auth_';
 const GMAIL_REQUIRED_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
-const OUTLOOK_CREDENTIALS_KEY = 'taleos_outlook_credentials';
+const OUTLOOK_OAUTH_SCOPE = 'offline_access Mail.Read User.Read openid profile email';
+const OUTLOOK_CONFIG_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/outlookOAuthConfig';
+const OUTLOOK_EXCHANGE_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/outlookOAuthExchange';
+const OUTLOOK_FETCH_OTP_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/outlookFetchLatestOtp';
+const OUTLOOK_UNLINK_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/outlookUnlinkSecure';
 
 /** Injecté avant chaque script d'automatisation banque (bannière commune). */
 const TALEOS_BANNER_SCRIPT = 'scripts/taleos-automation-banner.js';
@@ -767,30 +771,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'outlook_link') {
     (async () => {
       try {
-        const { taleosUserId, taleosIdToken, taleosUserEmail } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleosUserEmail']);
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
         if (!taleosUserId || !taleosIdToken) {
           sendResponse({ ok: false, message: 'Session Taleos manquante' });
           return;
         }
-        const outlookEmail = String(msg.outlookEmail || taleosUserEmail || '').trim();
-        const outlookPassword = String(msg.outlookPassword || '').trim();
-        if (!outlookEmail || !outlookEmail.includes('@') || !outlookPassword) {
-          sendResponse({ ok: false, message: 'Email ou mot de passe Outlook invalide' });
-          return;
-        }
-        await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
-          status: 'connected',
-          outlook_email: outlookEmail,
-          password_encoded: btoa(outlookPassword)
-        });
-        await chrome.storage.local.set({
-          [OUTLOOK_CREDENTIALS_KEY]: {
-            email: outlookEmail,
-            password_b64: btoa(outlookPassword),
-            linked_at: Date.now()
-          }
-        });
-        ensureOutlookBackgroundTab().catch(() => {});
+        const { verifier, challenge } = await buildPkce();
+        const outlookClientId = await getOutlookOAuthClientId();
+        const redirectUri = chrome.identity.getRedirectURL('microsoft');
+        const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${encodeURIComponent(outlookClientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&response_mode=query&scope=${encodeURIComponent(OUTLOOK_OAUTH_SCOPE)}&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256&prompt=select_account`;
+        const redirected = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
+        if (!redirected) throw new Error('Redirection OAuth Outlook absente');
+        const u = new URL(redirected);
+        const code = u.searchParams.get('code');
+        if (!code) throw new Error('Code OAuth Outlook introuvable');
+        await exchangeOutlookCodeWithBackend(code, verifier, redirectUri);
+        await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, { status: 'connected', outlook_email: '' });
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur liaison Outlook' });
@@ -806,11 +802,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: false, message: 'Session Taleos manquante' });
           return;
         }
+        fetch(OUTLOOK_UNLINK_CF_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${taleosIdToken}` },
+          body: JSON.stringify({})
+        }).catch(() => {});
         await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
           status: 'disconnected',
           outlook_email: ''
         });
-        await chrome.storage.local.remove([OUTLOOK_CREDENTIALS_KEY]);
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur déliaison Outlook' });
@@ -1045,8 +1045,11 @@ async function saveGmailIntegrationToFirestore(uid, idToken, data) {
 
 async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-  const docPath = `profiles/${uid}/career_connections/outlook`;
-  const passwordEncoded = data.password_encoded || '';
+  const docPaths = [
+    `profiles/${uid}/career_connections/outlook`,
+    `profiles/${uid}/integrations/outlook`,
+    `profiles/${uid}/mail_connections/outlook`
+  ];
   const body = {
     fields: {
       bankName: { stringValue: 'Outlook' },
@@ -1055,21 +1058,33 @@ async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
       status: { stringValue: data.status || 'connected' },
       outlook_email: { stringValue: String(data.outlook_email || '') },
       email: { stringValue: String(data.outlook_email || '') },
-      password: { stringValue: passwordEncoded },
       timestamp: { timestampValue: new Date().toISOString() },
       linked_at: { timestampValue: new Date().toISOString() },
       updated_at: { timestampValue: new Date().toISOString() }
     }
   };
-  const res = await fetch(`${base}/${docPath}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`
-    },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) throw new Error('Erreur sauvegarde intégration Outlook');
+  let lastStatus = 0;
+  let lastText = '';
+  for (const docPath of docPaths) {
+    const res = await fetch(`${base}/${docPath}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`
+      },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) return true;
+    lastStatus = res.status || 0;
+    lastText = await res.text().catch(() => '');
+  }
+  if (lastStatus === 401) {
+    throw new Error('Session expirée. Déconnectez/reconnectez Taleos puis réessayez.');
+  }
+  if (lastStatus === 403) {
+    throw new Error('Permissions Firestore insuffisantes pour enregistrer Outlook.');
+  }
+  throw new Error(`Erreur sauvegarde intégration Outlook (${lastStatus || 'inconnue'})${lastText ? `: ${lastText}` : ''}`);
 }
 
 async function getOutlookIntegrationState(uid, idToken) {
@@ -1087,21 +1102,44 @@ async function getOutlookIntegrationState(uid, idToken) {
   return { connected: false, outlook_email: '' };
 }
 
-async function ensureOutlookBackgroundTab() {
-  const { [OUTLOOK_CREDENTIALS_KEY]: creds } = await chrome.storage.local.get([OUTLOOK_CREDENTIALS_KEY]);
-  if (!creds || !creds.email || !creds.password_b64) return false;
-  const existing = await chrome.tabs.query({
-    url: [
-      'https://outlook.live.com/*',
-      'https://outlook.office.com/*',
-      'https://outlook.office365.com/*',
-      'https://login.live.com/*',
-      'https://login.microsoftonline.com/*'
-    ]
+function b64UrlEncode(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+async function buildPkce() {
+  const verifierArr = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = b64UrlEncode(verifierArr);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = b64UrlEncode(new Uint8Array(digest));
+  return { verifier, challenge };
+}
+
+async function exchangeOutlookCodeWithBackend(code, verifier, redirectUri) {
+  const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+  if (!taleosIdToken) throw new Error('Session Taleos manquante');
+  const res = await fetch(OUTLOOK_EXCHANGE_CF_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${taleosIdToken}`
+    },
+    body: JSON.stringify({ code, codeVerifier: verifier, redirectUri })
   });
-  if (existing && existing.length > 0) return true;
-  await chrome.tabs.create({ url: 'https://outlook.live.com/mail/0/', active: false });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.ok !== true) throw new Error(json.error || 'Échec exchange Outlook OAuth');
   return true;
+}
+
+async function getOutlookOAuthClientId() {
+  const res = await fetch(OUTLOOK_CONFIG_CF_URL, { method: 'GET' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.ok !== true || !json.clientId) {
+    throw new Error(json.error || 'Configuration Outlook OAuth indisponible');
+  }
+  return String(json.clientId);
 }
 
 async function getGmailAuthState(uid, idToken) {
@@ -2018,14 +2056,35 @@ async function checkGmailForBpcePin(tabId) {
   }
 }
 
+async function checkOutlookForBpcePin(tabId) {
+  try {
+    const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+    if (!taleosIdToken) return;
+    const res = await fetch(OUTLOOK_FETCH_OTP_CF_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${taleosIdToken}`
+      },
+      body: JSON.stringify({})
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.ok !== true) return;
+    const pinCode = String(json.pinCode || '').trim();
+    if (!/^\d{6}$/.test(pinCode)) return;
+    chrome.tabs.sendMessage(tabId, { action: 'bpce_pin_code', pinCode });
+    chrome.storage.local.set({ taleos_bpce_pin_code: pinCode });
+  } catch (_) {}
+}
+
 // Surveillance des onglets pour déclencher la recherche du PIN
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.status === 'complete' && tab.url?.includes('oraclecloud.com') && tab.url?.includes('/apply/email')) {
-    ensureOutlookBackgroundTab().catch(() => {});
     // On lance une recherche toutes les 5 secondes pendant 2 minutes max
     let attempts = 0;
     const interval = setInterval(() => {
       checkGmailForBpcePin(tabId);
+      checkOutlookForBpcePin(tabId);
       if (++attempts > 24) clearInterval(interval);
     }, 5000);
   }
