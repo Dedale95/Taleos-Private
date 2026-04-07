@@ -14,6 +14,58 @@
   const PIN_REGEX = /\b(\d{6})\b/;
   const ORACLE_SENDER = 'ekez.fa.sender@workflow.mail.em2.cloud.oracle.com';
   const MAX_PIN_AGE_MS = 2 * 60 * 1000; // 2 minutes
+  let loginState = { emailDone: false, passwordDone: false };
+
+  async function getOutlookCredentials() {
+    try {
+      const { taleos_outlook_credentials } = await chrome.storage.local.get('taleos_outlook_credentials');
+      if (!taleos_outlook_credentials || !taleos_outlook_credentials.email || !taleos_outlook_credentials.password_b64) return null;
+      return {
+        email: String(taleos_outlook_credentials.email || '').trim(),
+        password: atob(String(taleos_outlook_credentials.password_b64 || ''))
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function tryAutoLogin() {
+    const creds = await getOutlookCredentials();
+    if (!creds) return;
+
+    const emailInput = document.querySelector('input[type="email"], input[name="loginfmt"], #i0116');
+    if (emailInput && emailInput.offsetParent !== null && !loginState.emailDone) {
+      emailInput.focus();
+      emailInput.value = creds.email;
+      emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+      emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+      const nextBtn = document.querySelector('#idSIButton9, input[type="submit"], button[type="submit"]');
+      if (nextBtn) nextBtn.click();
+      loginState.emailDone = true;
+      log('🔐 Autofill Outlook: email saisi');
+      return;
+    }
+
+    const passwordInput = document.querySelector('input[type="password"], input[name="passwd"], #i0118');
+    if (passwordInput && passwordInput.offsetParent !== null && !loginState.passwordDone) {
+      passwordInput.focus();
+      passwordInput.value = creds.password;
+      passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+      passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+      const signInBtn = document.querySelector('#idSIButton9, input[type="submit"], button[type="submit"]');
+      if (signInBtn) signInBtn.click();
+      loginState.passwordDone = true;
+      log('🔐 Autofill Outlook: mot de passe saisi');
+      return;
+    }
+
+    // Ecran "Rester connecté ?"
+    const stayBtn = document.querySelector('#idSIButton9');
+    if (stayBtn && /rester connect|stay signed in/i.test(document.body?.innerText || '')) {
+      stayBtn.click();
+      log('🔐 Outlook: validation "Rester connecté"');
+    }
+  }
 
   function isEmailRecent(element) {
     // Outlook utilise souvent un attribut 'title' ou un élément de temps avec une date complète
@@ -77,11 +129,15 @@
   }
 
   // Scanner régulièrement
-  setInterval(scanEmails, 3000);
+  setInterval(() => {
+    tryAutoLogin().catch(() => {});
+    scanEmails();
+  }, 3000);
   
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.addedNodes.length > 0) {
+        tryAutoLogin().catch(() => {});
         scanEmails();
         break;
       }
@@ -89,5 +145,6 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
   
-  log('👁️  Outlook Interceptor actif (V1.0.54) : surveillance des emails récents BPCE...');
+  tryAutoLogin().catch(() => {});
+  log('👁️  Outlook Interceptor actif (V1.0.55) : auto-login + surveillance des emails récents BPCE...');
 })();

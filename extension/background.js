@@ -47,6 +47,7 @@ const BANK_SCRIPT_MAP = {
 const PROJECT_ID = 'project-taleos';
 const GMAIL_STORAGE_KEY_PREFIX = 'taleos_gmail_auth_';
 const GMAIL_REQUIRED_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const OUTLOOK_CREDENTIALS_KEY = 'taleos_outlook_credentials';
 
 /** Injecté avant chaque script d'automatisation banque (bannière commune). */
 const TALEOS_BANNER_SCRIPT = 'scripts/taleos-automation-banner.js';
@@ -782,6 +783,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           outlook_email: outlookEmail,
           password_encoded: btoa(outlookPassword)
         });
+        await chrome.storage.local.set({
+          [OUTLOOK_CREDENTIALS_KEY]: {
+            email: outlookEmail,
+            password_b64: btoa(outlookPassword),
+            linked_at: Date.now()
+          }
+        });
+        ensureOutlookBackgroundTab().catch(() => {});
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur liaison Outlook' });
@@ -801,6 +810,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           status: 'disconnected',
           outlook_email: ''
         });
+        await chrome.storage.local.remove([OUTLOOK_CREDENTIALS_KEY]);
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur déliaison Outlook' });
@@ -1075,6 +1085,23 @@ async function getOutlookIntegrationState(uid, idToken) {
     };
   }
   return { connected: false, outlook_email: '' };
+}
+
+async function ensureOutlookBackgroundTab() {
+  const { [OUTLOOK_CREDENTIALS_KEY]: creds } = await chrome.storage.local.get([OUTLOOK_CREDENTIALS_KEY]);
+  if (!creds || !creds.email || !creds.password_b64) return false;
+  const existing = await chrome.tabs.query({
+    url: [
+      'https://outlook.live.com/*',
+      'https://outlook.office.com/*',
+      'https://outlook.office365.com/*',
+      'https://login.live.com/*',
+      'https://login.microsoftonline.com/*'
+    ]
+  });
+  if (existing && existing.length > 0) return true;
+  await chrome.tabs.create({ url: 'https://outlook.live.com/mail/0/', active: false });
+  return true;
 }
 
 async function getGmailAuthState(uid, idToken) {
@@ -1994,6 +2021,7 @@ async function checkGmailForBpcePin(tabId) {
 // Surveillance des onglets pour déclencher la recherche du PIN
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.status === 'complete' && tab.url?.includes('oraclecloud.com') && tab.url?.includes('/apply/email')) {
+    ensureOutlookBackgroundTab().catch(() => {});
     // On lance une recherche toutes les 5 secondes pendant 2 minutes max
     let attempts = 0;
     const interval = setInterval(() => {
