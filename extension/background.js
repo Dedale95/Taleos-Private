@@ -1035,14 +1035,18 @@ async function saveGmailIntegrationToFirestore(uid, idToken, data) {
 
 async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-  const docPath = `profiles/${uid}/mail_connections/outlook`;
+  const docPath = `profiles/${uid}/career_connections/outlook`;
   const passwordEncoded = data.password_encoded || '';
   const body = {
     fields: {
+      bankName: { stringValue: 'Outlook' },
+      bankId: { stringValue: 'outlook' },
       provider: { stringValue: 'outlook' },
       status: { stringValue: data.status || 'connected' },
       outlook_email: { stringValue: String(data.outlook_email || '') },
+      email: { stringValue: String(data.outlook_email || '') },
       password: { stringValue: passwordEncoded },
+      timestamp: { timestampValue: new Date().toISOString() },
       linked_at: { timestampValue: new Date().toISOString() },
       updated_at: { timestampValue: new Date().toISOString() }
     }
@@ -1060,14 +1064,14 @@ async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
 
 async function getOutlookIntegrationState(uid, idToken) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-  const paths = [`profiles/${uid}/mail_connections/outlook`, `profiles/${uid}/integrations/outlook`];
+  const paths = [`profiles/${uid}/career_connections/outlook`, `profiles/${uid}/mail_connections/outlook`, `profiles/${uid}/integrations/outlook`];
   for (const docPath of paths) {
     const res = await fetch(`${base}/${docPath}`, { headers: { Authorization: `Bearer ${idToken}` } });
     if (!res.ok) continue;
     const data = parseFirestoreDoc(await res.json());
     return {
       connected: (data.status || '') === 'connected',
-      outlook_email: data.outlook_email || ''
+      outlook_email: data.outlook_email || data.email || ''
     };
   }
   return { connected: false, outlook_email: '' };
