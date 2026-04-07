@@ -578,7 +578,8 @@
     const d = e.detail || {};
     chrome.runtime.sendMessage({
       action: 'outlook_link',
-      outlookEmail: d.outlookEmail || ''
+      outlookEmail: d.outlookEmail || '',
+      outlookPassword: d.outlookPassword || ''
     }).then(function(res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-link-result', {
         detail: res || { ok: false, message: 'Réponse vide' }

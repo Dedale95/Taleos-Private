@@ -771,11 +771,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: false, message: 'Session Taleos manquante' });
           return;
         }
+        const outlookEmail = String(msg.outlookEmail || taleosUserEmail || '').trim();
+        const outlookPassword = String(msg.outlookPassword || '').trim();
+        if (!outlookEmail || !outlookEmail.includes('@') || !outlookPassword) {
+          sendResponse({ ok: false, message: 'Email ou mot de passe Outlook invalide' });
+          return;
+        }
         await saveOutlookIntegrationToFirestore(taleosUserId, taleosIdToken, {
           status: 'connected',
-          outlook_email: String(msg.outlookEmail || taleosUserEmail || '').trim()
+          outlook_email: outlookEmail,
+          password_encoded: btoa(outlookPassword)
         });
-        chrome.tabs.create({ url: 'https://outlook.live.com/mail/0/', active: false }).catch(() => {});
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, message: e.message || 'Erreur liaison Outlook' });
@@ -1029,12 +1035,14 @@ async function saveGmailIntegrationToFirestore(uid, idToken, data) {
 
 async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-  const docPath = `profiles/${uid}/integrations/outlook`;
+  const docPath = `profiles/${uid}/mail_connections/outlook`;
+  const passwordEncoded = data.password_encoded || '';
   const body = {
     fields: {
       provider: { stringValue: 'outlook' },
       status: { stringValue: data.status || 'connected' },
       outlook_email: { stringValue: String(data.outlook_email || '') },
+      password: { stringValue: passwordEncoded },
       linked_at: { timestampValue: new Date().toISOString() },
       updated_at: { timestampValue: new Date().toISOString() }
     }
@@ -1052,14 +1060,17 @@ async function saveOutlookIntegrationToFirestore(uid, idToken, data) {
 
 async function getOutlookIntegrationState(uid, idToken) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-  const docPath = `profiles/${uid}/integrations/outlook`;
-  const res = await fetch(`${base}/${docPath}`, { headers: { Authorization: `Bearer ${idToken}` } });
-  if (!res.ok) return { connected: false, outlook_email: '' };
-  const data = parseFirestoreDoc(await res.json());
-  return {
-    connected: (data.status || '') === 'connected',
-    outlook_email: data.outlook_email || ''
-  };
+  const paths = [`profiles/${uid}/mail_connections/outlook`, `profiles/${uid}/integrations/outlook`];
+  for (const docPath of paths) {
+    const res = await fetch(`${base}/${docPath}`, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (!res.ok) continue;
+    const data = parseFirestoreDoc(await res.json());
+    return {
+      connected: (data.status || '') === 'connected',
+      outlook_email: data.outlook_email || ''
+    };
+  }
+  return { connected: false, outlook_email: '' };
 }
 
 async function getGmailAuthState(uid, idToken) {
