@@ -1,6 +1,7 @@
 """
 Mapping des noms d'entreprises/filiales Crédit Mutuel (site) → nom d'affichage Taleos.
 """
+import unicodedata
 
 # Raw (site) → Display (Taleos) - tout CM consolidé en "Crédit Mutuel" sauf marques distinctes
 COMPANY_DISPLAY_MAPPING = {
@@ -27,7 +28,10 @@ def normalize_company_name(raw: str) -> str:
     if not raw or not str(raw).strip():
         return "Crédit Mutuel"
     key = str(raw).strip().lower()
-    key_clean = key.replace("-", " ").replace("  ", " ")
+    key_ascii = unicodedata.normalize("NFKD", key)
+    key_ascii = "".join(c for c in key_ascii if not unicodedata.combining(c))
+    key_clean = key_ascii.replace("-", " ")
+    key_clean = " ".join(key_clean.split())
     if key_clean in COMPANY_DISPLAY_MAPPING:
         return COMPANY_DISPLAY_MAPPING[key_clean]
     for k, display in COMPANY_DISPLAY_MAPPING.items():

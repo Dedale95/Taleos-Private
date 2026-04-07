@@ -23,6 +23,7 @@ from pathlib import Path
 from datetime import datetime
 from country_normalizer import get_country_from_city, normalize_country
 from experience_extractor import extract_experience_level
+from credit_mutuel_company_mapping import normalize_company_name as normalize_cm_company_name
 
 # Configuration des chemins
 PYTHON_DIR = Path(__file__).parent
@@ -389,6 +390,10 @@ def read_from_db(db_path, company_name, live_only=True):
                 )
                 if extracted:
                     job['experience_level'] = normalize_experience_level(extracted)
+
+            # Crédit Mutuel : consolider les filiales/caisses vers les libellés groupe attendus côté front.
+            if db_path == CREDIT_MUTUEL_DB and job.get('company_name'):
+                job['company_name'] = normalize_cm_company_name(job['company_name'])
             
             jobs.append(job)
         
