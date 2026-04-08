@@ -1,8 +1,18 @@
 # Déploie les Cloud Functions depuis GitHub (aucune machine perso requise au quotidien).
 #
 # Secret dépôt : FIREBASE_SERVICE_ACCOUNT_JSON (JSON complet du compte de service GCP).
-# Rôles IAM recommandés sur project-taleos pour ce compte (déploiement Functions 2ᵉ gen = Cloud Run) :
-#   Cloud Functions Admin, Cloud Run Admin, Service Account User — ou Éditeur (roles/editor) pour aller vite.
+#
+# IAM — obligatoire pour déployer des fonctions HTTPS (onRequest) : la CLI doit appliquer les politiques
+# d’invocation (permission cloudfunctions.functions.setIamPolicy). Sans ce droit, le déploiement échoue avec :
+#   « Missing required permission ... cloudfunctions.functions.setIamPolicy »
+#
+# Sur le compte de service utilisé par ce JSON, ajouter au minimum sur project-taleos :
+#   - roles/cloudfunctions.admin   (Cloud Functions Admin)  ← corrige l’erreur ci-dessus
+#   - roles/run.admin              (Cloud Run Admin) — Functions 2ᵉ gen
+#   - roles/iam.serviceAccountUser (Service Account User)
+# Ou à titre provisoire : roles/editor (Éditeur) — plus large, à éviter en prod si possible.
+#
+# Console : https://console.cloud.google.com/iam-admin/iam?project=project-taleos
 #
 # Déclencheurs : push sur main qui touche functions/ ou firebase.json, ou exécution manuelle.
 
