@@ -288,9 +288,8 @@ async function init() {
   try {
   await setVersion();
   setupPasswordToggle();
-  const doReload = async () => {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (activeTab?.id) chrome.tabs.reload(activeTab.id).catch(() => {});
+  /** Recharge uniquement l’extension (évite double rechargement / impression de crash). */
+  const doReload = () => {
     if (chrome?.runtime?.reload) chrome.runtime.reload();
   };
   document.getElementById('reload-btn')?.addEventListener('click', doReload);
