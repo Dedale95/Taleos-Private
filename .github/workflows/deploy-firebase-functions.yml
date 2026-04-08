@@ -6,11 +6,11 @@
 # d’invocation (permission cloudfunctions.functions.setIamPolicy). Sans ce droit, le déploiement échoue avec :
 #   « Missing required permission ... cloudfunctions.functions.setIamPolicy »
 #
-# Sur le compte de service utilisé par ce JSON, ajouter au minimum sur project-taleos :
-#   - roles/cloudfunctions.admin   (Cloud Functions Admin)  ← corrige l’erreur ci-dessus
-#   - roles/run.admin              (Cloud Run Admin) — Functions 2ᵉ gen
-#   - roles/iam.serviceAccountUser (Service Account User)
-# Ou à titre provisoire : roles/editor (Éditeur) — plus large, à éviter en prod si possible.
+# Sur le compte de service dont le JSON est dans FIREBASE_SERVICE_ACCOUNT_JSON (vérifier client_email),
+# ajouter sur project-taleos (Éditeur seul ne donne pas setIamPolicy pour les HTTPS) :
+#   - roles/cloudfunctions.admin   (Cloud Functions Admin) — obligatoire pour l’erreur setIamPolicy
+#   - roles/run.admin              (Cloud Run Admin) — utile pour Functions 2ᵉ gen
+#   - roles/iam.serviceAccountUser (Service Account User) — exécution au nom du runtime SA
 #
 # Console : https://console.cloud.google.com/iam-admin/iam?project=project-taleos
 #
