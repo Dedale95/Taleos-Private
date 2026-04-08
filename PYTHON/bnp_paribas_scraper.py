@@ -7,6 +7,7 @@ Utilise Playwright (async) + BeautifulSoup pour contourner les protections anti-
 
 import asyncio
 import logging
+import os
 import re
 import time
 import sqlite3
@@ -59,9 +60,21 @@ CONTRACT_FILTERS = [
 ]
 
 # ================= Config =================
+def _env_int(name: str, default: int, cap: int = 32) -> int:
+    """Surcharge CI via BNP_MAX_CONCURRENT_LISTING / BNP_MAX_CONCURRENT_DETAILS."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, min(int(raw), cap))
+    except ValueError:
+        return default
+
+
 class Config:
-    MAX_CONCURRENT_LISTING = 12   # Pages de liste (légères)
-    MAX_CONCURRENT_DETAILS = 12   # Pages détail (augmenté pour ~2600 offres)
+    # Un peu plus de parallélisme en CI pour limiter les timeouts (ajustable par env)
+    MAX_CONCURRENT_LISTING = _env_int("BNP_MAX_CONCURRENT_LISTING", 16)
+    MAX_CONCURRENT_DETAILS = _env_int("BNP_MAX_CONCURRENT_DETAILS", 16)
     PAGE_TIMEOUT = 30000
     WAIT_TIMEOUT = 10000
     HEADLESS = True

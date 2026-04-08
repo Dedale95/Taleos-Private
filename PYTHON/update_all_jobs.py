@@ -153,8 +153,25 @@ def revalidate_live_offers_all_sources():
     print(f"✅ Revalidation globale terminée: {total} offres supplémentaires expirées")
     return total
 
-def run_script(script_name, cwd=PYTHON_DIR, timeout=3600):
-    print(f"🚀 Lancement de {script_name}...")
+def _scraper_timeout_sec(script_name: str) -> int:
+    """Timeout subprocess par scraper (secondes). BNP est souvent le plus long (~4000+ offres)."""
+    default_other = 3600
+    default_bnp = 10800  # 3 h — le scraper BNP a déjà dépassé 1 h en CI
+    if script_name == "bnp_paribas_scraper.py":
+        raw = os.environ.get("TALEOS_BNP_SCRAPER_TIMEOUT_SEC", str(default_bnp)).strip()
+    else:
+        raw = os.environ.get("TALEOS_SCRAPER_TIMEOUT_SEC", str(default_other)).strip()
+    try:
+        sec = int(raw)
+        return max(120, min(sec, 18_000))  # plafond ~5 h pour rester sous le job GH (6 h)
+    except ValueError:
+        return default_bnp if script_name == "bnp_paribas_scraper.py" else default_other
+
+
+def run_script(script_name, cwd=PYTHON_DIR, timeout=None):
+    if timeout is None:
+        timeout = _scraper_timeout_sec(script_name)
+    print(f"🚀 Lancement de {script_name} (timeout {timeout}s)...")
     try:
         result = subprocess.run([sys.executable, script_name], 
                               cwd=cwd, capture_output=True, text=True, timeout=timeout)
