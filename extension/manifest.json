@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.40",
-  "version_name": "1.1.40-local-automation-only",
+  "version": "1.1.43",
+  "version_name": "1.1.43-popup-restore-outlook-msg",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -30,6 +30,7 @@
     "http://127.0.0.1/*",
     "http://127.0.0.1:8000/*",
     "https://*.github.io/*",
+    "https://login.microsoftonline.com/*",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.google-analytics.com/*",
     "https://europe-west1-project-taleos.cloudfunctions.net/*",

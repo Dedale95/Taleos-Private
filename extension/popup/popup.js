@@ -25,6 +25,9 @@ const logoutBtn = document.getElementById('logout-btn');
 const passwordInput = document.getElementById('password');
 const passwordToggleBtn = document.getElementById('password-toggle-btn');
 
+/** Si l’init reste bloquée sur « Vérification de la connexion… », on débloque après ce délai. */
+let loadingWatchdog = null;
+
 function setupPasswordToggle() {
   if (!passwordInput || !passwordToggleBtn) return;
   passwordToggleBtn.addEventListener('click', () => {
@@ -36,6 +39,10 @@ function setupPasswordToggle() {
 }
 
 function showLogin() {
+  if (loadingWatchdog) {
+    clearTimeout(loadingWatchdog);
+    loadingWatchdog = null;
+  }
   if (pendingLoginTimeout) {
     clearTimeout(pendingLoginTimeout);
     pendingLoginTimeout = null;
@@ -46,6 +53,10 @@ function showLogin() {
 }
 
 function showLogged(user) {
+  if (loadingWatchdog) {
+    clearTimeout(loadingWatchdog);
+    loadingWatchdog = null;
+  }
   if (pendingLoginTimeout) {
     clearTimeout(pendingLoginTimeout);
     pendingLoginTimeout = null;
@@ -266,6 +277,15 @@ async function refreshTaleosTabs() {
 }
 
 async function init() {
+  loadingWatchdog = setTimeout(() => {
+    loadingWatchdog = null;
+    if (loadingView && !loadingView.classList.contains('hidden')) {
+      showLogin();
+      showError('Initialisation trop longue. Ouvrez chrome://extensions et cliquez sur Actualiser sur Taleos.');
+    }
+  }, 12000);
+
+  try {
   await setVersion();
   setupPasswordToggle();
   const doReload = async () => {
@@ -300,6 +320,7 @@ async function init() {
     return;
   }
   if (typeof firebase === 'undefined') {
+    showLogin();
     showError('Firebase non chargé. Rechargez l\'extension.');
     return;
   }
@@ -356,6 +377,11 @@ async function init() {
       setLoading(false);
     }
   });
+  } catch (e) {
+    console.error('[Taleos popup] init', e);
+    showLogin();
+    showError('Erreur d’initialisation. Rechargez l’extension (chrome://extensions → Actualiser).');
+  }
 }
 
 if (document.readyState === 'loading') {

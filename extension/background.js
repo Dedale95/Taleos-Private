@@ -1172,10 +1172,33 @@ async function exchangeOutlookCodeWithBackend(code, verifier, redirectUri) {
 }
 
 async function getOutlookOAuthClientId() {
-  const res = await fetch(OUTLOOK_CONFIG_CF_URL, { method: 'GET' });
-  const json = await res.json().catch(() => ({}));
+  let res;
+  try {
+    res = await fetch(OUTLOOK_CONFIG_CF_URL, { method: 'GET' });
+  } catch (e) {
+    throw new Error(
+      `Impossible de joindre outlookOAuthConfig (réseau ou extension). Vérifiez la connexion et que l’URL est autorisée dans le manifest. Détails : ${e?.message || e}`
+    );
+  }
+  const text = await res.text();
+  let json = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch (_) {
+    json = {};
+  }
   if (!res.ok || json.ok !== true || !json.clientId) {
-    throw new Error(json.error || 'Configuration Outlook OAuth indisponible');
+    const serverMsg = json.error || text.slice(0, 180).trim() || 'réponse invalide';
+    if (res.status === 500 && /OUTLOOK_CLIENT_ID/i.test(serverMsg)) {
+      throw new Error(
+        `${serverMsg} — À faire côté prod : Firebase Console → Functions → outlookOAuthConfig / variables d’environnement, définir OUTLOOK_CLIENT_ID (ID d’application Azure AD), puis redéployer les fonctions.`
+      );
+    }
+    throw new Error(
+      serverMsg && serverMsg !== 'réponse invalide'
+        ? `Configuration Outlook OAuth : ${serverMsg} (HTTP ${res.status})`
+        : `Configuration Outlook OAuth indisponible (HTTP ${res.status || '?'})`
+    );
   }
   return String(json.clientId);
 }
