@@ -1188,7 +1188,18 @@ async function getOutlookOAuthClientId() {
     json = {};
   }
   if (!res.ok || json.ok !== true || !json.clientId) {
-    const serverMsg = json.error || text.slice(0, 180).trim() || 'réponse invalide';
+    if (res.status === 404) {
+      throw new Error(
+        'Outlook OAuth : la Cloud Function outlookOAuthConfig est introuvable (HTTP 404). ' +
+        'Déployez les fonctions sur Firebase : firebase deploy --only functions --project project-taleos ' +
+        '(ou lancez le workflow GitHub « Deploy Firebase Functions »). ' +
+        'Sans déploiement, l’URL europe-west1-project-taleos.cloudfunctions.net/outlookOAuthConfig ne répond pas.'
+      );
+    }
+    const looksHtml = /<html[\s>]/i.test(text || '') || /<title>.*404/i.test(text || '');
+    const serverMsg = json.error
+      || (looksHtml ? 'réponse HTML inattendue (serveur)' : (text || '').slice(0, 180).trim())
+      || 'réponse invalide';
     if (res.status === 500 && /OUTLOOK_CLIENT_ID/i.test(serverMsg)) {
       throw new Error(
         `${serverMsg} — À faire côté prod : Firebase Console → Functions → outlookOAuthConfig / variables d’environnement, définir OUTLOOK_CLIENT_ID (ID d’application Azure AD), puis redéployer les fonctions.`
