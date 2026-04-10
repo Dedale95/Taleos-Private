@@ -76,7 +76,7 @@
       "matches": [
         "https://recrutement.bpce.fr/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/bpce-careers-filler.js"],
+      "js": ["scripts/taleos-automation-banner.js", "content/bpce-careers-filler.js", "content/bpce-lumesse-filler.js"],
       "run_at": "document_idle"
     },
     {
