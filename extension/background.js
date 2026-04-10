@@ -1030,6 +1030,10 @@ function getGmailStorageKey(uid) {
   return `${GMAIL_STORAGE_KEY_PREFIX}${uid}`;
 }
 
+function getOfferMetaUrlKey(url) {
+  return String(url || '').trim().toLowerCase().replace(/#.*$/, '');
+}
+
 function getOutlookStorageKey(uid) {
   return `${OUTLOOK_LINK_STATE_KEY_PREFIX}${uid}`;
 }
@@ -1478,16 +1482,30 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   if (jobId) {
     try {
       const key = String(jobId).trim();
-      const { taleos_offer_meta_by_job = {} } = await chrome.storage.local.get(['taleos_offer_meta_by_job']);
-      taleos_offer_meta_by_job[key] = {
-        ...(taleos_offer_meta_by_job[key] || {}),
+      const urlKey = getOfferMetaUrlKey(offerUrl);
+      const { taleos_offer_meta_by_job = {}, taleos_offer_meta_by_url = {} } = await chrome.storage.local.get(['taleos_offer_meta_by_job', 'taleos_offer_meta_by_url']);
+      const mergedMeta = {
         ...(offerMeta || {}),
         offerUrl: offerUrl || '',
         companyName: companyName || '',
         updatedAt: Date.now()
       };
+      taleos_offer_meta_by_job[key] = {
+        ...(taleos_offer_meta_by_job[key] || {}),
+        ...mergedMeta
+      };
+      if (urlKey) {
+        taleos_offer_meta_by_url[urlKey] = {
+          ...(taleos_offer_meta_by_url[urlKey] || {}),
+          ...mergedMeta
+        };
+      }
       const entries = Object.entries(taleos_offer_meta_by_job).sort((a, b) => (b[1]?.updatedAt || 0) - (a[1]?.updatedAt || 0)).slice(0, 300);
-      await chrome.storage.local.set({ taleos_offer_meta_by_job: Object.fromEntries(entries) });
+      const urlEntries = Object.entries(taleos_offer_meta_by_url).sort((a, b) => (b[1]?.updatedAt || 0) - (a[1]?.updatedAt || 0)).slice(0, 500);
+      await chrome.storage.local.set({
+        taleos_offer_meta_by_job: Object.fromEntries(entries),
+        taleos_offer_meta_by_url: Object.fromEntries(urlEntries)
+      });
     } catch (_) {}
   }
 
@@ -1690,7 +1708,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
 
 async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
   const { jobId, jobTitle, companyName, offerUrl } = msg;
-  const { taleosUserId, taleosIdToken, taleos_pending_tab, taleos_offer_meta_by_job = {} } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab', 'taleos_offer_meta_by_job']);
+  const { taleosUserId, taleosIdToken, taleos_pending_tab, taleos_offer_meta_by_job = {}, taleos_offer_meta_by_url = {} } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab', 'taleos_offer_meta_by_job', 'taleos_offer_meta_by_url']);
   chrome.storage.local.remove('taleos_pending_tab');
   if (!taleosUserId || !taleosIdToken) return;
 
@@ -1703,11 +1721,13 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
   const docId = (datePart + ' \u203A ' + safe(companyName) + ' \u203A ' + safe(jobTitle) + ' \u203A ' + (jobId || 'unknown')).slice(0, 1500);
 
   const metaFromStore = taleos_offer_meta_by_job[String(jobId || '').trim()] || {};
-  const location = (msg.location || metaFromStore.location || '').trim();
-  const contractType = (msg.contractType || metaFromStore.contractType || '').trim();
-  const experienceLevel = (msg.experienceLevel || metaFromStore.experienceLevel || '').trim();
-  const jobFamily = (msg.jobFamily || metaFromStore.jobFamily || '').trim();
-  const publicationDate = (msg.publicationDate || metaFromStore.publicationDate || '').trim();
+  const metaFromUrl = taleos_offer_meta_by_url[getOfferMetaUrlKey(offerUrl)] || {};
+  const mergedMeta = { ...metaFromUrl, ...metaFromStore };
+  const location = (msg.location || mergedMeta.location || '').trim();
+  const contractType = (msg.contractType || mergedMeta.contractType || '').trim();
+  const experienceLevel = (msg.experienceLevel || mergedMeta.experienceLevel || '').trim();
+  const jobFamily = (msg.jobFamily || mergedMeta.jobFamily || '').trim();
+  const publicationDate = (msg.publicationDate || mergedMeta.publicationDate || '').trim();
 
   const doc = {
     jobId: String(jobId || '').trim(),
