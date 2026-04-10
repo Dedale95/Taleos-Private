@@ -14,6 +14,7 @@ import re
 import sqlite3
 import json
 import requests
+import time
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -173,15 +174,43 @@ def run_script(script_name, cwd=PYTHON_DIR, timeout=None):
         timeout = _scraper_timeout_sec(script_name)
     print(f"🚀 Lancement de {script_name} (timeout {timeout}s)...")
     try:
-        result = subprocess.run([sys.executable, script_name], 
-                              cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        if result.returncode == 0:
+        start = time.time()
+        proc = subprocess.Popen([sys.executable, script_name], cwd=cwd)
+        heartbeat_every_sec = 60
+        last_heartbeat = 0
+
+        while True:
+            rc = proc.poll()
+            elapsed = int(time.time() - start)
+
+            if rc is not None:
+                break
+
+            # Évite les jobs "silencieux" en CI (GitHub peut tuer un step sans logs).
+            if elapsed - last_heartbeat >= heartbeat_every_sec:
+                print(f"   ⏳ {script_name} en cours... {elapsed}s écoulées")
+                last_heartbeat = elapsed
+
+            if elapsed > timeout:
+                print(f"⏱️ Timeout atteint pour {script_name} après {elapsed}s — terminaison du process...")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    print(f"🛑 {script_name} ne répond pas à SIGTERM, kill forcé.")
+                    proc.kill()
+                    proc.wait(timeout=10)
+                return False
+
+            time.sleep(2)
+
+        if rc == 0:
             print(f"✅ {script_name} terminé avec succès")
             return True
         else:
-            print(f"⚠️ {script_name} a échoué (code {result.returncode})")
-            print(f"Erreur: {result.stderr[:500]}")
+            print(f"⚠️ {script_name} a échoué (code {rc})")
             return False
+
     except Exception as e:
         print(f"❌ Erreur lors de l'exécution de {script_name}: {e}")
         return False
