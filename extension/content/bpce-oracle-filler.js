@@ -73,6 +73,29 @@
     }
   }
 
+  function smartSelectByText(label, selectEl, desiredText) {
+    if (!selectEl || !desiredText) return false;
+    const target = NORM(desiredText);
+    const options = Array.from(selectEl.options || []);
+    if (options.length === 0) return false;
+    const current = options.find((o) => o.value === selectEl.value);
+    const currentText = NORM(current ? current.textContent : '');
+    const match = options.find((o) => {
+      const t = NORM(o.textContent || '');
+      return t && (t === target || t.includes(target) || target.includes(t));
+    });
+    if (!match) return false;
+    if (currentText && currentText === NORM(match.textContent || '')) {
+      logOnce(`   — ${label} → déjà "${match.textContent.trim()}" (Skip)`);
+      return 'already_selected';
+    }
+    selectEl.value = match.value;
+    selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    logOnce(`   ✅ ${label} → "${match.textContent.trim()}" (Sélectionné)`);
+    return true;
+  }
+
   /** Numéro national seul pour le champ téléphone (Oracle valide souvent sans le 0 initial quand l’indicatif +33 est séparé). */
   function normalizeNationalPhoneDigits(rawPhone, countryCode) {
     let d = String(rawPhone || '').replace(/\D/g, '');
@@ -212,6 +235,19 @@
       return false;
     }
 
+    const directSelect = row.querySelector('select');
+    if (directSelect && directSelect.offsetParent !== null) {
+      const wanted = (raw || 'LinkedIn').toLowerCase();
+      if (wanted.includes('linkedin')) {
+        const sr = smartSelectByText('Origine candidature', directSelect, 'Avec mon profil LinkedIn');
+        if (sr) return true;
+      }
+      const srCv = smartSelectByText('Origine candidature', directSelect, 'Avec mon CV');
+      if (srCv) return true;
+      const srFallback = smartSelectByText('Origine candidature', directSelect, raw);
+      if (srFallback) return true;
+    }
+
     let r = smartClickPillFlexible('Origine candidature', raw, row);
     if (r === true || r === 'already_selected') return true;
 
@@ -269,6 +305,8 @@
 
   function findBpceCvFileInput() {
     const tryVisible = (el) => (el && el.offsetParent !== null ? el : null);
+    const uploadHidden = document.querySelector('input[id^="upload_attached_resume_"][type="file"], input.upload_attached_resume_[type="file"]');
+    if (uploadHidden) return uploadHidden;
     let el = tryVisible(document.querySelector('input.file-form-element__input.upload-button[type="file"]'));
     if (el) return el;
     el = tryVisible(document.querySelector('input[name="attachment-upload"][type="file"]'));
@@ -483,27 +521,45 @@
       }
 
       // --- Étape 2 : Formulaire complet ---
-      const lastNameInput = document.querySelector('input[id*="lastName"]') || document.querySelector('input[autocomplete="family-name"]');
+    const lastNameInput =
+      document.querySelector('input[id*="lastName"], input[name="last_name"], input[id^="last_name_"]') ||
+      document.querySelector('input[autocomplete="family-name"]');
       if (lastNameInput && lastNameInput.offsetParent !== null) {
         logOnce('📋 Étape 2 : Formulaire complet détecté !', 2);
         
         // Contact
         smartFillInput('Nom', lastNameInput, profile.last_name || profile.lastname);
-        smartFillInput('Prénom', document.querySelector('input[id*="firstName"]') || document.querySelector('input[autocomplete="given-name"]'), profile.first_name || profile.firstname);
+        const firstNameInput =
+          document.querySelector('input[id*="firstName"], input[name="first_name"], input[id^="first_name_"]') ||
+          document.querySelector('input[autocomplete="given-name"]');
+        smartFillInput('Prénom', firstNameInput, profile.first_name || profile.firstname);
+        const profileEmailInput = document.querySelector('input[name="e-mail_address"], input[id^="e-mail_address_"]');
+        if (profileEmailInput) smartFillInput('Email', profileEmailInput, profile.email || profile.auth_email);
         
         const civ = (profile.civility || '').toLowerCase();
         if (!filledFields.has('bpce_civility_done')) {
           let cr = false;
-          if (civ.includes('monsieur')) cr = smartClickButton('Titre', 'M.');
-          else if (civ.includes('madame')) cr = smartClickButton('Titre', 'Mme');
+          const civSelect = document.querySelector('select[name="form_of_address"], select[id^="form_of_address_"]');
+          if (civSelect) {
+            if (civ.includes('monsieur') || civ === 'm.' || civ === 'm') cr = smartSelectByText('Titre', civSelect, 'M.');
+            else if (civ.includes('madame') || civ === 'mme') cr = smartSelectByText('Titre', civSelect, 'Mme');
+          } else {
+            if (civ.includes('monsieur')) cr = smartClickButton('Titre', 'M.');
+            else if (civ.includes('madame')) cr = smartClickButton('Titre', 'Mme');
+          }
           if (cr === true || cr === 'already_selected') filledFields.add('bpce_civility_done');
         }
 
         const phoneCc = (profile.phone_country_code || '+33').trim();
         const nationalDigits = normalizeNationalPhoneDigits(profile.phone || profile.phone_number || '', phoneCc);
+        const countrySelect = document.querySelector('select[data-talentlink-apply-number="country_code"], select[id^="country-code_phone__mobile__"], select[name*="country-codephone"]');
         const countryInput = document.querySelector('input[id*="country-codes-dropdown"]');
-        const telInput = document.querySelector('input[type="tel"]');
-        if (countryInput && countryInput.offsetParent !== null) {
+        const telInput = document.querySelector('input[type="tel"], input[data-talentlink-apply-number="phone_number"], input[id^="phone-number_phone__mobile__"]');
+        if (countrySelect && countrySelect.offsetParent !== null) {
+          const selectLabel = `(+${String(phoneCc).replace(/[^\d]/g, '')})`;
+          smartSelectByText('Code Pays', countrySelect, selectLabel);
+          await new Promise((r) => setTimeout(r, 250));
+        } else if (countryInput && countryInput.offsetParent !== null) {
           smartFillInput('Code Pays', countryInput, phoneCc);
           await new Promise((r) => setTimeout(r, 300));
         }
