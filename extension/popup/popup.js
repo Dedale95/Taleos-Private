@@ -319,33 +319,6 @@ async function refreshTaleosTabs() {
   }
 }
 
-async function connectGmailIdentityFromPopup() {
-  const statusEl = document.getElementById('gmail-connect-status');
-  const btn = document.getElementById('gmail-connect-btn');
-  if (btn) btn.disabled = true;
-  if (statusEl) {
-    statusEl.textContent = 'Connexion OAuth Gmail en cours...';
-    statusEl.style.color = '#6b7280';
-  }
-  try {
-    const res = await chrome.runtime.sendMessage({ action: 'gmail_identity_connect_test' });
-    if (!res || !res.ok) {
-      throw new Error(res?.message || 'Échec de la connexion Gmail');
-    }
-    if (statusEl) {
-      statusEl.textContent = `✅ Jeton reçu (${res.interactiveUsed ? 'mode interactif' : 'mode silencieux'}) — ${res.messagesCount} message(s) récupéré(s).`;
-      statusEl.style.color = '#059669';
-    }
-  } catch (e) {
-    if (statusEl) {
-      statusEl.textContent = `❌ ${e?.message || 'Erreur OAuth Gmail'}`;
-      statusEl.style.color = '#dc2626';
-    }
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
 async function init() {
   loadingWatchdog = setTimeout(() => {
     loadingWatchdog = null;
@@ -385,7 +358,6 @@ async function init() {
   document.getElementById('reload-btn')?.addEventListener('click', () => { void doReload(); });
   document.getElementById('reload-btn-login')?.addEventListener('click', () => { void doReload(); });
   document.getElementById('diagnostic-btn')?.addEventListener('click', runDiagnostic);
-  document.getElementById('gmail-connect-btn')?.addEventListener('click', connectGmailIdentityFromPopup);
   document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
   setupLogout();
   runDiagnostic();
