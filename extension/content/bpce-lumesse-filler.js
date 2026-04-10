@@ -10,6 +10,8 @@
   const BANNER_ID = "taleos-bpce-lumesse-banner";
   const isTop = window === window.top;
   let running = false;
+  /** Verrou synchrone pour éviter deux remplissages en parallèle (await avant running=true). */
+  let filling = false;
   let done = false;
   let lastWaitLog = 0;
   let lastPingPhase = "";
@@ -71,8 +73,10 @@
         .replace(/^disponible à partir de\s*/i, "")
         .trim(),
       autorisationTravailFrance: "OUI",
-      /** Préférence Firebase `bpce_application_source` ; défaut BPCE Lumesse : formulaire sans pièce jointe CV. */
-      sourceCandidature: String(raw.bpce_application_source || "Formulaire sans CV").trim(),
+      /**
+       * BPCE Lumesse / recruitmentplatform : toujours « Formulaire sans CV » (ne pas utiliser bpce_application_source LinkedIn ici).
+       */
+      sourceCandidature: "Formulaire sans CV",
       /** Firebase : case « alertes opportunités » (bool). */
       jobAlerts: !!raw.bpce_job_alerts,
       cvStoragePath: String(raw.cv_storage_path || "").trim(),
@@ -243,23 +247,34 @@
     return false;
   }
 
-  /** Texte de la question associée au &lt;select&gt; (label / aria / conteneur). */
+  /** Texte de la question associée au &lt;select&gt; (label / aria / conteneur / bloc question). */
   function getQuestionLabelText(selectEl) {
     if (!selectEl) return "";
     const ids = (selectEl.getAttribute("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean);
     if (ids.length) {
       const t = ids.map((id) => document.getElementById(id)?.textContent || "").join(" ").trim();
-      if (t) return t;
+      if (t.length > 5) return t;
     }
+    const aria = selectEl.getAttribute("aria-label");
+    if (aria && aria.trim().length > 5) return aria.trim();
     const lid = selectEl.getAttribute("id");
-    if (lid) {
-      const lab = document.querySelector(`label[for="${CSS.escape(lid)}"]`);
-      if (lab?.textContent) return lab.textContent.trim();
+    if (lid && typeof CSS !== "undefined" && CSS.escape) {
+      try {
+        const lab = document.querySelector(`label[for="${CSS.escape(lid)}"]`);
+        if (lab?.textContent?.trim()) return lab.textContent.trim();
+      } catch (_) {}
     }
+    const fieldset = selectEl.closest("fieldset");
+    const leg = fieldset?.querySelector("legend");
+    if (leg?.textContent?.trim()) return leg.textContent.trim();
+
     const container =
-      selectEl.closest(".form-group, .form-row, .control-group, fieldset, [class*='form-control']") ||
-      selectEl.parentElement?.parentElement;
-    return (container?.textContent || "").trim();
+      selectEl.closest(
+        "[class*='question'], [class*='application'], .form-group, .form-row, .control-group, fieldset"
+      ) || selectEl.parentElement?.parentElement;
+    const inner = (container?.innerText || container?.textContent || "").trim();
+    if (inner.length > 10) return inner.slice(0, 900);
+    return inner;
   }
 
   /**
@@ -272,34 +287,122 @@
       if (skipNames.has(name)) continue;
       const lab = getQuestionLabelText(sel);
 
-      if (/gestion des données personnelles|données personnelles\s*\(obligatoire\)/i.test(lab)) {
-        selectFirstMatchingFragment(sel, ["j'accepte", "accepte"], "Gestion des données personnelles (obligatoire)");
+      // 1) Origine de l’annonce (BPCE institutionnel)
+      if (
+        /sur quel site|consulté.*(première|1[eè]re|premiere|1\s*ère)\s*fois|site.*consulté|où.*consulté|annonce à laquelle vous postulez/i.test(
+          lab
+        )
+      ) {
+        selectFirstMatchingFragment(
+          sel,
+          ["Site institutionnel BPCE", "institutionnel BPCE", "site institutionnel", "BPCE"],
+          "Sur quel site avez-vous consulté l’annonce ?"
+        );
         continue;
       }
 
+      // 2) Alertes emploi / métiers (texte long — avant RGPD pour éviter confusion)
       if (
-        /si vous souhaitez que l'on puisse vous proposer|nouvelles offres|mises à jour|nouvelles opportunit|informations sur nos métiers|correspondant à votre profil/i.test(
+        /si vous souhaitez que l'on puisse vous proposer|nouvelles offres d.?emploi|mises à jour.*opportunit|informations sur nos métiers|correspondant à votre profil|cliquez pour lire le texte complet/i.test(
           lab
-        )
+        ) &&
+        !/gestion des données personnelles|^données personnelles\s*\(obligatoire\)/i.test(lab)
       ) {
         const lbl = "Alertes opportunités / offres (bpce_job_alerts Firebase)";
         if (profile.jobAlerts) {
           selectFirstMatchingFragment(
             sel,
             [
-              "j'accepte de recevoir les mises à jour",
-              "mises à jour concernant les nouvelles opportunités",
+              "j'accepte de recevoir les mises à jour concernant les nouvelles opportunités d'emploi",
+              "mises à jour concernant les nouvelles opportunités d'emploi",
               "nouvelles opportunités d'emploi",
+              "pour le groupe bpce",
               "groupe bpce",
+              "j'accepte de recevoir les mises à jour",
               "j'accepte",
               "accepte",
             ],
             `${lbl} — intention : accepter`
           );
         } else {
-          selectFirstMatchingFragment(sel, ["je refuse", "refus", "non", "n'accepte pas"], `${lbl} — intention : refuser`);
+          selectFirstMatchingFragment(
+            sel,
+            ["je n'accepte pas", "n'accepte pas", "je refuse", "refus", "non"],
+            `${lbl} — intention : refuser`
+          );
         }
         continue;
+      }
+
+      // 3) RGPD — gestion des données personnelles
+      if (
+        /gestion des données personnelles/i.test(lab) ||
+        (/données personnelles/i.test(lab) &&
+          /obligatoire/i.test(lab) &&
+          !/nouvelles offres|mises à jour|opportunités|si vous souhaitez/i.test(lab))
+      ) {
+        selectFirstMatchingFragment(sel, ["j'accepte", "accepte"], "Gestion des données personnelles (obligatoire)");
+        continue;
+      }
+
+      log(
+        `⏭️ Liste ${name} — non classée automatiquement (libellé détecté : « ${lab.slice(0, 160).replace(/\s+/g, " ")}${lab.length > 160 ? "…" : ""} »)`
+      );
+    }
+  }
+
+  /** Si la plateforme utilise des radios pour les consentements (au lieu de &lt;select&gt;). */
+  function fillBpceConsentRadioGroups(profile) {
+    const blocks = document.querySelectorAll("fieldset, [role='group'], .form-group, [class*='question']");
+    for (const block of blocks) {
+      const t = (block.textContent || "").replace(/\s+/g, " ").trim();
+      if (t.length < 20 || t.length > 1200) continue;
+
+      const radios = block.querySelectorAll('input[type="radio"]');
+      if (!radios.length) continue;
+
+      if (/gestion des données personnelles/i.test(t) && !/nouvelles offres|mises à jour.*opportunit/i.test(t)) {
+        for (const r of radios) {
+          const rt = (r.closest("label")?.textContent || r.value || "").toLowerCase();
+          const isRefuse = rt.includes("n'accepte pas") || rt.includes("je n'accepte");
+          if ((rt.includes("j'accepte") || /^accepte\b/i.test(rt.trim())) && !isRefuse) {
+            if (!r.checked) {
+              r.click();
+              log("✅ Gestion des données personnelles (radio) — « J'accepte »");
+            } else log("⏭️ Gestion des données personnelles (radio) — déjà accepté (skip)");
+            break;
+          }
+        }
+        continue;
+      }
+
+      if (
+        /si vous souhaitez que l'on puisse|nouvelles offres|mises à jour.*opportunit|informations sur nos métiers/i.test(t) &&
+        !/consulté.*fois|sur quel site/i.test(t)
+      ) {
+        const wantAccept = profile.jobAlerts;
+        for (const r of radios) {
+          const rt = (r.closest("label")?.textContent || r.value || "").toLowerCase();
+          const isRefuse =
+            rt.includes("n'accepte pas") || rt.includes("je n'accepte") || /^refus|^non\b/i.test(rt.trim());
+          const isAccept =
+            /j'accepte de recevoir|mises à jour.*opportunit|pour le groupe bpce/i.test(rt) ||
+            (rt.includes("j'accepte") && !isRefuse);
+          if (wantAccept && isAccept && !isRefuse) {
+            if (!r.checked) {
+              r.click();
+              log("✅ Alertes opportunités (radio) — acceptation (profil Firebase)");
+            } else log("⏭️ Alertes opportunités (radio) — déjà accepté (skip)");
+            break;
+          }
+          if (!wantAccept && isRefuse) {
+            if (!r.checked) {
+              r.click();
+              log("✅ Alertes opportunités (radio) — refus (profil Firebase)");
+            } else log("⏭️ Alertes opportunités (radio) — déjà refusé (skip)");
+            break;
+          }
+        }
       }
     }
   }
@@ -370,7 +473,7 @@
   // =========================
   async function fillPersonalInfo(profile) {
     log(
-      `📋 Profil normalisé — mode : « ${profile.sourceCandidature} » | alertes emploi (Firebase) : ${profile.jobAlerts ? "oui" : "non"} | CV Firebase : ${profile.cvStoragePath ? "oui" : "non"}`
+      `📋 Profil — mode « Comment postuler ? » : « ${profile.sourceCandidature} » (imposé Lumesse, indép. Firebase) | alertes emploi : ${profile.jobAlerts ? "oui" : "non"} | CV en base : ${profile.cvStoragePath ? "oui" : "non"}`
     );
 
     await waitForElement("select[name='form_of_address']");
@@ -415,9 +518,10 @@
       "Autorisation de travail en France"
     );
 
-    await sleep(200);
-    log("📋 Consentements / questions complémentaires (RGPD, alertes)…");
+    await sleep(350);
+    log("📋 Consentements / questions complémentaires (site annonce, RGPD, alertes)…");
     fillBpceCustomConsentSelects(profile);
+    fillBpceConsentRadioGroups(profile);
   }
 
   async function fillCv(profile) {
@@ -442,7 +546,7 @@
   // 4) Orchestrateur
   // =========================
   async function run() {
-    if (running || done) return;
+    if (filling || done) return;
 
     const pending = await hasPendingBpce();
     const onBpceApplyHost =
@@ -471,6 +575,8 @@
       return;
     }
 
+    if (filling || done) return;
+    filling = true;
     running = true;
     setPing("form_detected", "début remplissage");
     try {
@@ -494,6 +600,7 @@
       setPing("error", msg.slice(0, 200));
     } finally {
       running = false;
+      filling = false;
     }
   }
 
