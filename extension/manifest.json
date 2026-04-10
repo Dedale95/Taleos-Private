@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.45",
-  "version_name": "1.1.45-outlook-404-msg",
+  "version": "1.1.46",
+  "version_name": "1.1.46-bpce-lumesse-reload",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -67,7 +67,8 @@
     },
     {
       "matches": [
-        "https://*.fa.em2.oraclecloud.com/*"
+        "https://*.fa.em2.oraclecloud.com/*",
+        "https://*.oraclecloud.com/*"
       ],
       "js": ["scripts/taleos-automation-banner.js", "content/bpce-oracle-filler.js", "content/bpce-lumesse-filler.js"],
       "run_at": "document_idle"

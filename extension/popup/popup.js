@@ -100,11 +100,26 @@ async function setVersion() {
     const badge = document.getElementById('version-badge');
     const badgeLogged = document.getElementById('version-badge-logged');
     const dateEl = document.getElementById('version-date');
+    const reloadLoginEl = document.getElementById('version-reload-login');
     if (badge) badge.textContent = versionLabel;
     if (badgeLogged) badgeLogged.textContent = `Version ${versionLabel.replace(/^v/, '')}`;
+    const { taleosLastUpdate, taleosLastPopupReload } = await chrome.storage.local.get([
+      'taleosLastUpdate',
+      'taleosLastPopupReload'
+    ]);
     if (dateEl) {
-      const { taleosLastUpdate } = await chrome.storage.local.get('taleosLastUpdate');
-      dateEl.textContent = taleosLastUpdate ? `Mise à jour : ${taleosLastUpdate}` : '';
+      let line = taleosLastUpdate ? `Mise à jour : ${taleosLastUpdate}` : '';
+      if (taleosLastPopupReload?.at && taleosLastPopupReload?.label) {
+        line = line ? `${line} · ` : '';
+        line += `Bouton « Mettre à jour » : ${taleosLastPopupReload.at} (${taleosLastPopupReload.label})`;
+      }
+      dateEl.textContent = line;
+    }
+    if (reloadLoginEl) {
+      reloadLoginEl.textContent =
+        taleosLastPopupReload?.at && taleosLastPopupReload?.label
+          ? `Dernier rechargement : ${taleosLastPopupReload.at} — ${taleosLastPopupReload.label}`
+          : '';
     }
   } catch (_) {}
 }
@@ -288,12 +303,32 @@ async function init() {
   try {
   await setVersion();
   setupPasswordToggle();
-  /** Recharge uniquement l’extension (évite double rechargement / impression de crash). */
-  const doReload = () => {
+  /** Recharge l’extension depuis le disque (dossier non empaqueté) + trace en storage pour vérifier la version au prochain clic. */
+  const doReload = async () => {
+    const manifest = chrome.runtime.getManifest();
+    const label = `${manifest.version}${manifest.version_name ? ` (${manifest.version_name})` : ''}`;
+    const now = new Date();
+    const at = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    try {
+      await chrome.storage.local.set({
+        taleosLastUpdate: at,
+        taleosLastPopupReload: { at, label, ts: now.getTime() }
+      });
+    } catch (_) {}
+    const btn = document.getElementById('reload-btn');
+    const btnLogin = document.getElementById('reload-btn-login');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Rechargement…';
+    }
+    if (btnLogin) {
+      btnLogin.disabled = true;
+      btnLogin.textContent = '⏳ Rechargement…';
+    }
     if (chrome?.runtime?.reload) chrome.runtime.reload();
   };
-  document.getElementById('reload-btn')?.addEventListener('click', doReload);
-  document.getElementById('reload-btn-login')?.addEventListener('click', doReload);
+  document.getElementById('reload-btn')?.addEventListener('click', () => { void doReload(); });
+  document.getElementById('reload-btn-login')?.addEventListener('click', () => { void doReload(); });
   document.getElementById('diagnostic-btn')?.addEventListener('click', runDiagnostic);
   document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
   setupLogout();
