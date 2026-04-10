@@ -11,6 +11,9 @@
  */
 (async () => {
   "use strict";
+  const BANNER_ID = "taleos-bpce-lumesse-banner";
+  let running = false;
+  let done = false;
 
   // =========================
   // 1) Chargement du profil
@@ -60,6 +63,23 @@
   // =========================
   function log(msg) {
     console.log(`[BPCE Lumesse] ${msg}`);
+  }
+
+  function showBanner() {
+    if (document.getElementById(BANNER_ID)) return;
+    const api = globalThis.__TALEOS_AUTOMATION_BANNER__;
+    const el = document.createElement("div");
+    el.id = BANNER_ID;
+    el.textContent = api ? api.getText() : "⏳ Automatisation Taleos Lumesse en cours — Ne touchez à rien.";
+    if (api) api.applyStyle(el);
+    else {
+      Object.assign(el.style, {
+        position: "fixed", top: "0", left: "0", right: "0", zIndex: "2147483647",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", color: "white",
+        padding: "10px 20px", fontSize: "14px", fontWeight: "600", textAlign: "center"
+      });
+    }
+    document.body?.insertBefore(el, document.body.firstChild);
   }
 
   function sleep(ms) {
@@ -174,25 +194,30 @@
   // 4) Orchestrateur
   // =========================
   async function run() {
-    if (!document.querySelector("form.apply-main-form, select[name='form_of_address'], select[name='custom_question_7344']")) {
-      // Pas une page formulaire Lumesse -> on ne fait rien.
-      return;
-    }
+    if (running || done) return;
+    const isLumesseForm = !!document.querySelector("form.apply-main-form, select[name='form_of_address'], select[name='custom_question_7344']");
+    if (!isLumesseForm) return;
+    running = true;
     const raw = await getPendingBpceProfile();
     const profile = normalizeProfile(raw);
-    log("🚀 Démarrage blueprint Lumesse");
+    showBanner();
+    log("🚀 Démarrage filler Lumesse");
 
     await fillPersonalInfo(profile);
     await sleep(300);
     await fillCv(profile);
 
-    log("✅ Blueprint terminé (base).");
+    done = true;
+    log("✅ Filler Lumesse terminé.");
+    running = false;
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", run, { once: true });
-  } else {
-    await run();
-  }
+  log("👁️ Script chargé, attente formulaire Lumesse...");
+  const tick = () => { run().catch((e) => { running = false; log(`❌ ${e.message || e}`); }); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick, { once: true });
+  tick();
+  setInterval(tick, 1200);
+  const mo = new MutationObserver(() => tick());
+  if (document.body) mo.observe(document.body, { childList: true, subtree: true });
 })();
 

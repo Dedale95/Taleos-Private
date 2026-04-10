@@ -69,7 +69,7 @@
       "matches": [
         "https://*.fa.em2.oraclecloud.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/bpce-oracle-filler.js"],
+      "js": ["scripts/taleos-automation-banner.js", "content/bpce-oracle-filler.js", "content/bpce-lumesse-filler.js"],
       "run_at": "document_idle"
     },
     {
