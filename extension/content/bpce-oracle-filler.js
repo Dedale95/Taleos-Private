@@ -285,6 +285,17 @@
     }) || null;
   }
 
+  function hasExistingBpceCvAttached() {
+    const filled = document.querySelector('.attachment-upload-button__filled');
+    if (filled && filled.offsetParent !== null) return true;
+    const removeBtn = Array.from(document.querySelectorAll('button, [role="button"]')).find((el) => {
+      if (el.offsetParent === null) return false;
+      const hint = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.textContent || ''}`;
+      return /retirer la piece jointe|retirer la pièce jointe|retirer|remove attachment|remove/i.test(hint.toLowerCase());
+    });
+    return !!removeBtn;
+  }
+
   /**
    * Retire une pièce déjà listée par Oracle (bouton Supprimer / remove à proximité du champ CV).
    * Sinon l’ancien fichier reste et le nouveau n’est pas pris en compte.
@@ -292,7 +303,7 @@
   async function removeExistingBpceCvNearInput(fileInput) {
     if (!fileInput) return false;
     const wrap = fileInput.closest('.file-form-element') || fileInput.parentElement;
-    const roots = [wrap, wrap && wrap.parentElement].filter(Boolean);
+    const roots = [wrap, wrap && wrap.parentElement, document].filter(Boolean);
     for (const root of roots) {
       const buttons = root.querySelectorAll('button, a[role="button"], [role="button"]');
       for (const btn of buttons) {
@@ -335,11 +346,15 @@
       fileInput.scrollIntoView({ block: 'center', behavior: 'instant' });
     } catch (_) {}
 
-    if (!filledFields.has('bpce_cv_remove_tried')) {
+    if (!filledFields.has('bpce_cv_remove_tried') || hasExistingBpceCvAttached()) {
       const removed = await removeExistingBpceCvNearInput(fileInput);
       if (removed) logOnce('   ✅ CV → ancienne pièce retirée (Oracle)');
-      filledFields.add('bpce_cv_remove_tried');
+      if (removed || !hasExistingBpceCvAttached()) filledFields.add('bpce_cv_remove_tried');
       await new Promise((r) => setTimeout(r, 200));
+      if (hasExistingBpceCvAttached()) {
+        logOnce('   ⏳ CV → ancienne pièce encore présente, nouvelle tentative au prochain cycle');
+        return;
+      }
     }
 
     const cvName = (profile.cv_filename || storagePath.split('/').pop() || 'cv.pdf').trim();
@@ -531,7 +546,13 @@
                                      document.querySelector('textarea[id^="300000620007177"]') ||
                                      document.querySelector('.input-row__control--autoheight');
         
-        const availableFrom = (profile.available_from || profile.available_date || profile.disponibilite || 'Immédiatement').trim();
+        const availableFromRaw = String(
+          profile.available_from || profile.available_from_raw || profile.available_date || profile.availableFrom || profile.disponibilite || 'Immédiatement'
+        ).trim();
+        const availableFrom = availableFromRaw
+          .replace(/^disponible\s+a\s+partir\s+de\s*/i, '')
+          .replace(/^disponible à partir de\s*/i, '')
+          .trim() || 'Immédiatement';
         if (disponibiliteTextarea) {
           smartFillInput('Disponibilité', disponibiliteTextarea, availableFrom);
         }
