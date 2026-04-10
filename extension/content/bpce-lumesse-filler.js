@@ -73,7 +73,10 @@
         .replace(/^disponible à partir de\s*/i, "")
         .trim(),
       autorisationTravailFrance: "OUI",
-      sourceCandidature: String(raw.bpce_application_source || "Avec mon CV").trim(),
+      /** Préférence Firebase `bpce_application_source` ; défaut BPCE Lumesse : formulaire sans pièce jointe CV. */
+      sourceCandidature: String(raw.bpce_application_source || "Formulaire sans CV").trim(),
+      /** Firebase : case « alertes opportunités » (bool). */
+      jobAlerts: !!raw.bpce_job_alerts,
       cvStoragePath: String(raw.cv_storage_path || "").trim(),
       cvFileName: String(raw.cv_filename || "cv.pdf").trim(),
     };
@@ -145,7 +148,14 @@
   function selectByTextContains(selector, wantedText) {
     const select = document.querySelector(selector);
     if (!select) return false;
+    return selectByTextContainsOnElement(select, wantedText);
+  }
+
+  /** Sélectionne une option dont le libellé contient `wantedText` (insensible à la casse). */
+  function selectByTextContainsOnElement(select, wantedText) {
+    if (!select || select.tagName !== "SELECT") return false;
     const target = String(wantedText || "").toLowerCase().trim();
+    if (!target) return false;
     const option = Array.from(select.options || []).find((o) =>
       String(o.textContent || "").toLowerCase().includes(target)
     );
@@ -154,6 +164,68 @@
     select.dispatchEvent(new Event("input", { bubbles: true }));
     select.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
+  }
+
+  /** Texte de la question associée au &lt;select&gt; (label / aria / conteneur). */
+  function getQuestionLabelText(selectEl) {
+    if (!selectEl) return "";
+    const ids = (selectEl.getAttribute("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean);
+    if (ids.length) {
+      const t = ids.map((id) => document.getElementById(id)?.textContent || "").join(" ").trim();
+      if (t) return t;
+    }
+    const lid = selectEl.getAttribute("id");
+    if (lid) {
+      const lab = document.querySelector(`label[for="${CSS.escape(lid)}"]`);
+      if (lab?.textContent) return lab.textContent.trim();
+    }
+    const container =
+      selectEl.closest(".form-group, .form-row, .control-group, fieldset, [class*='form-control']") ||
+      selectEl.parentElement?.parentElement;
+    return (container?.textContent || "").trim();
+  }
+
+  /**
+   * Questions RGPD / opportunités sur les custom_question_* (libellés variables selon l’offre).
+   */
+  function fillBpceCustomConsentSelects(profile) {
+    const skipNames = new Set(["custom_question_7344", "custom_question_14065"]);
+    for (const sel of document.querySelectorAll('select[name^="custom_question"]')) {
+      const name = sel.getAttribute("name") || "";
+      if (skipNames.has(name)) continue;
+      const lab = getQuestionLabelText(sel);
+
+      if (/gestion des données personnelles|données personnelles\s*\(obligatoire\)/i.test(lab)) {
+        if (selectByTextContainsOnElement(sel, "j'accepte") || selectByTextContainsOnElement(sel, "accepte")) {
+          log("✅ Gestion des données personnelles → J'accepte");
+        } else {
+          log("⚠️ Gestion des données personnelles : option « J'accepte » introuvable");
+        }
+        continue;
+      }
+
+      if (
+        /si vous souhaitez que l'on puisse vous proposer|nouvelles offres|mises à jour|nouvelles opportunit|informations sur nos métiers|correspondant à votre profil/i.test(
+          lab
+        )
+      ) {
+        if (profile.jobAlerts) {
+          const ok =
+            selectByTextContainsOnElement(sel, "j'accepte de recevoir les mises à jour") ||
+            selectByTextContainsOnElement(sel, "mises à jour concernant les nouvelles opportunités") ||
+            selectByTextContainsOnElement(sel, "j'accepte") ||
+            selectByTextContainsOnElement(sel, "accepte");
+          log(ok ? "✅ Alertes opportunités BPCE → accepté (profil Firebase)" : "⚠️ Alertes opportunités : option d’acceptation introuvable");
+        } else {
+          const ok =
+            selectByTextContainsOnElement(sel, "je refuse") ||
+            selectByTextContainsOnElement(sel, "refus") ||
+            selectByTextContainsOnElement(sel, "non");
+          log(ok ? "✅ Alertes opportunités BPCE → refus (profil Firebase)" : "⚠️ Alertes opportunités : option de refus introuvable");
+        }
+        continue;
+      }
+    }
   }
 
   async function fetchCvAsFileFromFirebase(storagePath, filename) {
@@ -214,8 +286,11 @@
   async function fillPersonalInfo(profile) {
     await waitForElement("select[name='form_of_address']");
 
-    selectByTextContains("select[name='custom_question_7344']", profile.sourceCandidature || "Avec mon CV");
-    await sleep(150);
+    selectByTextContains(
+      "select[name='custom_question_7344']",
+      profile.sourceCandidature || "Formulaire sans CV"
+    );
+    await sleep(200);
 
     selectByTextContains("select[name='form_of_address']", profile.civilite);
     fillInput("input[name='last_name']", profile.nom);
@@ -230,9 +305,16 @@
     }
 
     selectByTextContains("select[name='custom_question_14065']", profile.autorisationTravailFrance || "OUI");
+
+    await sleep(200);
+    fillBpceCustomConsentSelects(profile);
   }
 
   async function fillCv(profile) {
+    if (/formulaire sans cv|sans cv/i.test(profile.sourceCandidature || "")) {
+      log("⏭️ Mode « Formulaire sans CV » — aucun upload de fichier");
+      return;
+    }
     if (!profile.cvStoragePath) {
       log("⏭️ Pas de cv_storage_path, upload CV ignoré");
       return;
