@@ -682,6 +682,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  if (msg.action === 'gmail_identity_connect_test') {
+    (async () => {
+      try {
+        const result = await connectGmailWithIdentity();
+        sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Connexion Gmail via identity impossible' });
+      }
+    })();
+    return true;
+  }
   if (msg.action === 'gmail_get_link_status') {
     (async () => {
       try {
@@ -1100,6 +1111,58 @@ function getOfferMetaUrlKey(url) {
   return String(url || '').trim().toLowerCase().replace(/#.*$/, '');
 }
 
+function chromeGetAuthToken({ interactive }) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: !!interactive }, (token) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message || 'getAuthToken a échoué'));
+        return;
+      }
+      if (!token) {
+        reject(new Error('Aucun jeton OAuth retourné'));
+        return;
+      }
+      resolve(token);
+    });
+  });
+}
+
+function chromeRemoveCachedAuthToken(token) {
+  return new Promise((resolve) => {
+    chrome.identity.removeCachedAuthToken({ token }, () => resolve());
+  });
+}
+
+async function fetchGmailData(token) {
+  const res = await fetch(
+    'https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=10',
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (res.status === 401) {
+    // Jeton expiré/corrompu côté cache identity.
+    await chromeRemoveCachedAuthToken(token);
+    throw new Error('Jeton OAuth expiré (401), veuillez réessayer.');
+  }
+  if (!res.ok) {
+    throw new Error(`Gmail API ${res.status}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.messages) ? data.messages : [];
+}
+
+async function connectGmailWithIdentity() {
+  // 1) Tentative silencieuse d'abord.
+  try {
+    const silentToken = await chromeGetAuthToken({ interactive: false });
+    const messages = await fetchGmailData(silentToken);
+    return { ok: true, token: silentToken, messagesCount: messages.length, interactiveUsed: false };
+  } catch (_) {
+    // 2) Fallback interactif (popup Google).
+  }
+  const interactiveToken = await chromeGetAuthToken({ interactive: true });
+  const messages = await fetchGmailData(interactiveToken);
+  return { ok: true, token: interactiveToken, messagesCount: messages.length, interactiveUsed: true };
+}
 function getOutlookStorageKey(uid) {
   return `${OUTLOOK_LINK_STATE_KEY_PREFIX}${uid}`;
 }
