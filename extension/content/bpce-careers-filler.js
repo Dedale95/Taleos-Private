@@ -88,8 +88,15 @@
       return;
     }
 
-    log('✅ Clic sur "Postuler directement" → ouverture formulaire Oracle dans nouvel onglet', 1);
-    postulerBtn.click();
+    const applyUrl = String(postulerBtn.href || postulerBtn.getAttribute('href') || '').trim();
+    if (!applyUrl) {
+      log('❌ URL du bouton "Postuler directement" introuvable', 1);
+      hideBanner();
+      return;
+    }
+
+    log('✅ URL "Postuler directement" détectée → navigation dans l’onglet courant (sans nouvel onglet)', 1);
+    window.location.assign(applyUrl);
     hideBanner();
   }
 
