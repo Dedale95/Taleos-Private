@@ -39,7 +39,7 @@
     "http://127.0.0.1:8000/*",
     "https://*.github.io/*",
     "https://login.microsoftonline.com/*",
-    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/*",
     "https://www.google-analytics.com/*",
     "https://europe-west1-project-taleos.cloudfunctions.net/*",
     "https://storage.googleapis.com/*",
