@@ -241,6 +241,34 @@ async function refreshAnalyticsStatus() {
   }
 }
 
+
+async function refreshBpceScriptStatus() {
+  const el = document.getElementById('bpce-script-status');
+  if (!el) return;
+  try {
+    const { taleos_bpce_script_ping } = await chrome.storage.local.get('taleos_bpce_script_ping');
+    if (!taleos_bpce_script_ping?.script) {
+      el.textContent = 'BPCE script: aucun ping détecté';
+      el.style.color = '#6b7280';
+      return;
+    }
+    const t = taleos_bpce_script_ping.at ? formatLastEventTime(taleos_bpce_script_ping.at) : 'maintenant';
+    const script = String(taleos_bpce_script_ping.script || 'unknown');
+    const phase = String(taleos_bpce_script_ping.phase || '');
+    const topFr = taleos_bpce_script_ping.topFrame === true ? 'top' : taleos_bpce_script_ping.topFrame === false ? 'iframe' : '';
+    const detail = String(taleos_bpce_script_ping.detail || '').slice(0, 60);
+    const url = String(taleos_bpce_script_ping.url || '');
+    const phaseBit = phase ? ` · ${phase}` : '';
+    const frameBit = topFr ? ` · ${topFr}` : '';
+    el.textContent = `BPCE script: ${script} (${t})${phaseBit}${frameBit}`;
+    el.title = [url, detail].filter(Boolean).join('\n');
+    el.style.color = phase === 'error' ? '#dc2626' : phase === 'done' ? '#059669' : '#2563eb';
+  } catch (e) {
+    el.textContent = 'BPCE script: erreur lecture';
+    el.style.color = '#dc2626';
+  }
+}
+
 async function refreshAnalyticsLog() {
   const logEl = document.getElementById('analytics-log');
   if (!logEl) return;
@@ -335,6 +363,7 @@ async function init() {
   runDiagnostic();
   refreshPilotStatus();
   refreshAnalyticsStatus();
+  refreshBpceScriptStatus();
   refreshAnalyticsLog();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_ga4_last_event) {
@@ -342,6 +371,9 @@ async function init() {
     }
     if (area === 'local' && changes.taleos_ga4_event_log) {
       refreshAnalyticsLog();
+    }
+    if (area === 'local' && changes.taleos_bpce_script_ping) {
+      refreshBpceScriptStatus();
     }
     if (area === 'local' && changes.taleos_last_pilot) {
       refreshPilotStatus();

@@ -1,10 +1,6 @@
 /**
  * Taleos - Blueprint BPCE Lumesse/TalentLink
  * ------------------------------------------------------------
- * Objectif:
- * - servir de base claire pour les variantes BPCE "form-control/select"
- * - mapper proprement les données Firebase -> champs du formulaire
- *
  * Source des données:
  * - chrome.storage.local.taleos_pending_bpce.profile (alimenté par background.js)
  * - CV récupéré via action background: fetch_storage_file
@@ -12,12 +8,40 @@
 (async () => {
   "use strict";
   const BANNER_ID = "taleos-bpce-lumesse-banner";
+  const isTop = window === window.top;
   let running = false;
   let done = false;
+  let lastWaitLog = 0;
+  let lastPingPhase = "";
+
+  function setPing(phase, detail) {
+    try {
+      const payload = {
+        script: "bpce-lumesse-filler.js",
+        url: location.href,
+        at: new Date().toISOString(),
+        topFrame: isTop,
+        phase: phase || "boot",
+        detail: detail || ""
+      };
+      chrome.storage.local.set({ taleos_bpce_script_ping: payload });
+      if (phase && phase !== lastPingPhase) {
+        lastPingPhase = phase;
+        log(`📡 ${phase}${detail ? ` — ${detail}` : ""}`);
+      }
+    } catch (_) {}
+  }
+
+  setPing("loaded", isTop ? "frame principale" : "iframe");
 
   // =========================
   // 1) Chargement du profil
   // =========================
+  async function hasPendingBpce() {
+    const { taleos_pending_bpce } = await chrome.storage.local.get("taleos_pending_bpce");
+    return !!(taleos_pending_bpce && taleos_pending_bpce.profile);
+  }
+
   async function getPendingBpceProfile() {
     const { taleos_pending_bpce } = await chrome.storage.local.get("taleos_pending_bpce");
     if (!taleos_pending_bpce || !taleos_pending_bpce.profile) {
@@ -38,7 +62,6 @@
       telephone: phoneDigits,
       phoneCountryCode,
       linkedin: String(raw.linkedin_url || "").trim(),
-      // Valeur souvent stockée comme "Disponible à partir de ..."
       disponibilite: String(
         raw.available_from ||
           raw.available_from_raw ||
@@ -49,7 +72,6 @@
         .replace(/^disponible\s+a\s+partir\s+de\s*/i, "")
         .replace(/^disponible à partir de\s*/i, "")
         .trim(),
-      // Mapping par défaut (à ajuster selon tes règles métier)
       autorisationTravailFrance: "OUI",
       sourceCandidature: String(raw.bpce_application_source || "Avec mon CV").trim(),
       cvStoragePath: String(raw.cv_storage_path || "").trim(),
@@ -65,28 +87,38 @@
     console.log(`[BPCE Lumesse] ${msg}`);
   }
 
-  function showBanner() {
-    if (document.getElementById(BANNER_ID)) return;
+  function showBanner(text) {
     const api = globalThis.__TALEOS_AUTOMATION_BANNER__;
-    const el = document.createElement("div");
-    el.id = BANNER_ID;
-    el.textContent = api ? api.getText() : "⏳ Automatisation Taleos Lumesse en cours — Ne touchez à rien.";
-    if (api) api.applyStyle(el);
-    else {
-      Object.assign(el.style, {
-        position: "fixed", top: "0", left: "0", right: "0", zIndex: "2147483647",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", color: "white",
-        padding: "10px 20px", fontSize: "14px", fontWeight: "600", textAlign: "center"
-      });
+    let el = document.getElementById(BANNER_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = BANNER_ID;
+      if (api) api.applyStyle(el);
+      else {
+        Object.assign(el.style, {
+          position: "fixed",
+          top: "0",
+          left: "0",
+          right: "0",
+          zIndex: "2147483647",
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          color: "white",
+          padding: "10px 20px",
+          fontSize: "14px",
+          fontWeight: "600",
+          textAlign: "center",
+        });
+      }
+      document.body?.insertBefore(el, document.body.firstChild);
     }
-    document.body?.insertBefore(el, document.body.firstChild);
+    el.textContent = text || (api ? api.getText() : "⏳ Automatisation Taleos Lumesse — Ne touchez à rien.");
   }
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function waitForElement(selector, timeout = 8000) {
+  async function waitForElement(selector, timeout = 12000) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
       const el = document.querySelector(selector);
@@ -148,14 +180,40 @@
     return true;
   }
 
+  /** Détection élargie (variantes TalentLink / Lumesse / Oracle). */
+  function detectLumesseForm() {
+    const sels = [
+      "form.apply-main-form",
+      "select[name='form_of_address']",
+      "select[name='custom_question_7344']",
+      "input[name='last_name']",
+      "input[name='first_name']",
+      "input[name='e-mail_address']",
+      "[data-talentlink-apply-number='country_code']",
+      "input[id*='lastName']",
+      "input[id*='firstName']",
+      "select[name^='custom_question_']",
+    ];
+    const hits = sels.filter((s) => {
+      try {
+        return !!document.querySelector(s);
+      } catch {
+        return false;
+      }
+    });
+    const hasName = !!document.querySelector(
+      "input[name='last_name'], input[name='first_name'], input[id*='lastName'], input[id*='firstName'], input[id*='LastName'], input[id*='FirstName']"
+    );
+    const hasCivility = !!document.querySelector("select[name='form_of_address'], select[id*='form_of_address'], select[id*='Form_of_address']");
+    return hits.length >= 2 || (hasName && hasCivility);
+  }
+
   // =========================
   // 3) Mapping champs Lumesse
   // =========================
   async function fillPersonalInfo(profile) {
     await waitForElement("select[name='form_of_address']");
 
-    // "Comment souhaitez-vous postuler ?"
-    // options vues: "Formulaire sans CV", "Avec mon CV", "Avec mon profil LinkedIn"
     selectByTextContains("select[name='custom_question_7344']", profile.sourceCandidature || "Avec mon CV");
     await sleep(150);
 
@@ -164,7 +222,6 @@
     fillInput("input[name='first_name']", profile.prenom);
     fillInput("input[name='e-mail_address']", profile.email);
 
-    // Téléphone (format Lumesse split country / phone)
     selectByTextContains("select[data-talentlink-apply-number='country_code']", `(${profile.phoneCountryCode})`);
     fillInput("input[data-talentlink-apply-number='phone_number']", profile.telephone);
 
@@ -172,7 +229,6 @@
       fillInput("input[name='social_networking_and_instant_messaging_accounts_linkedin']", profile.linkedin);
     }
 
-    // Autorisation de travail en France
     selectByTextContains("select[name='custom_question_14065']", profile.autorisationTravailFrance || "OUI");
   }
 
@@ -181,10 +237,8 @@
       log("⏭️ Pas de cv_storage_path, upload CV ignoré");
       return;
     }
-    // Variant observé:
-    // - form#form_attached_resume_13 input[type=file]
-    // - input#upload_attached_resume_13
-    const fileInputSelector = "form[id^='form_attached_resume_'] input[type='file'], input[id^='upload_attached_resume_'][type='file']";
+    const fileInputSelector =
+      "form[id^='form_attached_resume_'] input[type='file'], input[id^='upload_attached_resume_'][type='file']";
     await waitForElement(fileInputSelector);
     const file = await fetchCvAsFileFromFirebase(profile.cvStoragePath, profile.cvFileName);
     injectFile(fileInputSelector, file);
@@ -195,29 +249,69 @@
   // =========================
   async function run() {
     if (running || done) return;
-    const isLumesseForm = !!document.querySelector("form.apply-main-form, select[name='form_of_address'], select[name='custom_question_7344']");
-    if (!isLumesseForm) return;
+
+    const pending = await hasPendingBpce();
+    const onOracle = /oraclecloud\.com/i.test(location.hostname || "");
+
+    if (isTop && pending && onOracle && document.body) {
+      showBanner(
+        "⏳ Taleos — chargement du formulaire de candidature BPCE… (ne fermez pas l’onglet)"
+      );
+      setPing("waiting_form", "profil OK, recherche des champs Lumesse");
+    }
+
+    if (!detectLumesseForm()) {
+      if (pending && onOracle) {
+        const now = Date.now();
+        if (now - lastWaitLog > 4000) {
+          lastWaitLog = now;
+          log(
+            "⏳ Formulaire Lumesse pas encore détecté dans ce document (sélecteurs élargis). " +
+              "Si la page affiche encore l’étape e-mail / code PIN, c’est normal — l’automatisation Oracle continue."
+          );
+          setPing("waiting_form", "pas de select[name=form_of_address] dans ce frame");
+        }
+      }
+      return;
+    }
+
     running = true;
-    const raw = await getPendingBpceProfile();
-    const profile = normalizeProfile(raw);
-    showBanner();
-    log("🚀 Démarrage filler Lumesse");
+    setPing("form_detected", "début remplissage");
+    try {
+      const raw = await getPendingBpceProfile();
+      const profile = normalizeProfile(raw);
+      showBanner("⏳ Taleos — remplissage du formulaire Lumesse…");
+      log("🚀 Démarrage filler Lumesse");
 
-    await fillPersonalInfo(profile);
-    await sleep(300);
-    await fillCv(profile);
+      await fillPersonalInfo(profile);
+      await sleep(300);
+      await fillCv(profile);
 
-    done = true;
-    log("✅ Filler Lumesse terminé.");
-    running = false;
+      done = true;
+      showBanner("✅ Taleos — formulaire Lumesse traité. Vérifiez les champs avant envoi.");
+      log("✅ Filler Lumesse terminé.");
+      setPing("done", "ok");
+    } catch (e) {
+      const msg = e?.message || String(e);
+      log(`❌ ${msg}`);
+      showBanner(`❌ Taleos Lumesse : ${msg.slice(0, 120)}`);
+      setPing("error", msg.slice(0, 200));
+    } finally {
+      running = false;
+    }
   }
 
-  log("👁️ Script chargé, attente formulaire Lumesse...");
-  const tick = () => { run().catch((e) => { running = false; log(`❌ ${e.message || e}`); }); };
+  log("👁️ Script chargé, attente formulaire Lumesse…");
+  const tick = () => {
+    run().catch((e) => {
+      running = false;
+      log(`❌ ${e.message || e}`);
+      setPing("error", String(e?.message || e).slice(0, 200));
+    });
+  };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick, { once: true });
   tick();
   setInterval(tick, 1200);
   const mo = new MutationObserver(() => tick());
   if (document.body) mo.observe(document.body, { childList: true, subtree: true });
 })();
-
