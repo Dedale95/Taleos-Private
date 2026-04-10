@@ -1371,7 +1371,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'credit_agricole' || url.includes('groupecreditagricole.jobs')) return 'ca';
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
-  if (bid === 'bpce' || url.includes('recrutement.bpce.fr')) return 'bpce';
+  if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
   return 'other';
 }
 
@@ -2431,7 +2431,7 @@ function normalizeSite(site, offerUrl) {
   const url = (offerUrl || '').toLowerCase();
   if (url.includes('groupecreditagricole.jobs')) return 'credit_agricole';
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
-  if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com')) return 'bpce';
+  if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';
   return 'unknown';
 }

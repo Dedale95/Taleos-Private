@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.48",
-  "version_name": "1.1.48-bpce-lumesse-detect",
+  "version": "1.1.49",
+  "version_name": "1.1.49-bpce-recruitmentplatform",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -19,6 +19,7 @@
     "https://*.oraclecloud.com/*",
     "https://recrutement.bpce.fr/*",
     "https://*.bpce.fr/*",
+    "https://*.recruitmentplatform.com/*",
     "https://careers.societegenerale.com/*",
     "https://socgen.taleo.net/*",
     "https://groupecreditagricole.jobs/*",
@@ -81,6 +82,14 @@
         "https://*.bpce.fr/*"
       ],
       "js": ["scripts/taleos-automation-banner.js", "content/bpce-careers-filler.js", "content/bpce-lumesse-filler.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.recruitmentplatform.com/*"
+      ],
+      "js": ["scripts/taleos-automation-banner.js", "content/bpce-lumesse-filler.js"],
       "run_at": "document_idle",
       "all_frames": true
     },

@@ -251,9 +251,11 @@
     if (running || done) return;
 
     const pending = await hasPendingBpce();
-    const onOracle = /oraclecloud\.com/i.test(location.hostname || "");
+    const onBpceApplyHost =
+      /oraclecloud\.com$/i.test(location.hostname || "") ||
+      /recruitmentplatform\.com$/i.test(location.hostname || "");
 
-    if (isTop && pending && onOracle && document.body) {
+    if (isTop && pending && onBpceApplyHost && document.body) {
       showBanner(
         "⏳ Taleos — chargement du formulaire de candidature BPCE… (ne fermez pas l’onglet)"
       );
@@ -261,7 +263,7 @@
     }
 
     if (!detectLumesseForm()) {
-      if (pending && onOracle) {
+      if (pending && onBpceApplyHost) {
         const now = Date.now();
         if (now - lastWaitLog > 4000) {
           lastWaitLog = now;
