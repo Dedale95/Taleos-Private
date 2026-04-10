@@ -21,6 +21,27 @@
     try { return !!chrome?.runtime?.id; } catch (_) { return false; }
   }
 
+  // Masque le module Outlook dans l'onglet Connexions.
+  // Le site peut rendre ce bloc côté serveur/front, donc on le supprime côté DOM.
+  function removeOutlookConnectionsBlock() {
+    try {
+      const candidates = Array.from(document.querySelectorAll('h1, h2, h3, h4, p, span, button, a'));
+      for (const el of candidates) {
+        const txt = String(el.textContent || '').toLowerCase();
+        if (!txt) continue;
+        if (!txt.includes('outlook')) continue;
+        const card = el.closest('[class*="card"], [class*="module"], [class*="bank"], [class*="connection"], section, article, div');
+        if (card && card.parentElement) {
+          // Ne retire que les zones connexions/liaison pour éviter les faux positifs ailleurs.
+          const zoneTxt = String(card.textContent || '').toLowerCase();
+          if (zoneTxt.includes('liaison') || zoneTxt.includes('connexion') || zoneTxt.includes('lier mon compte') || zoneTxt.includes('otp')) {
+            card.style.display = 'none';
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   window.addEventListener('__TALEOS_AUTH_SYNC__', function(e) {
     const { token, uid, email } = e.detail || {};
     if (token && uid) {
@@ -37,12 +58,22 @@
     syncAuthFromPage(false);
     setTimeout(function() { syncAuthFromPage(true); }, 2500);
     setTimeout(function() { syncAuthFromPage(true); }, 6000);
+    setTimeout(removeOutlookConnectionsBlock, 600);
+    setTimeout(removeOutlookConnectionsBlock, 1800);
+    setTimeout(removeOutlookConnectionsBlock, 3500);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scheduleSync);
   } else {
     scheduleSync();
   }
+  // Le DOM Connexions peut être re-rendu dynamiquement.
+  const removeOutlookObserver = new MutationObserver(function() {
+    removeOutlookConnectionsBlock();
+  });
+  try {
+    removeOutlookObserver.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (_) {}
   window.addEventListener('pageshow', function(ev) {
     if (ev.persisted) {
       scheduleSync();
@@ -575,11 +606,8 @@
   });
 
   window.addEventListener('taleos-request-outlook-link', function(e) {
-    const d = e.detail || {};
     chrome.runtime.sendMessage({
-      action: 'outlook_link',
-      outlookEmail: d.outlookEmail || '',
-      outlookPassword: d.outlookPassword || ''
+      action: 'outlook_link'
     }).then(function(res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-link-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
