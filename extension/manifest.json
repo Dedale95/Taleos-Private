@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.52",
-  "version_name": "1.1.52-bpce-lumesse-consent-fix",
+  "version": "1.1.54",
+  "version_name": "1.1.54-bpce-comm-prefs-accords",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

@@ -407,6 +407,150 @@
     }
   }
 
+  /** Blocs « Veuillez indiquer votre accord » (souvent des radios, pas des &lt;select&gt;). */
+  function fillBpceVeuillezIndiquerAccord(profile) {
+    const candidates = document.querySelectorAll(
+      "fieldset, section, div[class*='question'], div[class*='application'], .application-question, [role='group']"
+    );
+    for (const sec of candidates) {
+      const t = (sec.textContent || "").replace(/\s+/g, " ");
+      if (!/veuillez indiquer votre accord/i.test(t)) continue;
+
+      const isGdpr =
+        /gestion des données personnelles|exploitation de vos données personnelles|principes d.exploitation/i.test(
+          t
+        ) && /données personnelles/i.test(t);
+      const isJobs =
+        /nouvelles offres|informations sur nos métiers|correspondant à votre profil|envoyer des informations sur nos métiers/i.test(
+          t
+        ) && !/exploitation de vos données personnelles|gestion des données personnelles/i.test(t);
+
+      if (isGdpr) {
+        clickAcceptRadiosInContainer(sec, "Accord — gestion des données personnelles (RGPD)", true);
+        continue;
+      }
+      if (isJobs) {
+        clickAcceptRadiosInContainer(
+          sec,
+          "Accord — offres d'emploi / métiers (bpce_job_alerts)",
+          !!profile.jobAlerts
+        );
+        continue;
+      }
+    }
+  }
+
+  function clickAcceptRadiosInContainer(container, logLabel, wantAccept) {
+    const radios = container.querySelectorAll('input[type="radio"]');
+    if (!radios.length) return;
+
+    for (const r of radios) {
+      const raw = (r.closest("label")?.textContent || r.getAttribute("aria-label") || r.value || "").trim();
+      const low = raw.toLowerCase();
+      const isNeg =
+        low.includes("n'accepte pas") ||
+        low.includes("je n'accepte") ||
+        /^non\b/i.test(low) ||
+        low.includes("refus");
+      const isPos =
+        !isNeg &&
+        ((/j'accepte/i.test(raw) && !/n'accepte/i.test(raw)) ||
+          /^oui\s*$/i.test(raw.trim()) ||
+          /^accepte\s*$/i.test(low));
+
+      if (wantAccept && isPos) {
+        if (!r.checked) {
+          r.click();
+          log(`✅ ${logLabel} — option « ${raw.slice(0, 100)} »`);
+        } else log(`⏭️ ${logLabel} — déjà « ${raw.slice(0, 80)} » (skip)`);
+        return;
+      }
+      if (!wantAccept && isNeg) {
+        if (!r.checked) {
+          r.click();
+          log(`✅ ${logLabel} — refus « ${raw.slice(0, 100)} »`);
+        } else log(`⏭️ ${logLabel} — déjà refus (skip)`);
+        return;
+      }
+    }
+
+    if (wantAccept && radios.length) {
+      const first = radios[0];
+      if (!first.checked) {
+        first.click();
+        log(`⚠️ ${logLabel} — premier bouton radio coché (fallback, libellés non reconnus)`);
+      }
+    }
+  }
+
+  /** Cases « Préférences de communication » (email BPCE, évènements…). */
+  function fillBpceCommunicationPreferences(profile) {
+    const want = !!profile.jobAlerts;
+    if (!want) {
+      log("⏭️ Préférences communication — bpce_job_alerts = non, pas de cases « oui » cochées");
+      return;
+    }
+
+    const header = Array.from(
+      document.querySelectorAll("h1, h2, h3, h4, legend, strong, .section-title, [class*='title'], [class*='heading'], .panel-title")
+    ).find((h) => /préférences de communication/i.test(h.textContent || ""));
+    let root =
+      header?.closest("section, fieldset, form, div[class*='section'], div[class*='panel'], .application-body") ||
+      document.body;
+    if (!header) {
+      log("⚠️ Préférences communication — titre de section introuvable, recherche des cases sur toute la page");
+    }
+
+    let n = 0;
+    for (const cb of root.querySelectorAll('input[type="checkbox"]')) {
+      if (cb.disabled || cb.checked) continue;
+      const row = (cb.closest("tr, li, .form-group, label, td")?.textContent || "").replace(/\s+/g, " ");
+      if (
+        /évènements|communications diverses|communications par email|forums|salons|offres d.emploi correspondant|entreprises du groupe bpce|adresse email/i.test(
+          row
+        )
+      ) {
+        cb.click();
+        n++;
+        log(`✅ Préférences communication — case cochée (${row.slice(0, 100).trim()}…)`);
+      }
+    }
+
+    for (const r of root.querySelectorAll('input[type="radio"]')) {
+      if (r.disabled || r.checked) continue;
+      const lab = (r.closest("label")?.textContent || "").trim().toLowerCase();
+      const row = (r.closest("tr, .form-group, fieldset, li, td")?.textContent || "").replace(/\s+/g, " ");
+      if (
+        /adresse email|communication|groupe bpce|email/i.test(row) &&
+        (lab === "oui" || /^oui\b/.test(lab))
+      ) {
+        r.click();
+        n++;
+        log("✅ Préférences communication — « Oui » (ligne email / communications)");
+      }
+    }
+
+    if (!n) log("⏭️ Préférences communication — rien à cocher de nouveau (déjà fait ou structure inconnue)");
+  }
+
+  /** Passe plusieurs fois : sections parfois injectées après l’identité. */
+  async function fillAllConsentAndCommunication(profile) {
+    log("📋 Préférences de communication, listes custom_question & accords (plusieurs passes DOM)…");
+    for (let pass = 1; pass <= 7; pass++) {
+      try {
+        document.querySelector(".application-body, main, form, #content")?.scrollTo?.(0, 99999);
+      } catch (_) {}
+      window.scrollTo?.(0, document.body?.scrollHeight || 99999);
+
+      fillBpceCustomConsentSelects(profile);
+      fillBpceConsentRadioGroups(profile);
+      fillBpceCommunicationPreferences(profile);
+      fillBpceVeuillezIndiquerAccord(profile);
+
+      if (pass < 7) await sleep(550);
+    }
+  }
+
   async function fetchCvAsFileFromFirebase(storagePath, filename) {
     const payload = await new Promise((resolve) => {
       chrome.runtime.sendMessage({ action: "fetch_storage_file", storagePath }, resolve);
@@ -518,21 +662,20 @@
       "Autorisation de travail en France"
     );
 
-    await sleep(350);
-    log("📋 Consentements / questions complémentaires (site annonce, RGPD, alertes)…");
-    fillBpceCustomConsentSelects(profile);
-    fillBpceConsentRadioGroups(profile);
   }
 
+  /**
+   * Liste déroulante « Formulaire sans CV » = sans pièce jointe obligatoire dans l’UI,
+   * mais si un CV est en base Firebase on l’envoie quand même.
+   */
   async function fillCv(profile) {
-    if (/formulaire sans cv|sans cv/i.test(profile.sourceCandidature || "")) {
-      log("⏭️ Upload CV — mode « Formulaire sans CV », aucun fichier (skip)");
-      return;
-    }
     if (!profile.cvStoragePath) {
       log("⏭️ Upload CV — pas de cv_storage_path dans le profil (skip)");
       return;
     }
+    log(
+      `📎 Upload CV — envoi du fichier Firebase (liste « ${profile.sourceCandidature} » n’empêche pas l’upload si CV présent)`
+    );
     log(`📎 Upload CV — téléchargement depuis Firebase : ${profile.cvStoragePath} (nom affiché : ${profile.cvFileName || "cv.pdf"})`);
     const fileInputSelector =
       "form[id^='form_attached_resume_'] input[type='file'], input[id^='upload_attached_resume_'][type='file']";
@@ -586,8 +729,9 @@
       log("🚀 Démarrage remplissage Lumesse (logs détaillés pour chaque champ)");
 
       await fillPersonalInfo(profile);
-      await sleep(300);
+      await sleep(250);
       await fillCv(profile);
+      await fillAllConsentAndCommunication(profile);
 
       done = true;
       showBanner("✅ Taleos — formulaire Lumesse traité. Vérifiez les champs avant envoi.");
