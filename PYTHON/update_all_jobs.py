@@ -329,7 +329,7 @@ def merge_from_databases():
         """Lit les offres depuis une base SQLite"""
         if not db_path.exists():
             print(f"⚠️ Base de données manquante : {db_path}")
-            return []
+            return [], None
         
         try:
             conn = sqlite3.connect(db_path)

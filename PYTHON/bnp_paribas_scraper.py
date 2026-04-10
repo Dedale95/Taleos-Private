@@ -75,6 +75,9 @@ class Config:
     # Un peu plus de parallélisme en CI pour limiter les timeouts (ajustable par env)
     MAX_CONCURRENT_LISTING = _env_int("BNP_MAX_CONCURRENT_LISTING", 16)
     MAX_CONCURRENT_DETAILS = _env_int("BNP_MAX_CONCURRENT_DETAILS", 16)
+    NAV_MAX_RETRIES = _env_int("BNP_NAV_MAX_RETRIES", 4, cap=8)
+    NAV_BACKOFF_BASE_SEC = _env_int("BNP_NAV_BACKOFF_BASE_SEC", 8, cap=30)
+    NAV_BACKOFF_MAX_SEC = _env_int("BNP_NAV_BACKOFF_MAX_SEC", 45, cap=120)
     PAGE_TIMEOUT = 30000
     WAIT_TIMEOUT = 10000
     HEADLESS = True
@@ -410,8 +413,9 @@ def extract_offer_field(soup: BeautifulSoup, css_class: str) -> Optional[str]:
 # =========================================================
 # GET TOTAL PAGES
 # =========================================================
-async def navigate_with_retry(page, url: str, max_retries: int = 6):
-    """Navigate with retry and exponential backoff for transient errors (CDN blocks)."""
+async def navigate_with_retry(page, url: str, max_retries: int = None):
+    """Navigate with retry and bounded backoff for transient errors (CDN blocks)."""
+    max_retries = int(max_retries or config.NAV_MAX_RETRIES)
     for attempt in range(max_retries):
         try:
             await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until="domcontentloaded")
@@ -419,7 +423,7 @@ async def navigate_with_retry(page, url: str, max_retries: int = 6):
         except Exception as e:
             error_str = str(e)
             if "ERR_HTTP2" in error_str or "net::" in error_str or "timeout" in error_str.lower():
-                wait = 15 * (2 ** attempt)  # 15s, 30s, 60s, 120s, 240s, 480s
+                wait = min(config.NAV_BACKOFF_MAX_SEC, config.NAV_BACKOFF_BASE_SEC * (2 ** attempt))
                 logging.warning(f"Network error on {url} (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
                 await asyncio.sleep(wait)
             else:
