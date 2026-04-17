@@ -4,17 +4,17 @@
  * Synchronise aussi l'auth depuis le site vers l'extension (connexion automatique)
  */
 
-(function() {
+(function () {
   'use strict';
   if (window.__taleosInjectorLoaded) return;
   window.__taleosInjectorLoaded = true;
-  try { document.documentElement.setAttribute('data-taleos-injector', 'ready'); } catch (_) {}
+  try { document.documentElement.setAttribute('data-taleos-injector', 'ready'); } catch (_) { }
 
   function syncAuthFromPage(forceRefresh) {
     try {
       if (!chrome?.runtime?.id) return;
-      chrome.runtime.sendMessage({ action: 'inject_auth_sync', forceRefresh: !!forceRefresh }).catch(function() {});
-    } catch (_) {}
+      chrome.runtime.sendMessage({ action: 'inject_auth_sync', forceRefresh: !!forceRefresh }).catch(function () { });
+    } catch (_) { }
   }
 
   function isExtensionValid() {
@@ -39,10 +39,10 @@
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
-  window.addEventListener('__TALEOS_AUTH_SYNC__', function(e) {
+  window.addEventListener('__TALEOS_AUTH_SYNC__', function (e) {
     const { token, uid, email } = e.detail || {};
     if (token && uid) {
       chrome.runtime.sendMessage({
@@ -50,14 +50,14 @@
         taleosUserId: uid,
         taleosIdToken: token,
         taleosUserEmail: email || ''
-      }).catch(function() {});
+      }).catch(function () { });
     }
   });
 
   function scheduleSync() {
     syncAuthFromPage(false);
-    setTimeout(function() { syncAuthFromPage(true); }, 2500);
-    setTimeout(function() { syncAuthFromPage(true); }, 6000);
+    setTimeout(function () { syncAuthFromPage(true); }, 2500);
+    setTimeout(function () { syncAuthFromPage(true); }, 6000);
     setTimeout(removeOutlookConnectionsBlock, 600);
     setTimeout(removeOutlookConnectionsBlock, 1800);
     setTimeout(removeOutlookConnectionsBlock, 3500);
@@ -68,13 +68,13 @@
     scheduleSync();
   }
   // Le DOM Connexions peut être re-rendu dynamiquement.
-  const removeOutlookObserver = new MutationObserver(function() {
+  const removeOutlookObserver = new MutationObserver(function () {
     removeOutlookConnectionsBlock();
   });
   try {
     removeOutlookObserver.observe(document.documentElement, { childList: true, subtree: true });
-  } catch (_) {}
-  window.addEventListener('pageshow', function(ev) {
+  } catch (_) { }
+  window.addEventListener('pageshow', function (ev) {
     if (ev.persisted) {
       scheduleSync();
     }
@@ -102,7 +102,7 @@
       fontFamily: 'sans-serif', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
     });
     document.body.appendChild(toast);
-    setTimeout(function() { window.location.reload(); }, 2000);
+    setTimeout(function () { window.location.reload(); }, 2000);
   }
   async function healthCheck() {
     if (Date.now() - lastHealthCheck < HEALTH_CHECK_INTERVAL) return;
@@ -120,13 +120,13 @@
           return;
         }
         if (i < HEALTH_CHECK_RETRIES - 1) {
-          await new Promise(function(r) { setTimeout(r, HEALTH_CHECK_RETRY_DELAY); });
+          await new Promise(function (r) { setTimeout(r, HEALTH_CHECK_RETRY_DELAY); });
           continue;
         }
       }
     }
   }
-  document.addEventListener('visibilitychange', function() {
+  document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') {
       setTimeout(healthCheck, 2000);
     }
@@ -202,8 +202,8 @@
           site: normalizeSiteForGa(bankIdForTracking),
           missing_count: Array.isArray(missingFields) ? missingFields.length : 0
         }
-      }).catch(function() {});
-    } catch (_) {}
+      }).catch(function () { });
+    } catch (_) { }
 
     const msg = missingFields && missingFields.length > 0
       ? 'Votre profil est incomplet. Veuillez compléter toutes les informations requises dans Mon profil avant de lancer une candidature : ' + missingFields.join(', ')
@@ -246,14 +246,14 @@
     box.appendChild(btnClose);
     overlay.appendChild(box);
 
-    overlay.addEventListener('click', function(e) {
+    overlay.addEventListener('click', function (e) {
       if (e.target === overlay) overlay.remove();
     });
-    btnProfile.addEventListener('click', function() {
+    btnProfile.addEventListener('click', function () {
       overlay.remove();
       window.location.href = new URL('profile.html', window.location.href).href;
     });
-    btnClose.addEventListener('click', function() {
+    btnClose.addEventListener('click', function () {
       overlay.remove();
     });
 
@@ -269,7 +269,7 @@
       fontFamily: 'system-ui,sans-serif', boxShadow: '0 4px 12px rgba(0,0,0,0.25)', maxWidth: '420px', textAlign: 'center'
     });
     document.body.appendChild(t);
-    setTimeout(function() { t.remove(); }, 7000);
+    setTimeout(function () { t.remove(); }, 7000);
   }
 
   function isProfileIncompleteApplyError(errText) {
@@ -283,7 +283,7 @@
     btn.disabled = true;
     btn.dataset.taleosProcessing = '1';
     btn.setAttribute('data-taleos-processing', '1');
-    const timeoutId = setTimeout(function() {
+    const timeoutId = setTimeout(function () {
       clearProcessing(jobId, true);
     }, FAILURE_TIMEOUT_MS);
     processingJobs.set(jobId, { btn, timestamp: Date.now(), timeoutId });
@@ -341,7 +341,7 @@
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    // Marquer tout de suite pour que la page (si elle reçoit l’événement) n’ouvre pas d’onglet
+    // Marquer tout de suite pour que la page (si elle reçoit l'événement) n'ouvre pas d'onglet
     btn.dataset.taleosProcessing = '1';
     btn.setAttribute('data-taleos-processing', '1');
 
@@ -389,7 +389,7 @@
       ? 'https://groupecreditagricole.jobs/fr/connexion/'
       : jobUrl;
 
-    /** Ouvre l’URL d’offre uniquement si le profil Firestore est complet (revérification systématique). */
+    /** Ouvre l'URL d'offre uniquement si le profil Firestore est complet (revérification systématique). */
     async function openOfferUrlOnlyIfProfileComplete() {
       clearProcessing(jobId, true);
       let checkRes;
@@ -433,7 +433,7 @@
     }
 
     async function tryApply() {
-      await chrome.runtime.sendMessage({ action: 'ping' }).catch(() => {});
+      await chrome.runtime.sendMessage({ action: 'ping' }).catch(() => { });
       return Promise.race([
         chrome.runtime.sendMessage({
           action: 'taleos_apply',
@@ -480,7 +480,7 @@
           fontFamily: 'sans-serif', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
         });
         document.body.appendChild(toast);
-        setTimeout(function() { window.location.reload(); }, 2000);
+        setTimeout(function () { window.location.reload(); }, 2000);
         return;
       }
       console.warn('[Taleos] Candidature — timeout ou erreur:', err?.message || err);
@@ -503,7 +503,7 @@
 
   document.addEventListener('click', onApplyClick, true);
 
-  chrome.runtime.onMessage.addListener(function(msg) {
+  chrome.runtime.onMessage.addListener(function (msg) {
     if (msg.action === 'taleos_candidature_success') {
       clearProcessing(msg.jobId || '', false);
       window.dispatchEvent(new CustomEvent('taleos-extension-candidature-success', {
@@ -530,7 +530,7 @@
     }
   });
 
-  window.addEventListener('taleos-request-test-connection', function(e) {
+  window.addEventListener('taleos-request-test-connection', function (e) {
     const d = e.detail || {};
     if (!d.bankId || !d.email || !d.firebaseUserId) return;
     chrome.runtime.sendMessage({
@@ -540,94 +540,109 @@
       password: d.password || '',
       firebaseUserId: d.firebaseUserId,
       bankName: d.bankName
-    }).then(function(res) {
+    }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
         detail: res || {}
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
         detail: { success: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
 
-  window.addEventListener('taleos-request-gmail-status', function() {
-    chrome.runtime.sendMessage({ action: 'gmail_get_link_status' }).then(function(res) {
+  window.addEventListener('taleos-request-gmail-status', function () {
+    chrome.runtime.sendMessage({ action: 'gmail_get_link_status' }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-gmail-status-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-gmail-status-result', {
         detail: { ok: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
 
-  window.addEventListener('taleos-request-gmail-link-save', function(e) {
+  // ─── AJOUT : Liaison Gmail directe via chrome.identity ───────────────────────
+  window.addEventListener('taleos-request-gmail-link-direct', function () {
+    chrome.runtime.sendMessage({ action: 'gmail_link_direct' }).then(function (res) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-link-direct-result', {
+        detail: res || { ok: false, message: 'Réponse vide' }
+      }));
+    }).catch(function (err) {
+      window.dispatchEvent(new CustomEvent('taleos-gmail-link-direct-result', {
+        detail: { ok: false, message: err?.message || 'Extension non disponible' }
+      }));
+    });
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  window.addEventListener('taleos-request-gmail-link-save', function (e) {
     const d = e.detail || {};
     chrome.runtime.sendMessage({
       action: 'gmail_link_save_token',
       accessToken: d.accessToken || '',
       expiresInSec: d.expiresInSec || 3600,
       gmailEmail: d.gmailEmail || ''
-    }).then(function(res) {
+    }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-gmail-link-save-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-gmail-link-save-result', {
         detail: { ok: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
 
-  window.addEventListener('taleos-request-gmail-unlink', function() {
-    chrome.runtime.sendMessage({ action: 'gmail_unlink' }).then(function(res) {
+  window.addEventListener('taleos-request-gmail-unlink', function () {
+    chrome.runtime.sendMessage({ action: 'gmail_unlink' }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-gmail-unlink-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-gmail-unlink-result', {
         detail: { ok: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
 
-  window.addEventListener('taleos-request-outlook-status', function() {
-    chrome.runtime.sendMessage({ action: 'outlook_get_link_status' }).then(function(res) {
+  window.addEventListener('taleos-request-outlook-status', function () {
+    chrome.runtime.sendMessage({ action: 'outlook_get_link_status' }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-status-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-status-result', {
         detail: { ok: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
 
-  window.addEventListener('taleos-request-outlook-link', function(e) {
+  window.addEventListener('taleos-request-outlook-link', function (e) {
     chrome.runtime.sendMessage({
       action: 'outlook_link'
-    }).then(function(res) {
+    }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-link-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-link-result', {
         detail: { ok: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
 
-  window.addEventListener('taleos-request-outlook-unlink', function() {
-    chrome.runtime.sendMessage({ action: 'outlook_unlink' }).then(function(res) {
+  window.addEventListener('taleos-request-outlook-unlink', function () {
+    chrome.runtime.sendMessage({ action: 'outlook_unlink' }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-unlink-result', {
         detail: res || { ok: false, message: 'Réponse vide' }
       }));
-    }).catch(function(err) {
+    }).catch(function (err) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-unlink-result', {
         detail: { ok: false, message: err?.message || 'Extension non disponible' }
       }));
     });
   });
+
 })();
