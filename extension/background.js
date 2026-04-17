@@ -753,6 +753,72 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+
+    if (msg.action === 'gmail_link_direct') {
+    (async () => {
+      try {
+        const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, message: 'Session Taleos manquante. Reconnectez-vous.' });
+          return;
+        }
+        const redirectUrl = chrome.identity.getRedirectURL('gmail');
+        // ⚠️ REMPLACER PAR VOTRE CLIENT ID OAuth 2.0
+        // Google Cloud Console → APIs & Services → Credentials → votre app OAuth
+        // Format : 747525128323-XXXXXXXXXXXXXXXX.apps.googleusercontent.com
+        // Puis ajouter chrome.identity.getRedirectURL('gmail') dans les URI de redirection autorisées
+        const clientId = '747525128323-REMPLACER_PAR_VOTRE_CLIENT_ID.apps.googleusercontent.com';
+        const scope = encodeURIComponent(GMAIL_REQUIRED_SCOPE);
+        const authUrl =
+          `https://accounts.google.com/o/oauth2/v2/auth` +
+          `?client_id=${encodeURIComponent(clientId)}` +
+          `&redirect_uri=${encodeURIComponent(redirectUrl)}` +
+          `&response_type=token` +
+          `&scope=${scope}` +
+          `&prompt=select_account`;
+
+        const redirected = await chrome.identity.launchWebAuthFlow({
+          url: authUrl,
+          interactive: true
+        });
+
+        if (!redirected) throw new Error('Authentification Gmail annulée ou fenêtre fermée');
+
+        const hashPart = redirected.includes('#') ? redirected.split('#')[1] : redirected.split('?')[1] || '';
+        const params = new URLSearchParams(hashPart);
+        const accessToken = params.get('access_token');
+        const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
+
+        if (!accessToken) throw new Error('Token Gmail non reçu. Vérifiez le Client ID OAuth et les URI autorisées.');
+
+        // Récupérer l'email Gmail via l'API Google
+        const userRes = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const userJson = userRes.ok ? await userRes.json() : {};
+        const gmailEmail = userJson.emailAddress || '';
+
+        const authObj = {
+          access_token: accessToken,
+          gmail_email: gmailEmail,
+          scope: GMAIL_REQUIRED_SCOPE,
+          created_at: Date.now(),
+          expires_at: Date.now() + Math.max(300, expiresIn) * 1000
+        };
+        await chrome.storage.local.set({ [getGmailStorageKey(taleosUserId)]: authObj });
+        await saveGmailIntegrationToFirestore(taleosUserId, taleosIdToken, {
+          status: 'connected',
+          gmail_email: gmailEmail
+        });
+        sendResponse({ ok: true, gmail_email: gmailEmail });
+      } catch (e) {
+        sendResponse({ ok: false, message: e.message || 'Erreur liaison Gmail' });
+      }
+    })();
+    return true;
+  }
+
+  
   if (msg.action === 'outlook_get_link_status') {
     (async () => {
       try {
