@@ -14,6 +14,12 @@
     "webRequest",
     "identity"
   ],
+  "oauth2": {
+    "client_id": "974062127016-qtdcv4551h0f0n4i52cmsponkstm5mhg.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly"
+    ]
+  },
   "host_permissions": [
     "https://*.taleos.co/*",
     "https://*.oraclecloud.com/*",
@@ -64,7 +70,9 @@
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
-      "js": ["content/taleos-injector.js"],
+      "js": [
+        "content/taleos-injector.js"
+      ],
       "run_at": "document_start"
     },
     {
@@ -72,7 +80,11 @@
         "https://*.fa.em2.oraclecloud.com/*",
         "https://*.oraclecloud.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/bpce-oracle-filler.js", "content/bpce-lumesse-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/bpce-oracle-filler.js",
+        "content/bpce-lumesse-filler.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     },
@@ -81,7 +93,11 @@
         "https://recrutement.bpce.fr/*",
         "https://*.bpce.fr/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/bpce-careers-filler.js", "content/bpce-lumesse-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/bpce-careers-filler.js",
+        "content/bpce-lumesse-filler.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     },
@@ -89,7 +105,10 @@
       "matches": [
         "https://*.recruitmentplatform.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/bpce-lumesse-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/bpce-lumesse-filler.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     },
@@ -97,21 +116,30 @@
       "matches": [
         "https://careers.societegenerale.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/sg-careers-helper.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/sg-careers-helper.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": [
         "https://socgen.taleo.net/*"
       ],
-      "js": ["content/sg-at-click-polyfill.js", "content/sg-taleo-runner.js"],
+      "js": [
+        "content/sg-at-click-polyfill.js",
+        "content/sg-taleo-runner.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": [
         "https://groupecreditagricole.jobs/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/ca-connexion-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/ca-connexion-filler.js"
+      ],
       "run_at": "document_idle"
     },
     {
@@ -119,7 +147,10 @@
         "https://*.myworkdayjobs.com/*",
         "https://*.deloitte.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/deloitte-careers-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/deloitte-careers-filler.js"
+      ],
       "run_at": "document_idle"
     },
     {
@@ -128,14 +159,21 @@
         "https://outlook.office.com/*",
         "https://outlook.office365.com/*"
       ],
-      "js": ["content/outlook-interceptor.js"],
+      "js": [
+        "content/outlook-interceptor.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["scripts/*.js", "icons/*.png"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "scripts/*.js",
+        "icons/*.png"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
