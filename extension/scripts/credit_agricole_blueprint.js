@@ -156,6 +156,38 @@
     ]
   };
 
+  const LOGIN_STRUCTURE = {
+    criticalSelectors: [
+      'input[type="email"]',
+      'input[type="password"]'
+    ],
+    helpfulSelectors: [
+      '#form-login-submit',
+      'button[type="submit"]',
+      'a[href*="forgot"], a[href*="mot-de-passe"], a[href*="password"]'
+    ],
+    textPatterns: TEXT_PATTERNS.login
+  };
+
+  const APPLY_DIALOG_STRUCTURE = {
+    criticalText: [
+      'comment souhaitez-vous postuler',
+      'candidature détaillée'
+    ],
+    helpfulText: [
+      'candidature express',
+      'postuler en tant qu\'invité',
+      'connexion',
+      'je crée mon compte',
+      'je créé mon compte'
+    ],
+    helpfulSelectors: [
+      'a[href*="connexion"]',
+      'a[href*="login"]',
+      'a[href*="compte"]'
+    ]
+  };
+
   function getPageText(doc) {
     return String(doc?.body?.textContent || '').toLowerCase();
   }
@@ -294,6 +326,66 @@
     };
   }
 
+  function countVisibleSelectors(doc, selectors = []) {
+    return selectors.reduce((acc, selector) => acc + (queryVisible(doc, selector) ? 1 : 0), 0);
+  }
+
+  function countTextMatches(text, patterns = []) {
+    return patterns.reduce((acc, pattern) => acc + (text.includes(pattern) ? 1 : 0), 0);
+  }
+
+  function getLoginStructureReport(doc = document) {
+    const text = getPageText(doc);
+    const criticalMissing = LOGIN_STRUCTURE.criticalSelectors.filter((selector) => !doc.querySelector(selector));
+    const helpfulVisible = countVisibleSelectors(doc, LOGIN_STRUCTURE.helpfulSelectors);
+    const textHits = countTextMatches(text, LOGIN_STRUCTURE.textPatterns);
+    return {
+      ok: criticalMissing.length === 0,
+      criticalMissing,
+      helpfulVisible,
+      textHits
+    };
+  }
+
+  async function validateLoginStructure(options = {}) {
+    const doc = options.document || document;
+    const report = getLoginStructureReport(doc);
+    const result = {
+      ok: report.ok,
+      kind: 'login_structure',
+      url: String((options.location || window.location)?.href || ''),
+      ...report
+    };
+    await persistLastCheck(result);
+    return result;
+  }
+
+  function getApplyDialogStructureReport(doc = document) {
+    const text = getPageText(doc);
+    const criticalTextHits = countTextMatches(text, APPLY_DIALOG_STRUCTURE.criticalText);
+    const helpfulTextHits = countTextMatches(text, APPLY_DIALOG_STRUCTURE.helpfulText);
+    const helpfulSelectorHits = countVisibleSelectors(doc, APPLY_DIALOG_STRUCTURE.helpfulSelectors);
+    return {
+      ok: criticalTextHits >= 1 && (helpfulTextHits + helpfulSelectorHits) >= 2,
+      criticalTextHits,
+      helpfulTextHits,
+      helpfulSelectorHits
+    };
+  }
+
+  async function validateApplyDialogStructure(options = {}) {
+    const doc = options.document || document;
+    const report = getApplyDialogStructureReport(doc);
+    const result = {
+      ok: report.ok,
+      kind: 'apply_dialog_structure',
+      url: String((options.location || window.location)?.href || ''),
+      ...report
+    };
+    await persistLastCheck(result);
+    return result;
+  }
+
   async function validateApplicationStructure(options = {}) {
     const doc = options.document || document;
     const report = getApplicationStructureReport(doc);
@@ -344,6 +436,10 @@
     detectPage,
     validateExpectedPage,
     getApplicationStructureReport,
-    validateApplicationStructure
+    validateApplicationStructure,
+    getLoginStructureReport,
+    validateLoginStructure,
+    getApplyDialogStructureReport,
+    validateApplyDialogStructure
   };
 })();

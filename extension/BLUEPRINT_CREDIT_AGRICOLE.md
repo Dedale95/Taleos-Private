@@ -137,6 +137,37 @@ Fonctions exposées :
 - `getApplicationStructureReport()`
 - `validateApplicationStructure()`
 
+## Audit structurel du login
+
+Le blueprint peut aussi auditer la page de connexion :
+- champs critiques :
+  - `input[type="email"]`
+  - `input[type="password"]`
+- indices complémentaires :
+  - bouton de soumission
+  - lien mot de passe oublié
+  - textes observés sur le site comme `Heureux de vous voir !`
+
+Fonctions exposées :
+- `getLoginStructureReport()`
+- `validateLoginStructure()`
+
+## Audit du dialogue d'application
+
+Après le clic sur `Je postule`, le blueprint peut valider la popin de choix :
+- textes critiques :
+  - `Comment souhaitez-vous postuler ?`
+  - `Candidature détaillée`
+- textes complémentaires :
+  - `Candidature express`
+  - `Postuler en tant qu'invité`
+  - `Connexion`
+  - `Je crée mon compte`
+
+Fonctions exposées :
+- `getApplyDialogStructureReport()`
+- `validateApplyDialogStructure()`
+
 ## Règle de remplissage
 
 - si le champ est vide : remplir depuis Firebase

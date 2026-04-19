@@ -70,6 +70,20 @@
     return false;
   }
 
+  async function validateApplyDialog(jobId) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateApplyDialogStructure) return true;
+    const result = await api.validateApplyDialogStructure();
+    if (result.ok) {
+      log(`🧱 Dialogue candidature OK : criticalText=${result.criticalTextHits}, helpfulText=${result.helpfulTextHits}, helpfulSelectors=${result.helpfulSelectorHits}`);
+      return true;
+    }
+    log(`⚠️ Dialogue candidature non reconnu : criticalText=${result.criticalTextHits}, helpfulText=${result.helpfulTextHits}, helpfulSelectors=${result.helpfulSelectorHits}`);
+    if (jobId) sendCandidatureFailure(jobId, 'Dialogue de candidature CA non reconnu');
+    hideAutomationBanner();
+    return false;
+  }
+
   const BANNER_ID = 'taleos-ca-automation-banner';
   function showAutomationBanner() {
     if (document.getElementById(BANNER_ID)) return;
@@ -755,6 +769,7 @@
             if (p && (p.classList.contains('open') || p.offsetParent !== null)) break;
           }
           await delay(500);
+          if (!(await validateApplyDialog(jobId))) return;
         }
 
         const popin = document.getElementById('popin-application');

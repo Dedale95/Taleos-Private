@@ -153,6 +153,18 @@
     return false;
   }
 
+  async function validateLoginStructure() {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateLoginStructure) return true;
+    const result = await api.validateLoginStructure();
+    if (result.ok) {
+      log(`🧱 Structure login OK : textHits=${result.textHits}, helpfulVisible=${result.helpfulVisible}`);
+      return true;
+    }
+    log(`⚠️ Structure login incomplète : champs critiques manquants [${result.criticalMissing.join(', ')}]`);
+    return false;
+  }
+
   function hideAutomationBanner() {
     document.getElementById(BANNER_ID)?.remove();
   }
@@ -272,6 +284,9 @@
       return;
     }
     if (!(await validateBlueprint('login', 'Page de connexion non reconnue par le blueprint CA'))) {
+      return;
+    }
+    if (!(await validateLoginStructure())) {
       return;
     }
     chrome.storage.local.set({ taleos_redirect_fallback: offerUrl });
