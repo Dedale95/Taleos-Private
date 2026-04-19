@@ -39,3 +39,14 @@ TEST_CREDENTIALS.txt
 
 # HTML de debug (peut contenir données sensibles)
 sg_after_login.html
+
+# Dépendances Node locales
+node_modules/
+
+# Caches et artefacts notebooks Python
+.ipynb_checkpoints/
+**/__pycache__/
+
+# Copies locales de dépôts de travail
+_private_repo/
+_public_repo/
