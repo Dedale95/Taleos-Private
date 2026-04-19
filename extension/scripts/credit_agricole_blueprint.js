@@ -192,6 +192,47 @@
     ]
   };
 
+  const OFFER_STRUCTURE = {
+    directApplySelectors: [
+      'a[href*="/candidature/"]',
+      'a[href*="/application/"]',
+      'a[href*="/apply/"]'
+    ],
+    triggerSelectors: [
+      'button.cta.primary[data-popin="popin-application"]',
+      'button[data-popin="popin-application"]'
+    ],
+    dialogSelectors: [
+      '#popin-application',
+      '#popin-application.open',
+      '#popin-application[aria-hidden="false"]'
+    ],
+    loginSelectors: [
+      'a.cta.secondary.arrow[href*="connexion"]',
+      'a[href*="connexion"]',
+      'a[href*="login"]',
+      'a[href*="sign-in"]'
+    ],
+    textPatterns: TEXT_PATTERNS.offer
+  };
+
+  const SUCCESS_STRUCTURE = {
+    helpfulSelectors: [
+      'a[href*="nos-offres"]',
+      'a[href*="our-offers"]',
+      'a[href*="offres"]',
+      'button',
+      'a'
+    ],
+    helpfulText: [
+      'retourner sur les offres',
+      'retour',
+      'candidature validée',
+      'votre candidature a été envoyée avec succès',
+      'your application has been sent'
+    ]
+  };
+
   function getPageText(doc) {
     return String(doc?.body?.textContent || '').toLowerCase();
   }
@@ -390,6 +431,94 @@
     };
   }
 
+  function getOfferStructureReport(doc = document) {
+    const text = getPageText(doc);
+    const visibleDirectApply = OFFER_STRUCTURE.directApplySelectors.filter((selector) => !!queryVisible(doc, selector));
+    const anyDirectApply = OFFER_STRUCTURE.directApplySelectors.filter((selector) => !!doc.querySelector(selector));
+    const visibleTriggers = OFFER_STRUCTURE.triggerSelectors.filter((selector) => !!queryVisible(doc, selector));
+    const anyTriggers = OFFER_STRUCTURE.triggerSelectors.filter((selector) => !!doc.querySelector(selector));
+    const visibleDialogs = OFFER_STRUCTURE.dialogSelectors.filter((selector) => !!queryVisible(doc, selector));
+    const anyDialogs = OFFER_STRUCTURE.dialogSelectors.filter((selector) => !!doc.querySelector(selector));
+    const visibleLogin = OFFER_STRUCTURE.loginSelectors.filter((selector) => !!queryVisible(doc, selector));
+    const anyLogin = OFFER_STRUCTURE.loginSelectors.filter((selector) => !!doc.querySelector(selector));
+    const textHits = countTextMatches(text, OFFER_STRUCTURE.textPatterns);
+
+    let entryMode = 'unknown';
+    if (visibleDirectApply.length) entryMode = 'direct_application';
+    else if (visibleDialogs.length) entryMode = 'dialog_open';
+    else if (visibleTriggers.length) entryMode = 'dialog_trigger';
+    else if (visibleLogin.length) entryMode = 'login_only';
+
+    const ok = Boolean(
+      visibleDirectApply.length ||
+      visibleTriggers.length ||
+      visibleDialogs.length ||
+      (textHits >= 2 && (anyDirectApply.length || anyTriggers.length || anyDialogs.length || anyLogin.length))
+    );
+
+    return {
+      ok,
+      entryMode,
+      textHits,
+      visibleDirectApply,
+      anyDirectApply,
+      visibleTriggers,
+      anyTriggers,
+      visibleDialogs,
+      anyDialogs,
+      visibleLogin,
+      anyLogin
+    };
+  }
+
+  async function validateOfferStructure(options = {}) {
+    const doc = options.document || document;
+    const report = getOfferStructureReport(doc);
+    const result = {
+      ok: report.ok,
+      kind: 'offer_structure',
+      url: String((options.location || window.location)?.href || ''),
+      ...report
+    };
+    await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_offer_structure', ...result });
+    return result;
+  }
+
+  function getSuccessStructureReport(doc = document, loc = window.location) {
+    const href = String(loc?.href || '').toLowerCase();
+    const pathname = String(loc?.pathname || '').toLowerCase();
+    const text = getPageText(doc);
+    const helpfulTextHits = countTextMatches(text, SUCCESS_STRUCTURE.helpfulText);
+    const visibleHelpfulSelectors = SUCCESS_STRUCTURE.helpfulSelectors
+      .map((selector) => {
+        const labels = summarizeVisibleText(doc, selector, 20);
+        return { selector, labels };
+      })
+      .filter((entry) => entry.labels.length);
+
+    return {
+      ok: pathname.includes('candidature-validee') || href.includes('application-submitted') || helpfulTextHits >= 1,
+      helpfulTextHits,
+      visibleHelpfulSelectors
+    };
+  }
+
+  async function validateSuccessStructure(options = {}) {
+    const doc = options.document || document;
+    const loc = options.location || window.location;
+    const report = getSuccessStructureReport(doc, loc);
+    const result = {
+      ok: report.ok,
+      kind: 'success_structure',
+      url: String(loc?.href || ''),
+      ...report
+    };
+    await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_success_structure', ...result });
+    return result;
+  }
+
   async function validateApplyDialogStructure(options = {}) {
     const doc = options.document || document;
     const report = getApplyDialogStructureReport(doc);
@@ -471,8 +600,14 @@
     if (detected.key === 'login') {
       snapshot.loginStructure = getLoginStructureReport(doc);
     }
+    if (detected.key === 'offer') {
+      snapshot.offerStructure = getOfferStructureReport(doc);
+    }
     if (detected.key === 'application') {
       snapshot.applicationStructure = getApplicationStructureReport(doc);
+    }
+    if (detected.key === 'success') {
+      snapshot.successStructure = getSuccessStructureReport(doc, loc);
     }
     return snapshot;
   }
@@ -511,11 +646,15 @@
     getPageSnapshot,
     capturePageSnapshot,
     validateExpectedPage,
+    getOfferStructureReport,
+    validateOfferStructure,
     getApplicationStructureReport,
     validateApplicationStructure,
     getLoginStructureReport,
     validateLoginStructure,
     getApplyDialogStructureReport,
-    validateApplyDialogStructure
+    validateApplyDialogStructure,
+    getSuccessStructureReport,
+    validateSuccessStructure
   };
 })();

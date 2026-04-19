@@ -76,6 +76,34 @@
     return false;
   }
 
+  async function validateOfferStructure(jobId, reason) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateOfferStructure) return true;
+    const result = await api.validateOfferStructure();
+    if (result.ok) {
+      log(`🧱 Structure offre OK : mode=${result.entryMode}, direct=${result.visibleDirectApply.length}, trigger=${result.visibleTriggers.length}, dialog=${result.visibleDialogs.length}`);
+      return true;
+    }
+    log(`⚠️ Structure offre non reconnue : mode=${result.entryMode}, textHits=${result.textHits}`);
+    if (jobId) sendCandidatureFailure(jobId, reason || 'Structure offre CA non reconnue');
+    hideAutomationBanner();
+    return false;
+  }
+
+  async function validateSuccessStructure(jobId) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateSuccessStructure) return true;
+    const result = await api.validateSuccessStructure();
+    if (result.ok) {
+      log(`🧱 Structure succès OK : helpfulText=${result.helpfulTextHits}`);
+      return true;
+    }
+    log('⚠️ Structure succès non reconnue malgré une page potentiellement valide.');
+    if (jobId) sendCandidatureFailure(jobId, 'Page de succès CA non reconnue');
+    hideAutomationBanner();
+    return false;
+  }
+
   async function validateApplyDialog(jobId) {
     const api = globalThis.__TALEOS_CA_BLUEPRINT__;
     if (!api?.validateApplyDialogStructure) return true;
@@ -88,6 +116,18 @@
     if (jobId) sendCandidatureFailure(jobId, 'Dialogue de candidature CA non reconnu');
     hideAutomationBanner();
     return false;
+  }
+
+  async function classifyPostApplyStep(jobId) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    const detected = api?.detectPage ? api.detectPage() : null;
+    if (detected?.key === 'login' || detected?.key === 'application' || detected?.key === 'success') {
+      log(`🧭 Après clic "Je postule" : transition directe vers ${detected.key}`);
+      return detected.key;
+    }
+    const dialogOk = await validateApplyDialog(jobId);
+    if (dialogOk) return 'apply_dialog';
+    return detected?.key || 'unknown';
   }
 
   const BANNER_ID = 'taleos-ca-automation-banner';
@@ -724,6 +764,7 @@
         await waitForLoadingComplete(30000);
         await snapshot('ca_offer_phase2_loaded');
         if (!(await validateBlueprint('offer', { fatal: true, jobId, reason: 'Page offre non reconnue par le blueprint CA' }))) return;
+        if (!(await validateOfferStructure(jobId, 'Structure offre CA incomplète en phase 2'))) return;
         if (isOfferUnavailablePage()) {
           log('⛔ Offre non disponible après chargement de la page offre.');
           notifyOfferUnavailable(jobId, 'Offre non disponible (404) — L\'offre n\'est plus en ligne.');
@@ -747,6 +788,8 @@
         const successRe = new RegExp(TEXTS.successMessage.join('|'), 'i');
         const isSuccessPage = window.location.pathname.includes('candidature-validee') || successRe.test(document.body?.textContent || '');
         if (isSuccessPage) {
+          await snapshot('ca_success_phase3_detected');
+          if (!(await validateSuccessStructure(jobId))) return;
           hideAutomationBanner();
           log('🎉 VOTRE CANDIDATURE A ÉTÉ ENVOYÉE AVEC SUCCÈS');
           log('👉 Fermeture de l\'onglet dans 5 secondes...');
@@ -782,7 +825,8 @@
           }
           await delay(500);
           await snapshot('ca_offer_phase1_after_postule_click');
-          if (!(await validateApplyDialog(jobId))) return;
+          const nextStep = await classifyPostApplyStep(jobId);
+          if (nextStep === 'unknown') return;
         }
 
         const popin = document.getElementById('popin-application');
@@ -878,6 +922,8 @@
           log('⏳ Attente du message de confirmation (Timeout 45s)...');
           const success = await waitForSuccessMessage(45000);
           if (success) {
+            await snapshot('ca_success_phase3_after_submit');
+            if (!(await validateSuccessStructure(jobId))) return;
             console.log('\n' + '✅'.repeat(35));
             log('🎉 VOTRE CANDIDATURE A ÉTÉ ENVOYÉE AVEC SUCCÈS');
             log('👉 Fermeture de l\'onglet dans 5 secondes...');
@@ -986,6 +1032,8 @@
         log('⏳ Attente du message de confirmation (Timeout 45s)...');
         const success = await waitForSuccessMessage(45000);
         if (success) {
+          await snapshot('ca_success_after_login_submit');
+          if (!(await validateSuccessStructure(jobId))) return;
           console.log('\n' + '✅'.repeat(35));
           log('🎉 VOTRE CANDIDATURE A ÉTÉ ENVOYÉE AVEC SUCCÈS');
           log('👉 Message détecté : \'Votre candidature a été envoyée avec succès\'');

@@ -43,12 +43,15 @@ Formaliser le parcours d'automatisation Crédit Agricole pour :
   - bouton `Je postule`
   - ou `button[data-popin="popin-application"]`
   - ou popin d'application visible
+  - ou lien direct vers `/candidature/`
 - Signatures texte observées sur le site :
   - `Comment souhaitez-vous postuler ?`
   - `Candidature express`
   - `Candidature détaillée`
   - `Postuler en tant qu'invité`
   - `Connexion`
+  - `Numéro de l'offre`
+  - `Description du poste`
 
 ### `application`
 - URL attendue :
@@ -71,6 +74,9 @@ Formaliser le parcours d'automatisation Crédit Agricole pour :
 - ou texte de confirmation :
   - `Votre candidature a été envoyée avec succès`
   - `application sent successfully`
+- indices complémentaires observés :
+  - `Retourner sur les offres`
+  - bouton `Retour`
 
 ### `unavailable`
 - URL ou texte de 404 / offre expirée
@@ -137,6 +143,18 @@ Fonctions exposées :
 - `getApplicationStructureReport()`
 - `validateApplicationStructure()`
 
+## Audit structurel de l'offre
+
+Le blueprint distingue maintenant plusieurs modes d'entrée valides sur une offre :
+- `direct_application` : lien visible direct vers `/candidature/`
+- `dialog_trigger` : bouton qui ouvre la popin d'application
+- `dialog_open` : popin déjà visible
+- `login_only` : lien de connexion visible sans popin ouverte
+
+Fonctions exposées :
+- `getOfferStructureReport()`
+- `validateOfferStructure()`
+
 ## Audit structurel du login
 
 Le blueprint peut aussi auditer la page de connexion :
@@ -167,6 +185,18 @@ Après le clic sur `Je postule`, le blueprint peut valider la popin de choix :
 Fonctions exposées :
 - `getApplyDialogStructureReport()`
 - `validateApplyDialogStructure()`
+
+Important :
+- le flux réel observé sur l'offre `2026-107817` peut sauter cette popin et envoyer directement vers la page de candidature
+- le runtime accepte donc désormais les transitions directes vers `login`, `application` ou `success` après le clic `Je postule`
+
+## Audit de la page de succès
+
+Après soumission, le blueprint peut valider que la page de confirmation ressemble bien à une vraie page de succès et pas seulement à une URL qui a changé.
+
+Fonctions exposées :
+- `getSuccessStructureReport()`
+- `validateSuccessStructure()`
 
 ## Règle de remplissage
 
