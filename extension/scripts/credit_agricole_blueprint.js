@@ -29,10 +29,42 @@
     ],
     alreadyApplied: [
       'vous avez déjà postulé',
+      'désolé',
       'suivre ma candidature',
       'you have already applied',
       'track my application',
       'already applied'
+    ],
+    login: [
+      'heureux de vous voir',
+      'connectez-vous ou créez votre compte',
+      'adresse e-mail',
+      'mot de passe oublié',
+      'rester connecté',
+      'attention, votre compte sera bloqué',
+      'happy to see you',
+      'sign in',
+      'forgot password'
+    ],
+    offer: [
+      'comment souhaitez-vous postuler',
+      'candidature express',
+      'candidature détaillée',
+      'postuler en tant qu\'invité',
+      'je crée mon compte',
+      'type de contrat',
+      'numéro de l\'offre',
+      'description du poste'
+    ],
+    application: [
+      'mes informations',
+      'mes documents',
+      'mon profil',
+      'mes formations',
+      'champ obligatoire',
+      'champs obligatoires',
+      'votre candidature',
+      'suivant'
     ]
   };
 
@@ -50,8 +82,10 @@
     login: {
       label: 'Connexion',
       pathMatches: [/connexion/, /login/, /connection/],
+      textPatterns: TEXT_PATTERNS.login,
       selectorsAny: [
         '#form-login-email',
+        '#form-login-submit',
         'input[id*="login-email"]',
         'input[type="email"]'
       ],
@@ -62,21 +96,26 @@
     offer: {
       label: 'Offre',
       pathMatches: [/\/nos-offres-emploi\//, /\/our-offers\//, /\/our-offres\//],
+      textPatterns: TEXT_PATTERNS.offer,
       selectorsAny: [
         'button.cta.primary[data-popin="popin-application"]',
         'button[data-popin="popin-application"]',
         '#popin-application',
-        'a.cta.secondary.arrow[href*="connexion"]'
+        'a.cta.secondary.arrow[href*="connexion"]',
+        'a[href*="connexion"]',
+        'a[href*="candidature"]'
       ]
     },
     application: {
       label: 'Formulaire candidature',
       pathMatches: [/\/candidature\//, /\/application\//, /\/apply\//],
+      textPatterns: TEXT_PATTERNS.application,
       selectorsAny: [
         '#form-apply-firstname',
         '#form-apply-lastname',
         '#applyBtn',
-        'form[id*="apply"]'
+        'form[id*="apply"]',
+        'button.cta.next-step'
       ]
     },
     admin_ajax: {
@@ -121,6 +160,20 @@
     return String(doc?.body?.textContent || '').toLowerCase();
   }
 
+  function isVisible(el) {
+    if (!el) return false;
+    const style = globalThis.getComputedStyle ? getComputedStyle(el) : null;
+    return el.offsetParent !== null && style?.visibility !== 'hidden' && style?.display !== 'none';
+  }
+
+  function queryVisible(doc, selector) {
+    try {
+      return Array.from(doc.querySelectorAll(selector)).find(isVisible) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function pathMatches(def, pathname, href) {
     return (def.pathMatches || []).some((re) => re.test(pathname) || re.test(href));
   }
@@ -153,6 +206,17 @@
     return patterns.some((pattern) => text.includes(pattern));
   }
 
+  function collectSelectorMatches(def, doc) {
+    const selectors = [...(def.selectorsAny || []), ...(def.selectorsAll || [])];
+    const matched = [];
+    const missing = [];
+    for (const selector of selectors) {
+      if (queryVisible(doc, selector)) matched.push(selector);
+      else missing.push(selector);
+    }
+    return { matched, missing };
+  }
+
   function detectPage(ctx = {}) {
     const doc = ctx.document || document;
     const loc = ctx.location || window.location;
@@ -183,7 +247,8 @@
         key,
         label: def.label,
         score,
-        evidence
+        evidence,
+        selectors: collectSelectorMatches(def, doc)
       };
     }).sort((a, b) => b.score - a.score);
 
@@ -192,9 +257,54 @@
       key: 'unknown',
       label: 'Page inconnue',
       score: 0,
-      evidence: []
+      evidence: [],
+      selectors: { matched: [], missing: [] }
     };
     return best && best.score > 0 ? best : fallback;
+  }
+
+  function getApplicationStructureReport(doc = document) {
+    const sections = Object.entries(FIELD_MAP).map(([sectionKey, fields]) => {
+      const details = fields.map((field) => {
+        const element = queryVisible(doc, field.selector) || doc.querySelector(field.selector);
+        return {
+          profileKey: field.profileKey,
+          label: field.label,
+          selector: field.selector,
+          present: !!element,
+          visible: !!queryVisible(doc, field.selector)
+        };
+      });
+      const presentCount = details.filter((item) => item.present).length;
+      return {
+        key: sectionKey,
+        total: details.length,
+        presentCount,
+        missing: details.filter((item) => !item.present).map((item) => item.label),
+        details
+      };
+    });
+
+    const critical = ['#form-apply-firstname', '#form-apply-lastname', '#applyBtn'];
+    const criticalMissing = critical.filter((selector) => !doc.querySelector(selector));
+    return {
+      ok: criticalMissing.length === 0,
+      criticalMissing,
+      sections
+    };
+  }
+
+  async function validateApplicationStructure(options = {}) {
+    const doc = options.document || document;
+    const report = getApplicationStructureReport(doc);
+    const result = {
+      ok: report.ok,
+      kind: 'application_structure',
+      url: String((options.location || window.location)?.href || ''),
+      ...report
+    };
+    await persistLastCheck(result);
+    return result;
   }
 
   async function persistLastCheck(result) {
@@ -219,6 +329,8 @@
       detectedLabel: detected.label,
       score: detected.score,
       evidence: detected.evidence,
+      matchedSelectors: detected.selectors?.matched || [],
+      missingSelectors: detected.selectors?.missing || [],
       url: String((options.location || window.location)?.href || '')
     };
     await persistLastCheck(result);
@@ -230,6 +342,8 @@
     fieldMap: FIELD_MAP,
     textPatterns: TEXT_PATTERNS,
     detectPage,
-    validateExpectedPage
+    validateExpectedPage,
+    getApplicationStructureReport,
+    validateApplicationStructure
   };
 })();

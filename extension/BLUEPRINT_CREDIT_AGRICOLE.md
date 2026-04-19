@@ -28,6 +28,11 @@ Formaliser le parcours d'automatisation Crédit Agricole pour :
 - Signatures DOM :
   - `#form-login-email` ou `input[id*="login-email"]` ou `input[type="email"]`
   - `input[type="password"]`
+- Signatures texte observées sur le site :
+  - `Heureux de vous voir !`
+  - `Connectez-vous ou créez votre compte`
+  - `Adresse e-mail`
+  - `Mot de passe oublié`
 
 ### `offer`
 - URL attendue :
@@ -38,6 +43,12 @@ Formaliser le parcours d'automatisation Crédit Agricole pour :
   - bouton `Je postule`
   - ou `button[data-popin="popin-application"]`
   - ou popin d'application visible
+- Signatures texte observées sur le site :
+  - `Comment souhaitez-vous postuler ?`
+  - `Candidature express`
+  - `Candidature détaillée`
+  - `Postuler en tant qu'invité`
+  - `Connexion`
 
 ### `application`
 - URL attendue :
@@ -49,6 +60,11 @@ Formaliser le parcours d'automatisation Crédit Agricole pour :
   - `#form-apply-lastname`
   - `#applyBtn`
   - `form[id*="apply"]`
+- Sections attendues :
+  - `Mes informations`
+  - `Mes documents`
+  - `Mon profil`
+  - `Mes formations`
 
 ### `success`
 - URL attendue : `candidature-validee`
@@ -107,6 +123,20 @@ Si la page détectée ne correspond pas :
 - stocker le dernier check dans `chrome.storage.local.taleos_ca_blueprint_last_check`
 - remonter une erreur de candidature si on est bloqué
 
+## Audit structurel du formulaire
+
+Avant remplissage, le blueprint peut aussi auditer la structure du formulaire :
+- présence des champs critiques : `#form-apply-firstname`, `#form-apply-lastname`, `#applyBtn`
+- couverture par section :
+  - `personal`
+  - `documents`
+  - `profile`
+  - `education`
+
+Fonctions exposées :
+- `getApplicationStructureReport()`
+- `validateApplicationStructure()`
+
 ## Règle de remplissage
 
 - si le champ est vide : remplir depuis Firebase
@@ -122,4 +152,3 @@ Le runtime partagé du blueprint est dans :
 Il expose :
 - `detectPage()`
 - `validateExpectedPage(expected)`
-

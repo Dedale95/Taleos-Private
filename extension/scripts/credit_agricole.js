@@ -50,6 +50,26 @@
     return true;
   }
 
+  async function validateApplicationStructure(jobId, reason) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateApplicationStructure) return true;
+    const result = await api.validateApplicationStructure();
+    if (result.ok) {
+      const summary = result.sections.map((section) => `${section.key}:${section.presentCount}/${section.total}`).join(' | ');
+      log(`🧱 Structure formulaire OK : ${summary}`);
+      return true;
+    }
+    log(`⚠️ Structure formulaire incomplète : champs critiques manquants [${result.criticalMissing.join(', ')}]`);
+    result.sections.forEach((section) => {
+      if (section.missing.length) {
+        log(`   ↳ ${section.key} manquants : ${section.missing.join(', ')}`);
+      }
+    });
+    if (jobId) sendCandidatureFailure(jobId, reason || 'Structure formulaire CA incomplète');
+    hideAutomationBanner();
+    return false;
+  }
+
   const BANNER_ID = 'taleos-ca-automation-banner';
   function showAutomationBanner() {
     if (document.getElementById(BANNER_ID)) return;
@@ -794,6 +814,7 @@
           sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
           return;
         }
+        if (!(await validateApplicationStructure(jobId, 'Structure formulaire CA incomplète en phase 3'))) return;
         log('   ✅ Formulaire détecté (DOM).');
         log('   ⏳ Attente formulaire prêt (hydration)...');
         const hydrated = await waitForFormReady(15000);
@@ -896,6 +917,7 @@
         sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
         return;
       }
+      if (!(await validateApplicationStructure(jobId, 'Structure formulaire CA incomplète après login'))) return;
       log('   ✅ Formulaire détecté (DOM).');
       log('   ⏳ Attente formulaire prêt (hydration)...');
       await waitForFormReady(25000);
