@@ -50,3 +50,4 @@ node_modules/
 # Copies locales de dépôts de travail
 _private_repo/
 _public_repo/
+_mon_site_redirect/

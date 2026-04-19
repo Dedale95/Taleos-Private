@@ -114,6 +114,14 @@
     },
     {
       "matches": [
+        "https://*.recruitmentplatform.com/*"
+      ],
+      "js": ["scripts/taleos-automation-banner.js", "content/bpce-lumesse-filler.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "https://careers.societegenerale.com/*"
       ],
       "js": [

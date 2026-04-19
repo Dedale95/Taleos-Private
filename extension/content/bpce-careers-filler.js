@@ -8,6 +8,7 @@
 
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const BANNER_ID = 'taleos-bpce-automation-banner';
+  try { chrome.storage.local.set({ taleos_bpce_script_ping: { script: 'bpce-careers-filler.js', url: location.href, at: new Date().toISOString() } }); } catch (_) {}
 
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {

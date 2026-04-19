@@ -682,17 +682,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
-  if (msg.action === 'gmail_identity_connect_test') {
-    (async () => {
-      try {
-        const result = await connectGmailWithIdentity();
-        sendResponse(result);
-      } catch (e) {
-        sendResponse({ ok: false, message: e.message || 'Connexion Gmail via identity impossible' });
-      }
-    })();
-    return true;
-  }
   if (msg.action === 'gmail_get_link_status') {
     (async () => {
       try {
