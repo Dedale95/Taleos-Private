@@ -138,6 +138,12 @@
     console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos CA Connexion] ${msg}`);
   }
 
+  async function snapshot(tag, extra = {}) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.capturePageSnapshot) return;
+    await api.capturePageSnapshot(tag, { extra });
+  }
+
   async function validateBlueprint(expected, fatalMessage) {
     const api = globalThis.__TALEOS_CA_BLUEPRINT__;
     if (!api?.validateExpectedPage) return true;
@@ -270,6 +276,7 @@
   }
 
   async function run() {
+    await snapshot('ca_login_script_start');
     const { taleos_pending_offer } = await chrome.storage.local.get('taleos_pending_offer');
     if (!taleos_pending_offer) return;
     const age = Date.now() - (taleos_pending_offer.timestamp || 0);
@@ -284,11 +291,14 @@
       return;
     }
     if (!(await validateBlueprint('login', 'Page de connexion non reconnue par le blueprint CA'))) {
+      await snapshot('ca_login_blueprint_mismatch');
       return;
     }
     if (!(await validateLoginStructure())) {
+      await snapshot('ca_login_structure_mismatch');
       return;
     }
+    await snapshot('ca_login_validated');
     chrome.storage.local.set({ taleos_redirect_fallback: offerUrl });
     showAutomationBanner();
     log('📧 Remplissage formulaire connexion...');

@@ -32,6 +32,12 @@
     console.log(`[${t}] [Taleos CA] ${msg}`);
   }
 
+  async function snapshot(tag, extra = {}) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.capturePageSnapshot) return;
+    await api.capturePageSnapshot(tag, { extra });
+  }
+
   async function validateBlueprint(expected, options = {}) {
     const api = globalThis.__TALEOS_CA_BLUEPRINT__;
     if (!api?.validateExpectedPage) return true;
@@ -656,6 +662,7 @@
 
   async function main(profile) {
     showAutomationBanner();
+    await snapshot('ca_apply_script_start', { phase: profile.__phase || 1 });
     const phase = profile.__phase;
     const p = { ...profile };
     const jobId = p.__jobId;
@@ -672,6 +679,7 @@
     const offerId = offerIdMatch ? offerIdMatch[1] : 'INCONNU';
 
     if (isOfferUnavailablePage()) {
+      await snapshot('ca_offer_unavailable', { phase });
       log('⛔ Offre non disponible détectée (404 / introuvable).');
       notifyOfferUnavailable(jobId, 'Offre non disponible (404) — L\'offre n\'est plus en ligne.');
       hideAutomationBanner();
@@ -714,6 +722,7 @@
       if (phase === 2) {
         log('⏳ Attente chargement page offre (fin animation)...');
         await waitForLoadingComplete(30000);
+        await snapshot('ca_offer_phase2_loaded');
         if (!(await validateBlueprint('offer', { fatal: true, jobId, reason: 'Page offre non reconnue par le blueprint CA' }))) return;
         if (isOfferUnavailablePage()) {
           log('⛔ Offre non disponible après chargement de la page offre.');
@@ -729,9 +738,12 @@
           btnPostuleWait.scrollIntoView?.({ behavior: 'instant', block: 'center' });
           await delay(200);
           btnPostuleWait.click();
+          await delay(800);
+          await snapshot('ca_offer_phase2_after_postule_click');
         }
         return;
       } else if (phase === 3) {
+        await snapshot('ca_application_phase3_entry');
         const successRe = new RegExp(TEXTS.successMessage.join('|'), 'i');
         const isSuccessPage = window.location.pathname.includes('candidature-validee') || successRe.test(document.body?.textContent || '');
         if (isSuccessPage) {
@@ -769,6 +781,7 @@
             if (p && (p.classList.contains('open') || p.offsetParent !== null)) break;
           }
           await delay(500);
+          await snapshot('ca_offer_phase1_after_postule_click');
           if (!(await validateApplyDialog(jobId))) return;
         }
 
@@ -826,9 +839,11 @@
         }
         if (!formReady) {
           log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
+          await snapshot('ca_application_phase3_timeout');
           sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
           return;
         }
+        await snapshot('ca_application_phase3_form_detected');
         if (!(await validateApplicationStructure(jobId, 'Structure formulaire CA incomplète en phase 3'))) return;
         log('   ✅ Formulaire détecté (DOM).');
         log('   ⏳ Attente formulaire prêt (hydration)...');
@@ -929,9 +944,11 @@
       }
       if (!formReady) {
         log('❌ Timeout: Le formulaire ne s\'est pas affiché.');
+        await snapshot('ca_application_after_login_timeout');
         sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
         return;
       }
+      await snapshot('ca_application_after_login_form_detected');
       if (!(await validateApplicationStructure(jobId, 'Structure formulaire CA incomplète après login'))) return;
       log('   ✅ Formulaire détecté (DOM).');
       log('   ⏳ Attente formulaire prêt (hydration)...');

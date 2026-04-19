@@ -8,6 +8,10 @@
 
   if (globalThis.__TALEOS_CA_BLUEPRINT__) return;
 
+  const LAST_CHECK_KEY = 'taleos_ca_blueprint_last_check';
+  const LOG_KEY = 'taleos_ca_blueprint_log';
+  const MAX_LOG_ENTRIES = 80;
+
   const TEXT_PATTERNS = {
     unavailable: [
       'la page que vous recherchez est introuvable',
@@ -334,6 +338,18 @@
     return patterns.reduce((acc, pattern) => acc + (text.includes(pattern) ? 1 : 0), 0);
   }
 
+  function summarizeVisibleText(doc, selector, limit = 8) {
+    try {
+      return Array.from(doc.querySelectorAll(selector))
+        .filter(isVisible)
+        .map((el) => String(el.textContent || '').trim())
+        .filter(Boolean)
+        .slice(0, limit);
+    } catch (_) {
+      return [];
+    }
+  }
+
   function getLoginStructureReport(doc = document) {
     const text = getPageText(doc);
     const criticalMissing = LOGIN_STRUCTURE.criticalSelectors.filter((selector) => !doc.querySelector(selector));
@@ -357,6 +373,7 @@
       ...report
     };
     await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_login_structure', ...result });
     return result;
   }
 
@@ -383,6 +400,7 @@
       ...report
     };
     await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_apply_dialog_structure', ...result });
     return result;
   }
 
@@ -396,18 +414,73 @@
       ...report
     };
     await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_application_structure', ...result });
     return result;
   }
 
   async function persistLastCheck(result) {
     try {
       await chrome.storage.local.set({
-        taleos_ca_blueprint_last_check: {
+        [LAST_CHECK_KEY]: {
           ...result,
           at: new Date().toISOString()
         }
       });
     } catch (_) {}
+  }
+
+  async function appendDiagnosticLog(entry) {
+    try {
+      const { [LOG_KEY]: current = [] } = await chrome.storage.local.get([LOG_KEY]);
+      const next = [
+        ...current,
+        {
+          ...entry,
+          at: new Date().toISOString()
+        }
+      ].slice(-MAX_LOG_ENTRIES);
+      await chrome.storage.local.set({ [LOG_KEY]: next });
+    } catch (_) {}
+  }
+
+  function getPageSnapshot(tag, options = {}) {
+    const doc = options.document || document;
+    const loc = options.location || window.location;
+    const detected = detectPage({ document: doc, location: loc });
+    const text = getPageText(doc);
+    const snapshot = {
+      kind: 'snapshot',
+      tag,
+      url: String(loc?.href || ''),
+      title: String(doc?.title || ''),
+      detected: detected.key,
+      detectedLabel: detected.label,
+      score: detected.score,
+      evidence: detected.evidence,
+      matchedSelectors: detected.selectors?.matched || [],
+      headings: summarizeVisibleText(doc, 'h1, h2, h3'),
+      buttons: summarizeVisibleText(doc, 'button, a[role="button"], .cta', 12),
+      textHints: {
+        login: countTextMatches(text, TEXT_PATTERNS.login),
+        offer: countTextMatches(text, TEXT_PATTERNS.offer),
+        application: countTextMatches(text, TEXT_PATTERNS.application),
+        success: countTextMatches(text, TEXT_PATTERNS.success),
+        unavailable: countTextMatches(text, TEXT_PATTERNS.unavailable)
+      }
+    };
+    if (detected.key === 'login') {
+      snapshot.loginStructure = getLoginStructureReport(doc);
+    }
+    if (detected.key === 'application') {
+      snapshot.applicationStructure = getApplicationStructureReport(doc);
+    }
+    return snapshot;
+  }
+
+  async function capturePageSnapshot(tag, options = {}) {
+    const snapshot = getPageSnapshot(tag, options);
+    await appendDiagnosticLog(snapshot);
+    return snapshot;
   }
 
   async function validateExpectedPage(expected, options = {}) {
@@ -426,6 +499,7 @@
       url: String((options.location || window.location)?.href || '')
     };
     await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_page', ...result });
     return result;
   }
 
@@ -434,6 +508,8 @@
     fieldMap: FIELD_MAP,
     textPatterns: TEXT_PATTERNS,
     detectPage,
+    getPageSnapshot,
+    capturePageSnapshot,
     validateExpectedPage,
     getApplicationStructureReport,
     validateApplicationStructure,
