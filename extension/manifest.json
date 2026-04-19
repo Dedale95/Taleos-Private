@@ -146,6 +146,7 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
+        "scripts/credit_agricole_blueprint.js",
         "content/ca-connexion-filler.js"
       ],
       "run_at": "document_idle"

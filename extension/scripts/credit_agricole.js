@@ -32,6 +32,24 @@
     console.log(`[${t}] [Taleos CA] ${msg}`);
   }
 
+  async function validateBlueprint(expected, options = {}) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateExpectedPage) return true;
+    const result = await api.validateExpectedPage(expected);
+    if (result.ok) {
+      log(`🧭 Blueprint OK : ${result.detected}`);
+      return true;
+    }
+    log(`⚠️ Blueprint mismatch : attendu ${result.expected.join(', ')} / détecté ${result.detected}`);
+    if (options.fatal) {
+      const reason = options.reason || `Blueprint mismatch (${result.detected})`;
+      if (options.jobId) sendCandidatureFailure(options.jobId, reason);
+      hideAutomationBanner();
+      return false;
+    }
+    return true;
+  }
+
   const BANNER_ID = 'taleos-ca-automation-banner';
   function showAutomationBanner() {
     if (document.getElementById(BANNER_ID)) return;
@@ -662,6 +680,7 @@
       if (phase === 2) {
         log('⏳ Attente chargement page offre (fin animation)...');
         await waitForLoadingComplete(30000);
+        if (!(await validateBlueprint('offer', { fatal: true, jobId, reason: 'Page offre non reconnue par le blueprint CA' }))) return;
         if (isOfferUnavailablePage()) {
           log('⛔ Offre non disponible après chargement de la page offre.');
           notifyOfferUnavailable(jobId, 'Offre non disponible (404) — L\'offre n\'est plus en ligne.');
@@ -699,6 +718,7 @@
         log('   ✅ Page formulaire directe détectée (pas de reload)');
       } else {
         await delay(3000);
+        await validateBlueprint(['offer', 'application', 'login']);
 
         const cookieBtn = findCookieDismissButton();
         if (cookieBtn) { cookieBtn.click(); await delay(500); }
@@ -761,6 +781,7 @@
       }
 
       if (phase === 3) {
+        if (!(await validateBlueprint(['application', 'success'], { fatal: true, jobId, reason: 'Page candidature non reconnue par le blueprint CA' }))) return;
         log('⏳ Attente chargement formulaire...');
         await delay(5000);
         await waitForLoadingComplete(20000);
@@ -857,6 +878,7 @@
 
       log('⏳ Attente chargement formulaire (fin animation)...');
       await waitForLoadingComplete(30000);
+      if (!(await validateBlueprint('application', { fatal: true, jobId, reason: 'Formulaire CA non reconnu par le blueprint' }))) return;
       let formReady = formAlreadyVisible || await waitForForm(15000);
       if (!formReady) {
         log('   ⚠️ Formulaire non détecté. Nouveau clic "Je postule"...');

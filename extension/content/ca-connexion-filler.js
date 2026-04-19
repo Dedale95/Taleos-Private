@@ -138,6 +138,21 @@
     console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos CA Connexion] ${msg}`);
   }
 
+  async function validateBlueprint(expected, fatalMessage) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateExpectedPage) return true;
+    const result = await api.validateExpectedPage(expected);
+    if (result.ok) {
+      log(`🧭 Blueprint OK : ${result.detected}`);
+      return true;
+    }
+    log(`⚠️ Blueprint mismatch : attendu ${result.expected.join(', ')} / détecté ${result.detected}`);
+    if (fatalMessage) {
+      log(`❌ ${fatalMessage}`);
+    }
+    return false;
+  }
+
   function hideAutomationBanner() {
     document.getElementById(BANNER_ID)?.remove();
   }
@@ -254,6 +269,9 @@
     if (!profile?.auth_email || !profile?.auth_password) {
       log('❌ Identifiants manquants dans pending_offer');
       chrome.storage.local.remove('taleos_pending_offer');
+      return;
+    }
+    if (!(await validateBlueprint('login', 'Page de connexion non reconnue par le blueprint CA'))) {
       return;
     }
     chrome.storage.local.set({ taleos_redirect_fallback: offerUrl });
