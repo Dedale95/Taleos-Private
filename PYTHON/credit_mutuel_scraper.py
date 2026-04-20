@@ -51,13 +51,10 @@ BASE_URL = "https://recrutement.creditmutuel.fr"
 LISTING_URL = f"{BASE_URL}/fr/nos_offres.html"
 
 # ================= Config =================
-# Types de contrat (tc) pour récupérer toutes les offres par sous-ensemble
-TC_VALUES = list(range(11))  # 0-10: VIE, Reconversion, Pro, Stage, Apprentissage, Alternance, etc., CDD, CDI
-
 class Config:
     MAX_LOAD_MORE_ROUNDS = 100  # Clics sur "Afficher plus" par page tc
     PAGE_TIMEOUT = 45000
-    WAIT_AFTER_CLICK = 2
+    WAIT_AFTER_CLICK = 2.5
     HEADLESS = True
     BASE_DIR = Path(__file__).parent
     DB_PATH = BASE_DIR / "credit_mutuel_jobs.db"
@@ -283,7 +280,13 @@ async def _collect_urls_for_page(page, url: str) -> Set[str]:
     """Charge une page, clique sur Afficher plus jusqu'à épuisement, retourne les IDs."""
     await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until='domcontentloaded')
     await asyncio.sleep(2)
-    await page.evaluate("document.getElementById('cookieLB')?.remove()")
+    await page.evaluate("""
+        () => {
+            document.getElementById('cookieLB')?.remove();
+            document.getElementById('bg_modal_name')?.remove();
+            document.body?.style?.setProperty('overflow', 'auto', 'important');
+        }
+    """)
     await asyncio.sleep(0.3)
 
     all_ids = set()
@@ -305,34 +308,39 @@ async def _collect_urls_for_page(page, url: str) -> Set[str]:
             break
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         await asyncio.sleep(0.2)
-        clicked = await page.evaluate("""
-            () => {
-                const btns = Array.from(document.querySelectorAll('a.ei_btn'));
-                const loadMore = btns.find(a => a.textContent && a.textContent.includes('Afficher plus'));
-                if (loadMore) { loadMore.scrollIntoView(); loadMore.click(); return true; }
-                return false;
-            }
-        """)
+        clicked = False
+        try:
+            load_more = page.locator('a[id*="plusDoffresAccessibilite:link"]').first
+            if await load_more.count():
+                await load_more.scroll_into_view_if_needed()
+                await load_more.click(force=True)
+                clicked = True
+        except Exception:
+            clicked = False
         if not clicked:
             break
-        await asyncio.sleep(config.WAIT_AFTER_CLICK)
+        try:
+            await page.wait_for_function(
+                """(previousVisibleCount) => {
+                    const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
+                    return links.length > previousVisibleCount;
+                }""",
+                arg=len(ids),
+                timeout=int(config.WAIT_AFTER_CLICK * 1000 * 4)
+            )
+        except Exception:
+            await asyncio.sleep(config.WAIT_AFTER_CLICK)
 
     return all_ids
 
 
 async def collect_all_job_urls() -> List[str]:
-    """Collecte toutes les URLs en itérant par type de contrat (tc=0..10) puis fusion."""
-    all_ids = set()
+    """Collecte toutes les URLs depuis le listing global CM."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=config.HEADLESS)
         page = await browser.new_page()
-
-        for tc in TC_VALUES:
-            url = f"{LISTING_URL}?tc={tc}"
-            ids = await _collect_urls_for_page(page, url)
-            new = ids - all_ids
-            all_ids.update(ids)
-            logging.info(f"tc={tc}: +{len(new)} offres (total {len(all_ids)})")
+        all_ids = await _collect_urls_for_page(page, LISTING_URL)
+        logging.info(f"listing global: {len(all_ids)} offres collectees")
 
         await browser.close()
 

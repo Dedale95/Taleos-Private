@@ -29,6 +29,7 @@ from credit_mutuel_company_mapping import normalize_company_name as normalize_cm
 # Configuration des chemins
 PYTHON_DIR = Path(__file__).parent
 HTML_DIR = PYTHON_DIR.parent / "HTML"
+ROOT_DIR = PYTHON_DIR.parent
 OUTPUT_JSON = HTML_DIR / "scraped_jobs.json"
 
 # Chemins des bases de données SQLite
@@ -40,6 +41,25 @@ BPIFRANCE_DB = PYTHON_DIR / "bpifrance_jobs.db"
 BPCE_DB = PYTHON_DIR / "bpce_jobs.db"
 CREDIT_MUTUEL_DB = PYTHON_DIR / "credit_mutuel_jobs.db"
 ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
+
+
+def write_json(path: Path, data, pretty: bool = False):
+    with open(path, 'w', encoding='utf-8') as f:
+        if pretty:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        else:
+            json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+
+
+def slim_full_job(job: dict) -> dict:
+    """Version légère pour l'archive complète afin de rester sous les limites GitHub."""
+    if not isinstance(job, dict):
+        return job
+    slim = dict(job)
+    # Le site n'utilise pas les longs blocs descriptifs dans la version full d'archive.
+    slim.pop('job_description', None)
+    slim.pop('company_description', None)
+    return slim
 
 
 def _normalize_text(s: str) -> str:
@@ -468,8 +488,8 @@ def main():
     
     if all_jobs:
         # Sauvegarder en JSON (version complète)
-        with open(OUTPUT_JSON, 'w', encoding='utf-8') as f:
-            json.dump(all_jobs, f, ensure_ascii=False, indent=2)
+        write_json(OUTPUT_JSON, all_jobs, pretty=False)
+        write_json(ROOT_DIR / "scraped_jobs.json", all_jobs, pretty=False)
         
         print()
         print(f"✅ Export terminé : {len(all_jobs)} offres Live sauvegardées dans {OUTPUT_JSON.name}")
@@ -478,8 +498,8 @@ def main():
         # Créer une version allégée avec seulement les offres Live (pour GitHub Pages)
         live_jobs = [job for job in all_jobs if job.get('status') == 'Live']
         OUTPUT_JSON_LIVE = HTML_DIR / "scraped_jobs_live.json"
-        with open(OUTPUT_JSON_LIVE, 'w', encoding='utf-8') as f:
-            json.dump(live_jobs, f, ensure_ascii=False, indent=2)
+        write_json(OUTPUT_JSON_LIVE, live_jobs, pretty=False)
+        write_json(ROOT_DIR / "scraped_jobs_live.json", live_jobs, pretty=False)
         
         print(f"✅ Version allégée créée : {len(live_jobs)} offres Live dans {OUTPUT_JSON_LIVE.name}")
         
@@ -493,8 +513,8 @@ def main():
             all_jobs_full.extend(bnp_jobs_preserved)
         OUTPUT_JSON_FULL = HTML_DIR / "scraped_jobs_full.json"
         if all_jobs_full:
-            with open(OUTPUT_JSON_FULL, 'w', encoding='utf-8') as f:
-                json.dump(all_jobs_full, f, ensure_ascii=False, indent=2)
+            slim_jobs_full = [slim_full_job(job) for job in all_jobs_full]
+            write_json(OUTPUT_JSON_FULL, slim_jobs_full, pretty=False)
             live_count = sum(1 for j in all_jobs_full if j.get('status') == 'Live')
             print(f"✅ Version complète créée : {len(all_jobs_full)} offres (dont {live_count} Live) dans {OUTPUT_JSON_FULL.name}")
         
