@@ -160,6 +160,7 @@
     success: {
       label: 'Succes candidature',
       hostIncludes: ['socgen.taleo.net'],
+      pathMatches: [/flow\.jsf/],
       textPatterns: TEXT_PATTERNS.success
     },
     unavailable: {
