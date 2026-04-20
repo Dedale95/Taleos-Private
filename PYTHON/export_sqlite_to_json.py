@@ -51,6 +51,24 @@ def write_json(path: Path, data, pretty: bool = False):
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
 
 
+def load_existing_json(path: Path):
+    if not path.exists():
+        return []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def extract_bnp_jobs_from_json(jobs: list, patterns: list[str]) -> list:
+    return [
+        job for job in jobs
+        if any(p in (job.get('company_name') or '').lower() for p in patterns)
+    ]
+
+
 def slim_full_job(job: dict) -> dict:
     """Version légère pour l'archive complète afin de rester sous les limites GitHub."""
     if not isinstance(job, dict):
@@ -450,7 +468,13 @@ def main():
 
     # Mode strict pour éviter d'exporter des données BNP obsolètes en cas d'échec scraper/base manquante.
     require_bnp_db = (os.environ.get("TALEOS_REQUIRE_BNP_DB", "").strip() == "1")
-    preserve_bnp_if_missing = (os.environ.get("TALEOS_PRESERVE_BNP_IF_MISSING", "").strip() == "1")
+    preserve_bnp_env = os.environ.get("TALEOS_PRESERVE_BNP_IF_MISSING", "").strip().lower()
+    if preserve_bnp_env in {"0", "false", "no"}:
+        preserve_bnp_if_missing = False
+    else:
+        # Par défaut, on préserve BNP pour éviter de le faire disparaître du site
+        # lors d'un export local partiel sans base BNP.
+        preserve_bnp_if_missing = True
 
     # Si BNP_DB absent : préserver les offres BNP du JSON existant uniquement en mode explicite.
     bnp_jobs_preserved = []
@@ -460,17 +484,28 @@ def main():
                 f"BNP DB manquante: {BNP_DB}. Abandon export (TALEOS_REQUIRE_BNP_DB=1) pour éviter des offres BNP obsolètes."
             )
         if preserve_bnp_if_missing:
-            live_path = HTML_DIR / "scraped_jobs_live.json"
-            if live_path.exists():
-                try:
-                    with open(live_path, 'r', encoding='utf-8') as f:
-                        existing = json.load(f)
-                    bnp_jobs_preserved = [j for j in existing
-                                          if any(p in (j.get('company_name') or '').lower() for p in BNP_PATTERNS)]
-                    if bnp_jobs_preserved:
-                        print(f"   📌 {len(bnp_jobs_preserved)} offres BNP préservées du JSON existant (base absente)")
-                except Exception:
-                    pass
+            existing_sources = [
+                HTML_DIR / "scraped_jobs_live.json",
+                ROOT_DIR / "scraped_jobs_live.json",
+                HTML_DIR / "scraped_jobs.json",
+                ROOT_DIR / "scraped_jobs.json",
+            ]
+            for existing_path in existing_sources:
+                existing = load_existing_json(existing_path)
+                if not existing:
+                    continue
+                bnp_jobs_preserved = extract_bnp_jobs_from_json(existing, BNP_PATTERNS)
+                if bnp_jobs_preserved:
+                    print(
+                        f"   📌 {len(bnp_jobs_preserved)} offres BNP préservées depuis {existing_path.name} "
+                        f"(base absente)"
+                    )
+                    break
+            if not bnp_jobs_preserved:
+                print(
+                    "   ⚠️ Base BNP absente et aucune offre BNP à préserver dans les JSON existants. "
+                    "L'export continuera sans BNP."
+                )
 
     for name, db_path in sources_info:
         print(f"📁 Lecture de {name} depuis {db_path.name}...")

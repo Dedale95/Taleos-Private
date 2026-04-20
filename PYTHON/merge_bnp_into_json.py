@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Import depuis export_sqlite_to_json pour réutiliser la logique de lecture
-from export_sqlite_to_json import read_from_db, BNP_DB, HTML_DIR
+from export_sqlite_to_json import read_from_db, BNP_DB, HTML_DIR, ROOT_DIR, write_json
 
 OUTPUT_JSON = HTML_DIR / "scraped_jobs.json"
 OUTPUT_JSON_LIVE = HTML_DIR / "scraped_jobs_live.json"
@@ -58,12 +58,12 @@ def main():
     merged = other_jobs + bnp_jobs
 
     # Sauvegarder
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
+    write_json(json_path, merged, pretty=False)
+    write_json(ROOT_DIR / "scraped_jobs_live.json", merged, pretty=False)
 
     # Aussi scraped_jobs.json (version complète pour compatibilité)
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
+    write_json(OUTPUT_JSON, merged, pretty=False)
+    write_json(ROOT_DIR / "scraped_jobs.json", merged, pretty=False)
 
     print(f"✅ Fusion BNP terminée : {json_path.name}")
     print(f"   - Offres BNP retirées : {count_removed}")

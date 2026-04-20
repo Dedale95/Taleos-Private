@@ -49,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json
+          git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json scraped_jobs_live.json scraped_jobs.json
           if ! git diff --staged --quiet; then
             git commit -m "chore: mise à jour offres BNP Paribas (one-off)"
             git pull --rebase origin main
