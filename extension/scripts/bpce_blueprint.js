@@ -19,7 +19,9 @@
       'technology risk management',
       'workday_',
       'natixis',
-      'bpce recrutement'
+      'bpce recrutement',
+      'bpce lease',
+      'analyste risque de credit'
     ],
     oracleEmail: [
       'formulaire de candidature',
@@ -352,9 +354,13 @@
   }
 
   function inferOfferVariant(doc = document) {
+    const visibleApplyLinks = getVisibleApplyLinks(doc);
+    if (visibleApplyLinks.some((el) => String(el.href || '').includes('recruitmentplatform.com'))) return 'bpce_lumesse';
+    if (visibleApplyLinks.some((el) => String(el.href || '').includes('oraclecloud.com'))) return 'bpce_oracle';
     const text = getPageText(doc);
     const title = normalizeText(doc.querySelector('h1')?.textContent || doc.title || '');
     if (text.includes('natixis') || title.includes('natixis')) return 'natixis_oracle';
+    if (text.includes('bpce lease')) return 'bpce_lumesse';
     if (text.includes('banque populaire') || text.includes('caisse d epargne') || text.includes('bpce')) return 'bpce_oracle';
     return 'bpce_unknown';
   }
@@ -370,10 +376,11 @@
     const titleOk = !!(h1 && normalizeText(h1.textContent).length > 3);
     const codeOk = !!workdayCodeMatch;
     const applyCount = oracleLinks.length + lumesseLinks.length;
+    const variant = inferOfferVariant(doc);
     return {
       kind: 'offer_structure',
-      ok: titleOk && codeOk && applyCount > 0,
-      variant: inferOfferVariant(doc),
+      ok: titleOk && applyCount > 0 && (codeOk || lumesseLinks.length > 0),
+      variant,
       title: h1?.textContent?.trim() || '',
       workdayCode: workdayCodeMatch ? workdayCodeMatch[0] : '',
       oracleApplyCount: oracleLinks.length,
@@ -546,15 +553,82 @@
       'select[name="form_of_address"]',
       'input[name="last_name"]',
       'input[name="first_name"]',
-      'input[name="e-mail_address"]'
+      'input[name="e-mail_address"]',
+      'select[name="custom_question_7344"]'
+    ];
+    const helpfulSelectors = [
+      'select[data-talentlink-apply-number="country_code"]',
+      'input[data-talentlink-apply-number="phone_number"]',
+      'input[name="social_networking_and_instant_messaging_accounts_linkedin"]',
+      'select[name="custom_question_14065"]',
+      'input[id^="upload_attached_resume_"][type="file"]',
+      'textarea[name="custom_question_8624"]',
+      'select[name="custom_question_10364"]',
+      'select[name="dps"]'
     ];
     const matched = criticalSelectors.filter((selector) => !!queryVisible(doc, selector) || !!doc.querySelector(selector));
+    const matchedHelpful = helpfulSelectors.filter((selector) => !!queryVisible(doc, selector) || !!doc.querySelector(selector));
     return {
       kind: 'lumesse_structure',
-      ok: matched.length >= 2,
+      ok: matched.length >= 4 && matchedHelpful.length >= 3,
       matched,
-      missing: criticalSelectors.filter((selector) => !matched.includes(selector))
+      missing: criticalSelectors.filter((selector) => !matched.includes(selector)),
+      matchedHelpful,
+      questionAudit: getLumesseQuestionAudit(doc)
     };
+  }
+
+  function getLumesseQuestionAudit(doc = document) {
+    const groups = {
+      sections: [
+        ['Informations Personnelles', () => hasVisibleText(doc, 'informations personnelles')],
+        ['CV', () => hasVisibleText(doc, 'cv')],
+        ['Motivation', () => hasVisibleText(doc, 'motivation')],
+        ['Questionnaire', () => hasVisibleText(doc, 'questionnaire')],
+        ['Préférences communication', () => hasVisibleText(doc, 'preferences de communication')],
+        ['Gestion données personnelles', () => hasVisibleText(doc, 'gestion des donnees personnelles')]
+      ],
+      identity: [
+        ['Comment postuler', () => !!queryVisible(doc, 'select[name="custom_question_7344"]')],
+        ['Civilité', () => !!queryVisible(doc, 'select[name="form_of_address"]')],
+        ['Nom', () => !!queryVisible(doc, 'input[name="last_name"]')],
+        ['Prénom', () => !!queryVisible(doc, 'input[name="first_name"]')],
+        ['Email', () => !!queryVisible(doc, 'input[name="e-mail_address"]')],
+        ['Téléphone', () => !!queryVisible(doc, 'input[data-talentlink-apply-number="phone_number"]')],
+        ['Code pays', () => !!queryVisible(doc, 'select[data-talentlink-apply-number="country_code"]')],
+        ['LinkedIn', () => !!queryVisible(doc, 'input[name="social_networking_and_instant_messaging_accounts_linkedin"]')]
+      ],
+      questionnaire: [
+        ['Autorisation travail France', () => !!queryVisible(doc, 'select[name="custom_question_14065"]')],
+        ['Question motivations', () => hasVisibleText(doc, 'quelques mots sur vos motivations') || !!queryVisible(doc, 'textarea[name="custom_question_8624"]')],
+        ['Source candidature', () => !!queryVisible(doc, 'select[name="custom_question_10364"]')]
+      ],
+      documents: [
+        ['CV upload', () => !!queryVisible(doc, 'input[id^="upload_attached_resume_"][type="file"]') || hasVisibleText(doc, 'veuillez telecharger votre cv')],
+        ['Bouton import CV', () => hasVisibleText(doc, 'importer les donnees de mon cv')]
+      ],
+      privacy: [
+        ['Préférence email', () => !!queryVisible(doc, '#communication-preferences-channel-4\\:EMAIL') || !!doc.querySelector('#communication-preferences-channel-4\\:EMAIL')],
+        ['Accord DPS', () => Array.from(doc.querySelectorAll('select[name="dps"]')).length >= 1]
+      ]
+    };
+
+    const result = {};
+    for (const [groupName, entries] of Object.entries(groups)) {
+      const fields = entries.map(([label, fn]) => {
+        let present = false;
+        try {
+          present = !!fn();
+        } catch (_) {}
+        return { label, present };
+      });
+      result[groupName] = {
+        expected: fields.length,
+        present: fields.filter((field) => field.present).length,
+        fields
+      };
+    }
+    return result;
   }
 
   function getSuccessStructureReport(doc = document) {
@@ -635,6 +709,7 @@
     getOracleFormStructureReport,
     getOracleQuestionAudit,
     getLumesseStructureReport,
+    getLumesseQuestionAudit,
     getSuccessStructureReport,
     getPageStructureReport,
     normalizeApplyUrl,

@@ -82,6 +82,53 @@ Questions / zones confirmées sur cette étape :
 
 Le blueprint embarque maintenant un audit `questionAudit` pour cette étape Oracle Natixis et le content script logge aussi `Questions oracle formulaire` dans le stockage local.
 
+## Variante BPCE Lease / Lumesse inspectée
+
+Offre réelle inspectée :
+
+- `https://recrutement.bpce.fr/job/analyste-risque-de-credit-f-h`
+
+Vérité source confirmée via l'API BPCE :
+
+- entreprise : `BPCE Lease`
+- lien de candidature :
+  - `https://emea3.recruitmentplatform.com/apply-app/pages/application-form?jobId=Q7SFK026203F3VBQB7V8N8MO5-5366826&langCode=fr_FR`
+
+Cette variante n'est donc pas Oracle/Natixis mais `Lumesse / TalentLink`.
+
+Structure formulaire réellement observée :
+
+- `Informations Personnelles`
+- `CV`
+- `Motivation`
+- `Questionnaire`
+- `Préférences de communication`
+- `Gestion des données personnelles`
+
+Questions / zones confirmées :
+
+- `Comment souhaitez-vous postuler ?`
+- `Civilité`
+- `Nom`
+- `Prénom`
+- `Adresse e-mail`
+- `Téléphone`
+- `Code Pays`
+- `LinkedIn`
+- `Avez-vous l’autorisation de travailler en France ?`
+- `Veuillez télécharger votre CV`
+- `Quelques mots sur vos motivations`
+- `Sur quel site avez-vous consulté la 1ère fois l'annonce ?`
+- préférence de communication email
+- accords `dps`
+
+Le blueprint :
+
+- reconnaît désormais explicitement la branche `bpce_lumesse`
+- n'exige plus un code `WORKDAY_*` pour considérer une offre BPCE Lumesse comme conforme
+- embarque un audit `questionAudit` pour le formulaire Lumesse
+- logge `Questions lumesse formulaire` dans le stockage local
+
 ## Logs stockage local
 
 - dernier check : `taleos_bpce_blueprint_last_check`

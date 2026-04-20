@@ -732,6 +732,10 @@
         setPing("error", `blueprint mismatch ${pageValidation.detected.page}`);
         return;
       }
+      if (typeof bpceBlueprint.getLumesseQuestionAudit === 'function') {
+        const audit = bpceBlueprint.getLumesseQuestionAudit();
+        await bpceBlueprint.logCheck('Questions lumesse formulaire', audit);
+      }
     }
 
     if (filling || done) return;
