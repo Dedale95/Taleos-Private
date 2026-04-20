@@ -336,14 +336,49 @@
     }
   }
 
+  function decodeHtmlEntities(value) {
+    return String(value || '')
+      .replace(/&amp;/gi, '&')
+      .replace(/&#38;/gi, '&');
+  }
+
+  function normalizeTaleoApplyUrl(rawUrl) {
+    const value = decodeHtmlEntities(rawUrl).trim();
+    if (!value) return null;
+    try {
+      const url = new URL(value, window.location.href);
+      if (!/socgen\.taleo\.net$/i.test(url.hostname)) return null;
+      if (!/\/careersection\/sgcareers\/jobapply\.ftl$/i.test(url.pathname)) return null;
+      return {
+        href: url.href,
+        pathname: url.pathname,
+        job: url.searchParams.get('job') || '',
+        src: url.searchParams.get('src') || '',
+        lang: url.searchParams.get('lang') || ''
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function isEquivalentTaleoApplyUrl(candidateUrl, blueprintUrl) {
+    const candidate = normalizeTaleoApplyUrl(candidateUrl);
+    const blueprint = normalizeTaleoApplyUrl(blueprintUrl);
+    if (!candidate || !blueprint) return false;
+    return candidate.pathname === blueprint.pathname &&
+      candidate.job === blueprint.job &&
+      candidate.src === blueprint.src &&
+      candidate.lang === blueprint.lang;
+  }
+
   function getOfferStructureReport(doc = document) {
     const taleoUrlEl = doc.querySelector('#taleo_url');
-    const taleoUrl = String(taleoUrlEl?.getAttribute('data-value') || '').trim();
+    const taleoUrl = decodeHtmlEntities(String(taleoUrlEl?.getAttribute('data-value') || '').trim());
     const applyLinks = Array.from(doc.querySelectorAll('a.btnApply[href*="jobapply.ftl"], a[data-gtm-label="postuler"][href*="jobapply.ftl"]'));
     const visibleApplyLinks = applyLinks.filter(isVisible);
     const matchingApplyLinks = visibleApplyLinks.filter((link) => {
       const href = String(link.getAttribute('href') || '');
-      return taleoUrl && href === taleoUrl;
+      return taleoUrl && isEquivalentTaleoApplyUrl(href, taleoUrl);
     });
     const wrongApplyLinks = visibleApplyLinks
       .filter((link) => !matchingApplyLinks.includes(link))
@@ -352,6 +387,7 @@
     return {
       ok: !!taleoUrl && matchingApplyLinks.length > 0,
       taleoUrl,
+      normalizedTaleoUrl: normalizeTaleoApplyUrl(taleoUrl)?.href || '',
       visibleApplyCount: visibleApplyLinks.length,
       matchingApplyCount: matchingApplyLinks.length,
       wrongApplyLinks
@@ -629,6 +665,8 @@
     getPageSnapshot,
     capturePageSnapshot,
     validateExpectedPage,
+    normalizeTaleoApplyUrl,
+    isEquivalentTaleoApplyUrl,
     getOfferStructureReport,
     validateOfferStructure,
     getLoginStructureReport,

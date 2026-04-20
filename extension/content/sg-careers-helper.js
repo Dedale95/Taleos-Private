@@ -151,11 +151,14 @@
 
     for (let i = 0; i < 30; i++) {
       const taleoUrl = String(document.querySelector('#taleo_url')?.getAttribute('data-value') || '').trim();
+      const matchesApplyUrl = api?.isEquivalentTaleoApplyUrl
+        ? (href) => api.isEquivalentTaleoApplyUrl(href, taleoUrl)
+        : (href) => href === taleoUrl;
       const btn = Array.from(document.querySelectorAll('a.btnApply[href*="jobapply.ftl"], a[data-gtm-label="postuler"][href*="jobapply.ftl"]'))
         .find((el) => {
           if (el.offsetParent === null) return false;
           const href = String(el.getAttribute('href') || '').trim();
-          return taleoUrl ? href === taleoUrl : /socgen\.taleo\.net\/careersection\/sgcareers\/jobapply\.ftl/i.test(href);
+          return taleoUrl ? matchesApplyUrl(href) : /socgen\.taleo\.net\/careersection\/sgcareers\/jobapply\.ftl/i.test(href);
         });
       if (btn && btn.offsetParent !== null) {
         console.log('[Taleos SG Careers] Clic sur Postuler...');
