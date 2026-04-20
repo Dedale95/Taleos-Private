@@ -26,6 +26,8 @@ const passwordInput = document.getElementById('password');
 const passwordToggleBtn = document.getElementById('password-toggle-btn');
 const CA_BLUEPRINT_LAST_CHECK_KEY = 'taleos_ca_blueprint_last_check';
 const CA_BLUEPRINT_LOG_KEY = 'taleos_ca_blueprint_log';
+const SG_BLUEPRINT_LAST_CHECK_KEY = 'taleos_sg_blueprint_last_check';
+const SG_BLUEPRINT_LOG_KEY = 'taleos_sg_blueprint_log';
 
 /** Si l’init reste bloquée sur « Vérification de la connexion… », on débloque après ce délai. */
 let loadingWatchdog = null;
@@ -195,6 +197,7 @@ function toFrenchBlueprintKind(kind) {
   if (key === 'apply_dialog_structure' || key === 'validate_apply_dialog_structure') return 'Dialogue candidature';
   if (key === 'application_structure' || key === 'validate_application_structure') return 'Structure formulaire';
   if (key === 'application_questions' || key === 'validate_application_questions') return 'Questions formulaire';
+  if (key === 'question_audit' || key === 'validate_question_audit') return 'Audit questions';
   if (key === 'success_structure' || key === 'validate_success_structure') return 'Structure succès';
   if (key === 'snapshot') return 'Snapshot';
   return kind || 'Entrée';
@@ -226,12 +229,20 @@ function summarizeBlueprintEntry(entry) {
   const bits = [`${time} | ${label}`, state];
   if (entry.detected) bits.push(`detecté=${entry.detected}`);
   if (entry.expected?.length) bits.push(`attendu=${entry.expected.join(',')}`);
+  if (entry.detectedPage) bits.push(`page=${entry.detectedPage}`);
+  if (entry.relevantSections?.length) bits.push(`sections=${entry.relevantSections.join(',')}`);
   if (entry.entryMode) bits.push(`mode=${entry.entryMode}`);
   if (Array.isArray(entry.criticalMissing) && entry.criticalMissing.length) {
     bits.push(`missing=${entry.criticalMissing.join(',')}`);
   }
   if (typeof entry.textHits === 'number') bits.push(`text=${entry.textHits}`);
   if (typeof entry.unresolvedQuestionCount === 'number') bits.push(`a_traiter=${entry.unresolvedQuestionCount}`);
+  if (Array.isArray(entry.sections) && entry.sections.length) {
+    const active = entry.sections.filter((section) => section.active);
+    if (active.length) {
+      bits.push(active.map((section) => `${section.key}:${section.presentCount}/${section.expectedCount || section.total}`).join(' | '));
+    }
+  }
   const url = compactUrl(entry.url);
   return `${bits.join(' | ')}${url ? `\n${url}` : ''}`;
 }
@@ -407,6 +418,63 @@ async function clearCABlueprintPanel() {
   }
 }
 
+async function refreshSGBlueprintPanel() {
+  const statusEl = document.getElementById('sg-blueprint-status');
+  const logEl = document.getElementById('sg-blueprint-log');
+  if (!statusEl || !logEl) return;
+  try {
+    const data = await chrome.storage.local.get([SG_BLUEPRINT_LAST_CHECK_KEY, SG_BLUEPRINT_LOG_KEY]);
+    const lastCheck = data[SG_BLUEPRINT_LAST_CHECK_KEY];
+    const log = Array.isArray(data[SG_BLUEPRINT_LOG_KEY]) ? data[SG_BLUEPRINT_LOG_KEY] : [];
+    if (!lastCheck) {
+      statusEl.textContent = 'SG blueprint: aucun diagnostic encore';
+      statusEl.className = '';
+      statusEl.classList.add('status-warn');
+    } else {
+      const label = toFrenchBlueprintKind(lastCheck.kind || 'validate_page');
+      const time = formatIsoDate(lastCheck.at);
+      const state = lastCheck.ok === true ? 'OK' : 'KO';
+      const suffix =
+        lastCheck.detected ? ` · ${lastCheck.detected}` :
+        lastCheck.detectedPage ? ` · ${lastCheck.detectedPage}` :
+        '';
+      statusEl.textContent = `SG blueprint: ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
+      statusEl.className = '';
+      statusEl.classList.add(lastCheck.ok === true ? 'status-good' : 'status-bad');
+    }
+    if (!log.length) {
+      logEl.textContent = 'Aucun log SG enregistré.';
+      return;
+    }
+    logEl.textContent = log.slice().reverse().slice(0, 12).map(summarizeBlueprintEntry).join('\n\n');
+  } catch (e) {
+    statusEl.textContent = `SG blueprint: erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    statusEl.className = '';
+    statusEl.classList.add('status-bad');
+    logEl.textContent = 'Impossible de lire les logs SG.';
+  }
+}
+
+async function clearSGBlueprintPanel() {
+  const statusEl = document.getElementById('sg-blueprint-status');
+  const logEl = document.getElementById('sg-blueprint-log');
+  try {
+    await chrome.storage.local.remove([SG_BLUEPRINT_LAST_CHECK_KEY, SG_BLUEPRINT_LOG_KEY]);
+    if (statusEl) {
+      statusEl.textContent = 'SG blueprint: logs effacés';
+      statusEl.className = '';
+      statusEl.classList.add('status-good');
+    }
+    if (logEl) logEl.textContent = 'Aucun log SG enregistré.';
+  } catch (e) {
+    if (statusEl) {
+      statusEl.textContent = `SG blueprint: erreur suppression (${(e?.message || 'unknown').slice(0, 40)})`;
+      statusEl.className = '';
+      statusEl.classList.add('status-bad');
+    }
+  }
+}
+
 async function refreshTaleosTabs() {
   try {
     const [t1, t2, t3] = await Promise.all([
@@ -475,6 +543,8 @@ async function init() {
   document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
   document.getElementById('refresh-ca-blueprint-btn')?.addEventListener('click', () => { void refreshCABlueprintPanel(); });
   document.getElementById('clear-ca-blueprint-btn')?.addEventListener('click', () => { void clearCABlueprintPanel(); });
+  document.getElementById('refresh-sg-blueprint-btn')?.addEventListener('click', () => { void refreshSGBlueprintPanel(); });
+  document.getElementById('clear-sg-blueprint-btn')?.addEventListener('click', () => { void clearSGBlueprintPanel(); });
   setupLogout();
   runDiagnostic();
   refreshPilotStatus();
@@ -482,6 +552,7 @@ async function init() {
   refreshBpceScriptStatus();
   refreshAnalyticsLog();
   refreshCABlueprintPanel();
+  refreshSGBlueprintPanel();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_ga4_last_event) {
       refreshAnalyticsStatus();
@@ -497,6 +568,9 @@ async function init() {
     }
     if (area === 'local' && (changes[CA_BLUEPRINT_LAST_CHECK_KEY] || changes[CA_BLUEPRINT_LOG_KEY])) {
       refreshCABlueprintPanel();
+    }
+    if (area === 'local' && (changes[SG_BLUEPRINT_LAST_CHECK_KEY] || changes[SG_BLUEPRINT_LOG_KEY])) {
+      refreshSGBlueprintPanel();
     }
   });
 

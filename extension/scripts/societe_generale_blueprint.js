@@ -169,26 +169,41 @@
   };
 
   const QUESTION_SECTIONS = {
+    disclaimer: [
+      { key: 'legal_disclaimer_ack', profileKey: null, selector: 'input[type="checkbox"], input[id*="legalDisclaimer"], input[name*="legalDisclaimer"]', label: 'Accord de confidentialite', type: 'checkbox', critical: true },
+      { key: 'disclaimer_continue', profileKey: null, selector: 'input[id*="legalDisclaimerContinueButton"], input[id*="legalDisclaimerAcceptButton"], input[id*="disclaimerContinue"], input[id*="saveContinueCmdBottom"], button[id*="legalDisclaimer"], button[id*="disclaimerContinue"]', label: 'Continuer apres disclaimer', type: 'submit', critical: true }
+    ],
     screening: [
       { key: 'eu_work_authorization', profileKey: 'sg_eu_work_authorization', label: 'Autorisation UE', type: 'radio', critical: true },
       { key: 'notice_period', profileKey: 'sg_notice_period', label: 'Preavis', type: 'radio', critical: true },
-      { key: 'start_date', profileKey: 'available_date', label: 'Date de debut', type: 'textarea', critical: true }
+      { key: 'start_date', profileKey: 'available_date', label: 'Date de debut', type: 'textarea', critical: true },
+      { key: 'screening_continue', profileKey: null, selector: 'input[id*="saveContinueCmdBottom"], button[id*="saveContinueCmdBottom"], input[value*="Continue"], input[value*="Continuer"]', label: 'Continuer apres questions', type: 'submit', critical: true }
     ],
     personal_information: [
       { key: 'civility', profileKey: 'civility', selector: 'select[id*="PersonalTitle"], select[name*="PersonalTitle"], select[id*="Title"][id*="personal"], select[id*="civility"]', label: 'Civilite', type: 'select' },
       { key: 'firstname', profileKey: 'firstname', selector: 'input[id*="personal_info_FirstName"], input[id*="FirstName"]', label: 'Prenom', type: 'input', critical: true },
       { key: 'lastname', profileKey: 'lastname', selector: 'input[id*="personal_info_LastName"], input[id*="LastName"]', label: 'Nom', type: 'input', critical: true },
       { key: 'email', profileKey: 'email', selector: 'input[id*="personal_info_EmailAddress"], input[id*="EmailAddress"]', label: 'Email', type: 'input' },
-      { key: 'phone', profileKey: 'phone-number', selector: 'input[id*="personal_info_MobilePhone"], input[id*="MobilePhone"]', label: 'Telephone', type: 'input' }
+      { key: 'phone', profileKey: 'phone-number', selector: 'input[id*="personal_info_MobilePhone"], input[id*="MobilePhone"]', label: 'Telephone', type: 'input' },
+      { key: 'save_continue_profile', profileKey: null, selector: 'input[id*="saveContinueCmdBottom"], button[id*="saveContinueCmdBottom"]', label: 'Sauvegarder et continuer profil', type: 'submit', critical: true }
     ],
     attachments: [
       { key: 'cv_upload', profileKey: 'cv_storage_path', selector: 'input[type="file"][id*="uploadedFile"]', label: 'Upload CV', type: 'file', critical: true },
       { key: 'skip_cv_later', profileKey: null, selector: 'input[id*="skipResumeUploadRadio"][value="1"]', label: 'CV plus tard', type: 'radio_optional' },
-      { key: 'resume_checkbox', profileKey: 'cv_storage_path', selector: 'input[id*="resumeselectionid"]', label: 'Case Resume', type: 'checkbox_optional' }
+      { key: 'resume_checkbox', profileKey: 'cv_storage_path', selector: 'input[id*="resumeselectionid"]', label: 'Case Resume', type: 'checkbox_optional' },
+      { key: 'save_continue_attachments', profileKey: null, selector: 'input[id*="saveContinueCmdBottom"], button[id*="saveContinueCmdBottom"]', label: 'Sauvegarder et continuer pieces jointes', type: 'submit', critical: true }
     ],
     review_submit: [
       { key: 'final_submit', profileKey: null, selector: 'input[id*="submitCmdBottom"], input[value="Postuler"], input[value*="Submit"]', label: 'Bouton Postuler', type: 'submit', critical: true }
     ]
+  };
+
+  const PAGE_TO_QUESTION_SECTIONS = {
+    disclaimer: ['disclaimer'],
+    screening: ['screening'],
+    personal_information: ['personal_information'],
+    attachments: ['attachments'],
+    review_submit: ['review_submit']
   };
 
   function normalizeText(value) {
@@ -401,6 +416,10 @@
       const textarea = queryVisible(doc, 'textarea') || doc.querySelector('textarea');
       return String(textarea?.value || '').trim();
     }
+    if (question.type === 'checkbox' || question.type === 'checkbox_optional' || question.type === 'radio_optional') {
+      const el = queryVisible(doc, question.selector) || doc.querySelector(question.selector);
+      return el ? (el.checked ? 'checked' : 'unchecked') : '';
+    }
     const el = queryVisible(doc, question.selector) || doc.querySelector(question.selector);
     if (!el) return '';
     if (question.type === 'input' || question.type === 'file') {
@@ -435,8 +454,16 @@
     return !!(queryVisible(doc, question.selector) || doc.querySelector(question.selector));
   }
 
-  function getQuestionAuditReport(profile = {}, doc = document) {
+  function getRelevantQuestionSections(doc = document, explicitDetectedPage = '') {
+    const detectedPage = explicitDetectedPage || detectPage({ document: doc }).key;
+    return PAGE_TO_QUESTION_SECTIONS[detectedPage] || [];
+  }
+
+  function getQuestionAuditReport(profile = {}, doc = document, options = {}) {
+    const detectedPage = options.detectedPage || detectPage({ document: doc }).key;
+    const relevantSections = new Set(options.sectionKeys || getRelevantQuestionSections(doc, detectedPage));
     const sections = Object.entries(QUESTION_SECTIONS).map(([sectionKey, questions]) => {
+      const active = relevantSections.size === 0 ? true : relevantSections.has(sectionKey);
       const details = questions.map((question) => {
         const expectedValue = summarizeExpectedValue(getQuestionExpectedValue(profile, question));
         const currentValue = getQuestionCurrentValue(doc, question);
@@ -466,32 +493,39 @@
           currentValue,
           present,
           critical: !!question.critical,
-          status
+          status,
+          active
         };
       });
+      const activeDetails = details.filter((item) => item.active);
       return {
         key: sectionKey,
+        active,
         total: details.length,
-        expectedCount: details.filter((item) => item.profileKey && item.expectedValue).length,
-        presentCount: details.filter((item) => item.present).length,
-        matchingCount: details.filter((item) => item.status === 'matching').length,
-        missing: details.filter((item) => item.status === 'missing').map((item) => item.label),
+        expectedCount: activeDetails.filter((item) => item.profileKey && item.expectedValue).length,
+        presentCount: activeDetails.filter((item) => item.present).length,
+        matchingCount: activeDetails.filter((item) => item.status === 'matching').length,
+        missing: activeDetails.filter((item) => item.status === 'missing').map((item) => item.label),
+        unresolvedCount: activeDetails.filter((item) => ['missing', 'different', 'empty'].includes(item.status)).length,
+        ok: active ? activeDetails.every((item) => !(item.critical && item.status === 'missing')) : true,
         details
       };
     });
 
     const criticalMissing = sections
       .flatMap((section) => section.details)
-      .filter((item) => item.critical && item.status === 'missing')
+      .filter((item) => item.active && item.critical && item.status === 'missing')
       .map((item) => item.label);
 
     const unresolvedQuestionCount = sections
       .flatMap((section) => section.details)
-      .filter((item) => ['missing', 'different', 'empty'].includes(item.status))
+      .filter((item) => item.active && ['missing', 'different', 'empty'].includes(item.status))
       .length;
 
     return {
       ok: criticalMissing.length === 0,
+      detectedPage,
+      relevantSections: Array.from(relevantSections),
       criticalMissing,
       unresolvedQuestionCount,
       sections
@@ -551,7 +585,7 @@
   }
 
   async function validateQuestionAudit(profile = {}, options = {}) {
-    const report = getQuestionAuditReport(profile, options.document || document);
+    const report = getQuestionAuditReport(profile, options.document || document, options);
     const result = { kind: 'question_audit', url: String((options.location || window.location)?.href || ''), ...report };
     await persistLastCheck(result);
     await appendDiagnosticLog(result);
@@ -599,6 +633,7 @@
     validateOfferStructure,
     getLoginStructureReport,
     validateLoginStructure,
+    getRelevantQuestionSections,
     getQuestionAuditReport,
     validateQuestionAudit
   };

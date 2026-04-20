@@ -106,10 +106,17 @@ Le point critique du blueprint SG est d'eviter les faux positifs sur les nombreu
 
 ## Questions mappees
 
+Le blueprint SG audite maintenant uniquement les questions pertinentes pour l'etape active afin d'eviter les faux `missing` quand on est deja passe a l'etape suivante.
+
+### Disclaimer
+- case d'acceptation / lecture de l'accord de confidentialite
+- bouton de continuation du disclaimer
+
 ### Screening
 - `sg_eu_work_authorization` -> question autorisation UE
 - `sg_notice_period` -> question preavis
 - `available_date` -> question date de debut
+- bouton `Continuer` apres les questions
 
 ### Informations personnelles
 - `civility`
@@ -117,11 +124,13 @@ Le point critique du blueprint SG est d'eviter les faux positifs sur les nombreu
 - `lastname`
 - `email`
 - `phone-number`
+- bouton `Sauvegarder et continuer`
 
 ### Pieces jointes
 - `cv_storage_path` -> upload du CV
 - case `CV plus tard`
 - case de selection du `Resume`
+- bouton `Sauvegarder et continuer`
 
 ### Validation finale
 - bouton `Postuler` sur la page recap
@@ -133,6 +142,15 @@ Le blueprint SG doit eviter :
 - de confondre la page `review_submit` avec `personal_information`
 - de relancer le remplissage du profil sur le recap final
 - de traiter les menus / ancres du haut de page comme des etapes de candidature
+- de compter comme "manquantes" des questions d'une autre etape Taleo
+
+## Diagnostic popup
+
+La popup de l'extension expose maintenant un panneau `Blueprint Societe Generale` qui lit :
+- `taleos_sg_blueprint_last_check`
+- `taleos_sg_blueprint_log`
+
+Le resume affiche l'etape detectee, les sections actives, le nombre de questions encore a traiter et les manques critiques.
 
 ## Runtime associe
 
