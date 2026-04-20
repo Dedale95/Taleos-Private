@@ -24,6 +24,8 @@ const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const passwordInput = document.getElementById('password');
 const passwordToggleBtn = document.getElementById('password-toggle-btn');
+const CA_BLUEPRINT_LAST_CHECK_KEY = 'taleos_ca_blueprint_last_check';
+const CA_BLUEPRINT_LOG_KEY = 'taleos_ca_blueprint_log';
 
 /** Si l’init reste bloquée sur « Vérification de la connexion… », on débloque après ce délai. */
 let loadingWatchdog = null;
@@ -176,6 +178,62 @@ function toFrenchAnalyticsLabel(eventName) {
   return 'Événement analytique';
 }
 
+function formatIsoDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString('fr-FR');
+  } catch (_) {
+    return '';
+  }
+}
+
+function toFrenchBlueprintKind(kind) {
+  const key = String(kind || '').toLowerCase();
+  if (key === 'validate_page') return 'Validation page';
+  if (key === 'login_structure' || key === 'validate_login_structure') return 'Structure login';
+  if (key === 'offer_structure' || key === 'validate_offer_structure') return 'Structure offre';
+  if (key === 'apply_dialog_structure' || key === 'validate_apply_dialog_structure') return 'Dialogue candidature';
+  if (key === 'application_structure' || key === 'validate_application_structure') return 'Structure formulaire';
+  if (key === 'success_structure' || key === 'validate_success_structure') return 'Structure succès';
+  if (key === 'snapshot') return 'Snapshot';
+  return kind || 'Entrée';
+}
+
+function compactUrl(url) {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search || ''}`;
+  } catch (_) {
+    return url || '';
+  }
+}
+
+function summarizeBlueprintEntry(entry) {
+  const time = formatIsoDate(entry.at);
+  if (entry.kind === 'snapshot') {
+    const tag = entry.tag || 'snapshot';
+    const detected = entry.detected || 'unknown';
+    const bits = [`${time} | ${tag}`, `page=${detected}`];
+    if (entry.offerStructure?.entryMode) bits.push(`mode=${entry.offerStructure.entryMode}`);
+    if (entry.applicationStructure?.ok === true) bits.push('form=ok');
+    if (entry.successStructure?.ok === true) bits.push('success=ok');
+    const url = compactUrl(entry.url);
+    return `${bits.join(' | ')}${url ? `\n${url}` : ''}`;
+  }
+  const label = toFrenchBlueprintKind(entry.kind);
+  const state = entry.ok === true ? 'OK' : entry.ok === false ? 'KO' : 'INFO';
+  const bits = [`${time} | ${label}`, state];
+  if (entry.detected) bits.push(`detecté=${entry.detected}`);
+  if (entry.expected?.length) bits.push(`attendu=${entry.expected.join(',')}`);
+  if (entry.entryMode) bits.push(`mode=${entry.entryMode}`);
+  if (Array.isArray(entry.criticalMissing) && entry.criticalMissing.length) {
+    bits.push(`missing=${entry.criticalMissing.join(',')}`);
+  }
+  if (typeof entry.textHits === 'number') bits.push(`text=${entry.textHits}`);
+  const url = compactUrl(entry.url);
+  return `${bits.join(' | ')}${url ? `\n${url}` : ''}`;
+}
+
 const PILOT_TIER_STYLE = {
   local_only: { color: '#6b7280', hint: 'Scripts embarqués dans l’extension (routage local).' },
   firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL (ancien mode, si session).' },
@@ -293,6 +351,60 @@ async function refreshAnalyticsLog() {
   }
 }
 
+async function refreshCABlueprintPanel() {
+  const statusEl = document.getElementById('ca-blueprint-status');
+  const logEl = document.getElementById('ca-blueprint-log');
+  if (!statusEl || !logEl) return;
+  try {
+    const data = await chrome.storage.local.get([CA_BLUEPRINT_LAST_CHECK_KEY, CA_BLUEPRINT_LOG_KEY]);
+    const lastCheck = data[CA_BLUEPRINT_LAST_CHECK_KEY];
+    const log = Array.isArray(data[CA_BLUEPRINT_LOG_KEY]) ? data[CA_BLUEPRINT_LOG_KEY] : [];
+    if (!lastCheck) {
+      statusEl.textContent = 'CA blueprint: aucun diagnostic encore';
+      statusEl.className = '';
+      statusEl.classList.add('status-warn');
+    } else {
+      const label = toFrenchBlueprintKind(lastCheck.kind || 'validate_page');
+      const time = formatIsoDate(lastCheck.at);
+      const state = lastCheck.ok === true ? 'OK' : 'KO';
+      const suffix = lastCheck.detected ? ` · ${lastCheck.detected}` : lastCheck.entryMode ? ` · ${lastCheck.entryMode}` : '';
+      statusEl.textContent = `CA blueprint: ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
+      statusEl.className = '';
+      statusEl.classList.add(lastCheck.ok === true ? 'status-good' : 'status-bad');
+    }
+    if (!log.length) {
+      logEl.textContent = 'Aucun log CA enregistré.';
+      return;
+    }
+    logEl.textContent = log.slice().reverse().slice(0, 12).map(summarizeBlueprintEntry).join('\n\n');
+  } catch (e) {
+    statusEl.textContent = `CA blueprint: erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    statusEl.className = '';
+    statusEl.classList.add('status-bad');
+    logEl.textContent = 'Impossible de lire les logs CA.';
+  }
+}
+
+async function clearCABlueprintPanel() {
+  const statusEl = document.getElementById('ca-blueprint-status');
+  const logEl = document.getElementById('ca-blueprint-log');
+  try {
+    await chrome.storage.local.remove([CA_BLUEPRINT_LAST_CHECK_KEY, CA_BLUEPRINT_LOG_KEY]);
+    if (statusEl) {
+      statusEl.textContent = 'CA blueprint: logs effacés';
+      statusEl.className = '';
+      statusEl.classList.add('status-good');
+    }
+    if (logEl) logEl.textContent = 'Aucun log CA enregistré.';
+  } catch (e) {
+    if (statusEl) {
+      statusEl.textContent = `CA blueprint: erreur suppression (${(e?.message || 'unknown').slice(0, 40)})`;
+      statusEl.className = '';
+      statusEl.classList.add('status-bad');
+    }
+  }
+}
+
 async function refreshTaleosTabs() {
   try {
     const [t1, t2, t3] = await Promise.all([
@@ -359,12 +471,15 @@ async function init() {
   document.getElementById('reload-btn-login')?.addEventListener('click', () => { void doReload(); });
   document.getElementById('diagnostic-btn')?.addEventListener('click', runDiagnostic);
   document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
+  document.getElementById('refresh-ca-blueprint-btn')?.addEventListener('click', () => { void refreshCABlueprintPanel(); });
+  document.getElementById('clear-ca-blueprint-btn')?.addEventListener('click', () => { void clearCABlueprintPanel(); });
   setupLogout();
   runDiagnostic();
   refreshPilotStatus();
   refreshAnalyticsStatus();
   refreshBpceScriptStatus();
   refreshAnalyticsLog();
+  refreshCABlueprintPanel();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_ga4_last_event) {
       refreshAnalyticsStatus();
@@ -377,6 +492,9 @@ async function init() {
     }
     if (area === 'local' && changes.taleos_last_pilot) {
       refreshPilotStatus();
+    }
+    if (area === 'local' && (changes[CA_BLUEPRINT_LAST_CHECK_KEY] || changes[CA_BLUEPRINT_LOG_KEY])) {
+      refreshCABlueprintPanel();
     }
   });
 

@@ -59,12 +59,18 @@
     .btn-logout:hover { background: #f9fafb; }
     .btn-reload { width: 100%; padding: 10px; margin-bottom: 8px; border: 1px solid #c7d2fe; border-radius: 8px; color: #4f46e5; font-size: 0.9rem; cursor: pointer; background: white; }
     .btn-reload:hover { background: #eef2ff; }
+    .btn-inline { width: auto; padding: 8px 10px; margin: 0; font-size: 0.78rem; }
     .error-text { color: #ef4444; font-size: 0.875rem; text-align: center; margin-top: 8px; }
     .loading-text { color: #6b7280; font-size: 0.875rem; text-align: center; margin-top: 8px; }
     .hidden { display: none !important; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #f3f4f6; }
     .card p { font-size: 0.875rem; color: #4b5563; }
+    .log-box { font-size: 0.68rem; color: #6b7280; max-height: 140px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px; background: #fafafa; white-space: pre-wrap; }
+    .row-inline { display: flex; gap: 8px; margin-bottom: 8px; }
+    .status-good { color: #059669; }
+    .status-warn { color: #d97706; }
+    .status-bad { color: #dc2626; }
   </style>
 </head>
 <body>
@@ -130,6 +136,13 @@
           <p id="bpce-script-status" style="font-size: 0.72rem; color: #6b7280; margin-bottom: 8px;">BPCE script: —</p>
           <p style="font-size: 0.72rem; color: #374151; margin-bottom: 4px;">Historique Analytics (dernier en haut)</p>
           <div id="analytics-log" style="font-size: 0.68rem; color: #6b7280; max-height: 90px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px; background: #fafafa; margin-bottom: 8px;">—</div>
+          <p style="font-size: 0.72rem; color: #374151; margin-bottom: 4px;">Blueprint Crédit Agricole</p>
+          <p id="ca-blueprint-status" style="font-size: 0.72rem; color: #6b7280; margin-bottom: 6px;">CA blueprint: —</p>
+          <div class="row-inline">
+            <button id="refresh-ca-blueprint-btn" class="btn-reload btn-inline">Actualiser</button>
+            <button id="clear-ca-blueprint-btn" class="btn-reload btn-inline">Vider logs</button>
+          </div>
+          <div id="ca-blueprint-log" class="log-box" style="margin-bottom: 8px;">—</div>
           <button id="diagnostic-btn" class="btn-reload" style="margin-bottom: 6px;">Tester la connexion</button>
           <button id="refresh-taleos-btn" class="btn-reload">Rafraîchir les pages Taleos</button>
         </div>
