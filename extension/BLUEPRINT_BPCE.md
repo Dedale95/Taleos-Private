@@ -129,6 +129,27 @@ Le blueprint :
 - embarque un audit `questionAudit` pour le formulaire Lumesse
 - logge `Questions lumesse formulaire` dans le stockage local
 
+## Robustesse page offre BPCE
+
+Certaines pages `recrutement.bpce.fr/job/...` chargent d'abord un shell React vide avant l'hydratation, ce qui peut masquer temporairement :
+
+- le titre de l'offre
+- le bouton `Postuler`
+- les liens Oracle / Lumesse
+
+Pour éviter les faux `offer_structure: ok=false`, le helper `bpce-careers-filler.js` sait maintenant faire un fallback via l'API BPCE :
+
+- `GET /app/wp-json/bpce/v1/routes/?lang=fr`
+- puis `GET /app/wp-json/bpce/v1/posts/?lang=fr&_uid=...`
+
+Ce fallback permet de récupérer :
+
+- le vrai titre de l'offre
+- la marque (`BPCE Lease`, etc.)
+- le vrai lien de candidature `postulate.link.url`
+
+Donc une page shell BPCE encore non hydratée n'est plus rejetée si l'API confirme l'offre et son lien de candidature.
+
 ## Logs stockage local
 
 - dernier check : `taleos_bpce_blueprint_last_check`

@@ -49,6 +49,46 @@
     return document.querySelector('a[href*="oraclecloud.com"][href*="apply"]');
   }
 
+  function inferApplyVariantFromUrl(url) {
+    const raw = String(url || '').toLowerCase();
+    if (raw.includes('recruitmentplatform.com')) return 'bpce_lumesse';
+    if (raw.includes('oraclecloud.com')) return raw.includes('natixis') ? 'natixis_oracle' : 'bpce_oracle';
+    return 'bpce_unknown';
+  }
+
+  async function fetchOfferApiPayload() {
+    try {
+      const path = window.location.pathname || '';
+      if (!path.startsWith('/job/')) return null;
+      const base = `${window.location.origin}/app/wp-json/bpce/v1`;
+      const routesRes = await fetch(`${base}/routes/?lang=fr`, { credentials: 'omit' });
+      if (!routesRes.ok) return null;
+      const routes = await routesRes.json();
+      const route = Array.isArray(routes)
+        ? routes.find((entry) => entry && entry.path === path && entry.exact === true && entry._uid)
+        : null;
+      if (!route?._uid) return null;
+
+      const postRes = await fetch(`${base}/posts/?lang=fr&_uid=${encodeURIComponent(route._uid)}`, { credentials: 'omit' });
+      if (!postRes.ok) return null;
+      const post = await postRes.json();
+      const postulate = post?.content?.top?.postulate?.link?.url || '';
+      const title = post?.content?.top?.title || '';
+      const company = post?.content?.top?.criteria?.brand || '';
+      if (!postulate) return null;
+      return {
+        ok: true,
+        title,
+        company,
+        applyUrl: String(postulate).trim(),
+        variant: inferApplyVariantFromUrl(postulate),
+        uid: route._uid
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
   async function waitForElement(selectorFn, maxWait = 8000) {
     const start = Date.now();
     while (Date.now() - start < maxWait) {
@@ -79,6 +119,7 @@
       return;
     }
 
+    let apiOffer = null;
     if (bpceBlueprint) {
       const pageValidation = bpceBlueprint.validatePage('offer');
       await bpceBlueprint.logCheck('bpce_offer_phase1_loaded', {
@@ -92,32 +133,38 @@
       const report = bpceBlueprint.getOfferStructureReport();
       await bpceBlueprint.logCheck('Structure offre BPCE', report);
       if (!report.ok) {
-        log(`❌ Offre BPCE non conforme au blueprint: ${JSON.stringify(report)}`, 1);
-        hideBanner();
-        return;
+        apiOffer = await fetchOfferApiPayload();
+        if (!apiOffer?.ok) {
+          log(`❌ Offre BPCE non conforme au blueprint: ${JSON.stringify(report)}`, 1);
+          hideBanner();
+          return;
+        }
+        await bpceBlueprint.logCheck('Structure offre BPCE (fallback API)', apiOffer);
+        log(`✅ Fallback API BPCE OK — variante ${apiOffer.variant} — ${apiOffer.title || 'titre inconnu'}`, 1);
+      } else {
+        log(`✅ Blueprint offre OK — variante ${report.variant}`, 1);
       }
-      log(`✅ Blueprint offre OK — variante ${report.variant}`, 1);
     }
 
     showBanner();
-    log('📋 Étape 1 recrutement.bpce.fr : clic sur "Postuler directement" pour ouvrir le formulaire Oracle', 1);
-    log('   Recherche du bouton (a[href*="oraclecloud.com"], a.c-button--big, a.c-offer-sticky-button)...', 1);
+    log('📋 Étape 1 recrutement.bpce.fr : ouverture du vrai lien de candidature BPCE', 1);
+    log('   Recherche du bouton public ou fallback API...', 1);
 
-    const postulerBtn = await waitForElement(findPostulerButton);
-    if (!postulerBtn) {
+    const postulerBtn = apiOffer?.applyUrl ? null : await waitForElement(findPostulerButton);
+    if (!postulerBtn && !apiOffer?.applyUrl) {
       log('❌ Bouton Postuler non trouvé', 1);
       hideBanner();
       return;
     }
 
-    const applyUrl = String(postulerBtn.href || postulerBtn.getAttribute('href') || '').trim();
+    const applyUrl = String(apiOffer?.applyUrl || postulerBtn.href || postulerBtn.getAttribute('href') || '').trim();
     if (!applyUrl) {
       log('❌ URL du bouton "Postuler directement" introuvable', 1);
       hideBanner();
       return;
     }
 
-    log('✅ URL "Postuler directement" détectée → navigation dans l’onglet courant (sans nouvel onglet)', 1);
+    log(`✅ URL candidature détectée (${inferApplyVariantFromUrl(applyUrl)}) → navigation dans l’onglet courant`, 1);
     window.location.assign(applyUrl);
     hideBanner();
   }
