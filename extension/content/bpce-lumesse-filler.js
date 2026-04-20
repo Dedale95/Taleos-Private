@@ -9,6 +9,7 @@
   "use strict";
   const BANNER_ID = "taleos-bpce-lumesse-banner";
   const isTop = window === window.top;
+  const bpceBlueprint = globalThis.__TALEOS_BPCE_BLUEPRINT__ || null;
   let running = false;
   /** Verrou synchrone pour éviter deux remplissages en parallèle (await avant running=true). */
   let filling = false;
@@ -716,6 +717,21 @@
         }
       }
       return;
+    }
+
+    if (bpceBlueprint) {
+      const pageValidation = bpceBlueprint.validatePage('lumesse_form');
+      await bpceBlueprint.logCheck('bpce_lumesse_form_detected', {
+        expected: ['lumesse_form'],
+        detected: pageValidation.detected.page
+      });
+      const report = bpceBlueprint.getLumesseStructureReport();
+      await bpceBlueprint.logCheck('Structure lumesse formulaire', report);
+      if (!pageValidation.ok || !report.ok) {
+        log(`❌ Blueprint Lumesse mismatch : ${pageValidation.detected.page}`);
+        setPing("error", `blueprint mismatch ${pageValidation.detected.page}`);
+        return;
+      }
     }
 
     if (filling || done) return;

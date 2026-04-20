@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.64",
-  "version_name": "1.1.64-success-tab-close-fix",
+  "version": "1.1.65",
+  "version_name": "1.1.65-bpce-blueprint-runtime",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -82,6 +82,7 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
         "content/bpce-oracle-filler.js",
         "content/bpce-lumesse-filler.js"
       ],
@@ -95,6 +96,7 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
         "content/bpce-careers-filler.js",
         "content/bpce-lumesse-filler.js"
       ],
@@ -107,6 +109,7 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
         "content/bpce-lumesse-filler.js"
       ],
       "run_at": "document_idle",
@@ -116,7 +119,7 @@
       "matches": [
         "https://*.recruitmentplatform.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "content/bpce-lumesse-filler.js"],
+      "js": ["scripts/taleos-automation-banner.js", "scripts/bpce_blueprint.js", "content/bpce-lumesse-filler.js"],
       "run_at": "document_idle",
       "all_frames": true
     },

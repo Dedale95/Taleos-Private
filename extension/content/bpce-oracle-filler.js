@@ -10,6 +10,7 @@
   let isAutomationRunning = false;
   let loggedMessages = new Set();
   let filledFields = new Set();
+  const bpceBlueprint = globalThis.__TALEOS_BPCE_BLUEPRINT__ || null;
   /** Dernier cv_storage_path pour lequel l’upload Firebase a réussi (permet re-upload si le profil change). */
   let bpceCvUploadedStoragePath = null;
 
@@ -445,6 +446,31 @@
       const { profile, jobTitle, jobId } = taleos_pending_bpce;
       showBanner();
 
+      if (bpceBlueprint) {
+        const detected = bpceBlueprint.detectPage(document);
+        await bpceBlueprint.logCheck('bpce_oracle_runtime_entry', {
+          detected: detected.page,
+          reasons: detected.reasons
+        });
+        if (detected.page === 'success') {
+          logOnce('🎉 Confirmation BPCE détectée par le blueprint');
+          chrome.runtime.sendMessage({
+            action: 'candidature_success',
+            bankId: 'bpce',
+            jobId,
+            jobTitle,
+            companyName: taleos_pending_bpce.companyName || 'BPCE',
+            offerUrl: taleos_pending_bpce.offerUrl || location.href
+          }).catch(() => {});
+          return;
+        }
+        const allowed = ['oracle_email', 'oracle_pin', 'oracle_form', 'success'];
+        if (!allowed.includes(detected.page)) {
+          logOnce(`⚠️ Blueprint BPCE mismatch : page Oracle inattendue (${detected.page})`);
+          return;
+        }
+      }
+
       // Track: Candidature initiée
       if (!filledFields.has('apply_start_tracked')) {
         chrome.runtime.sendMessage({
@@ -465,6 +491,14 @@
         !document.querySelector('[id*="pin-code"]') &&
         !hasFullApplicationForm;
       if (onEmailStepOnly) {
+        if (bpceBlueprint) {
+          const report = bpceBlueprint.getOracleEmailStructureReport();
+          await bpceBlueprint.logCheck('Structure oracle email', report);
+          if (!report.ok) {
+            logOnce(`❌ Blueprint email Oracle incomplet: ${JSON.stringify(report)}`);
+            return;
+          }
+        }
         logOnce('📋 Étape 1 : Email + CGU', 1);
         smartFillInput('Email', emailInput, profile.email || profile.auth_email);
         const cguRow = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find((el) =>
@@ -495,6 +529,10 @@
       // --- Étape 1b : Code PIN ---
       const pinInput = document.querySelector('#pin-code-1');
       if (pinInput && pinInput.offsetParent !== null) {
+        if (bpceBlueprint) {
+          const report = bpceBlueprint.getOraclePinStructureReport();
+          await bpceBlueprint.logCheck('Structure oracle pin', report);
+        }
         logOnce('📋 Étape 1b : Vérification d\'identité (Code PIN)', 1.5);
         const { taleos_bpce_pin_code } = await chrome.storage.local.get('taleos_bpce_pin_code');
         if (taleos_bpce_pin_code && String(taleos_bpce_pin_code).length === 6) {
@@ -526,6 +564,14 @@
       document.querySelector('input[id*="lastName"], input[name="last_name"], input[id^="last_name_"]') ||
       document.querySelector('input[autocomplete="family-name"]');
       if (lastNameInput && lastNameInput.offsetParent !== null) {
+        if (bpceBlueprint) {
+          const report = bpceBlueprint.getOracleFormStructureReport();
+          await bpceBlueprint.logCheck('Structure oracle formulaire', report);
+          if (!report.ok) {
+            logOnce(`❌ Blueprint formulaire Oracle incomplet: ${JSON.stringify(report)}`);
+            return;
+          }
+        }
         logOnce('📋 Étape 2 : Formulaire complet détecté !', 2);
         
         // Contact

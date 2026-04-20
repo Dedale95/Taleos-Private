@@ -58,6 +58,7 @@ const OUTLOOK_UNLINK_CF_URL = 'https://europe-west1-project-taleos.cloudfunction
 const TALEOS_BANNER_SCRIPT = 'scripts/taleos-automation-banner.js';
 const CA_BLUEPRINT_SCRIPT = 'scripts/credit_agricole_blueprint.js';
 const SG_BLUEPRINT_SCRIPT = 'scripts/societe_generale_blueprint.js';
+const BPCE_BLUEPRINT_SCRIPT = 'scripts/bpce_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -72,6 +73,9 @@ function injectBankFiles(bankId, mainFiles) {
   }
   if (bankId === 'societe_generale') {
     return injectFilesWithBanner([SG_BLUEPRINT_SCRIPT, ...arr]);
+  }
+  if (bankId === 'bpce') {
+    return injectFilesWithBanner([BPCE_BLUEPRINT_SCRIPT, ...arr]);
   }
   return injectFilesWithBanner(arr);
 }

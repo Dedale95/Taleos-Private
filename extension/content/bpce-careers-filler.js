@@ -15,6 +15,7 @@
     const prefix = stepNum != null ? STEP(stepNum, '') : '';
     console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BPCE] ${prefix}${msg}`);
   }
+  const bpceBlueprint = globalThis.__TALEOS_BPCE_BLUEPRINT__ || null;
 
   function showBanner() {
     if (document.getElementById(BANNER_ID)) return;
@@ -76,6 +77,26 @@
     if (!isOfferPage) {
       log('⏭️  Pas sur une page offre (/job/) → skip', 1);
       return;
+    }
+
+    if (bpceBlueprint) {
+      const pageValidation = bpceBlueprint.validatePage('offer');
+      await bpceBlueprint.logCheck('bpce_offer_phase1_loaded', {
+        expected: ['offer'],
+        detected: pageValidation.detected.page
+      });
+      if (!pageValidation.ok) {
+        log(`❌ Blueprint BPCE mismatch : attendu offer / detecte ${pageValidation.detected.page}`, 1);
+        return;
+      }
+      const report = bpceBlueprint.getOfferStructureReport();
+      await bpceBlueprint.logCheck('Structure offre BPCE', report);
+      if (!report.ok) {
+        log(`❌ Offre BPCE non conforme au blueprint: ${JSON.stringify(report)}`, 1);
+        hideBanner();
+        return;
+      }
+      log(`✅ Blueprint offre OK — variante ${report.variant}`, 1);
     }
 
     showBanner();

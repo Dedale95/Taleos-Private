@@ -1,0 +1,57 @@
+# Blueprint BPCE
+
+Ce blueprint couvre les variantes BPCE actuellement reconnues par l'extension :
+
+- `offer` : page offre publique `recrutement.bpce.fr/job/...`
+- `oracle_email` : page Oracle `.../apply/email` avec email + consentement
+- `oracle_pin` : écran Oracle de vérification par code PIN
+- `oracle_form` : formulaire Oracle complet de candidature
+- `lumesse_form` : formulaire Lumesse / TalentLink
+- `success` : confirmation finale
+- `unavailable` : offre indisponible
+
+## Variante Natixis inspectée
+
+Offre réelle inspectée :
+
+- `https://recrutement.bpce.fr/job/technology-risk-management`
+
+Signatures relevées :
+
+- `h1` avec le titre de l'offre
+- code offre visible dans la page : `WORKDAY_JR01140`
+- CTA public : `.c-offer-sticky-button`
+- lien candidature Oracle :
+  - `https://ekez.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/fr/sites/CX/job/WORKDAY_JR01140/apply/email?...`
+
+## Contrôles structurels
+
+Le runtime `bpce_blueprint.js` vérifie désormais :
+
+- que la page publique contient bien un titre + un code `WORKDAY_*` + au moins un vrai lien de candidature
+- que la page Oracle email expose :
+  - `#primary-email-0`
+  - `.apply-flow-input-checkbox__button`
+  - `button[title="Suivant"]`
+- que la page PIN expose des champs `#pin-code-*`
+- que la page formulaire Oracle expose au moins :
+  - `input[id*="lastName"]`
+  - `input[id*="firstName"]`
+  - et des sélecteurs utiles au remplissage
+- que la variante Lumesse expose les champs de base `form_of_address`, `last_name`, `first_name`, `e-mail_address`
+
+## Logs stockage local
+
+- dernier check : `taleos_bpce_blueprint_last_check`
+- journal : `taleos_bpce_blueprint_log`
+
+## Intégration
+
+Le blueprint est branché dans :
+
+- `extension/content/bpce-careers-filler.js`
+- `extension/content/bpce-oracle-filler.js`
+- `extension/content/bpce-lumesse-filler.js`
+- `extension/background.js`
+
+Objectif : éviter les faux départs, mieux distinguer Natixis/BPCE public vs Oracle vs Lumesse, et préparer l'audit question par question du flux BPCE.
