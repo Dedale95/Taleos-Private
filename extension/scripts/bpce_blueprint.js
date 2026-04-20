@@ -35,6 +35,13 @@
       'renvoyer le code',
       'confirmer votre identite'
     ],
+    oracleThrottle: [
+      'trop de tentatives',
+      'reessayez plus tard',
+      'nombre maximum de tentatives',
+      'try again later',
+      'maximum number of attempts'
+    ],
     oracleForm: [
       'nom',
       'prenom',
@@ -101,6 +108,16 @@
         '#pin-code-2',
         'button[title="Vérifier"]',
         'button[title="Verifier"]'
+      ]
+    },
+    oracle_throttle: {
+      label: 'Oracle limitation temporaire',
+      hostIncludes: ['oraclecloud.com'],
+      pathMatches: [/\/apply\/email/, /CandidateExperience/],
+      textPatterns: TEXT_PATTERNS.oracleThrottle,
+      selectorsAny: [
+        'button',
+        'main'
       ]
     },
     oracle_form: {
@@ -434,6 +451,11 @@
     if (page === 'offer') return getOfferStructureReport(doc);
     if (page === 'oracle_email') return getOracleEmailStructureReport(doc);
     if (page === 'oracle_pin') return getOraclePinStructureReport(doc);
+    if (page === 'oracle_throttle') return {
+      kind: 'oracle_throttle_structure',
+      ok: true,
+      matchedText: TEXT_PATTERNS.oracleThrottle.filter((pattern) => getPageText(doc).includes(pattern))
+    };
     if (page === 'oracle_form') return getOracleFormStructureReport(doc);
     if (page === 'lumesse_form') return getLumesseStructureReport(doc);
     if (page === 'success') return getSuccessStructureReport(doc);

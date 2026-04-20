@@ -464,9 +464,15 @@
           }).catch(() => {});
           return;
         }
-        const allowed = ['oracle_email', 'oracle_pin', 'oracle_form', 'success'];
+        const allowed = ['oracle_email', 'oracle_pin', 'oracle_form', 'oracle_throttle', 'success'];
         if (!allowed.includes(detected.page)) {
           logOnce(`⚠️ Blueprint BPCE mismatch : page Oracle inattendue (${detected.page})`);
+          return;
+        }
+        if (detected.page === 'oracle_throttle') {
+          const report = bpceBlueprint.getPageStructureReport('oracle_throttle');
+          await bpceBlueprint.logCheck('oracle_throttle_detected', report || {});
+          logOnce('⏸️ Oracle a temporairement bloqué le flux (trop de tentatives). Pause nécessaire.');
           return;
         }
       }
