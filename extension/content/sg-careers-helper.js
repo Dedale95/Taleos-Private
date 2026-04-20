@@ -65,6 +65,7 @@
 
   async function run() {
     await snapshot('sg_public_offer_script_start');
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
     let { taleos_pending_sg, taleos_apply_fallback } = await chrome.storage.local.get(['taleos_pending_sg', 'taleos_apply_fallback']);
     if (!taleos_pending_sg && taleos_apply_fallback) {
       const age = Date.now() - (taleos_apply_fallback.timestamp || 0);
