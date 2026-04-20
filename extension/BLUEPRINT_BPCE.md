@@ -128,6 +128,8 @@ Le blueprint :
 - n'exige plus un code `WORKDAY_*` pour considérer une offre BPCE Lumesse comme conforme
 - embarque un audit `questionAudit` pour le formulaire Lumesse
 - logge `Questions lumesse formulaire` dans le stockage local
+- force explicitement les sélections `select[name="dps"]` pour la `Gestion des données personnelles`
+- tente ensuite la soumission automatique et attend la confirmation pour notifier Taleos
 
 ## Robustesse page offre BPCE
 

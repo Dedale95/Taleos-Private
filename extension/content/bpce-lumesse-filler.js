@@ -14,6 +14,8 @@
   /** Verrou synchrone pour éviter deux remplissages en parallèle (await avant running=true). */
   let filling = false;
   let done = false;
+  let submitTriggered = false;
+  let successSent = false;
   let lastWaitLog = 0;
   let lastPingPhase = "";
 
@@ -124,6 +126,15 @@
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function normText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   async function waitForElement(selector, timeout = 12000) {
@@ -441,6 +452,24 @@
     }
   }
 
+  function fillBpceDirectDpsSelects() {
+    const selects = Array.from(document.querySelectorAll('select[name="dps"]'));
+    if (!selects.length) return;
+    let matched = 0;
+    for (const sel of selects) {
+      const label = getQuestionLabelText(sel);
+      const logLabel =
+        /gestion des données personnelles|principes d.exploitation|donnees personnelles/i.test(label)
+          ? "Gestion des données personnelles (obligatoire)"
+          : "Accord données personnelles";
+      const ok = selectFirstMatchingFragment(sel, ["j'accepte", "accepte"], logLabel);
+      if (ok) matched++;
+    }
+    if (!matched) {
+      log("⚠️ Gestion des données personnelles — select[name='dps'] détecté mais aucune option d'accord reconnue");
+    }
+  }
+
   function clickAcceptRadiosInContainer(container, logLabel, wantAccept) {
     const radios = container.querySelectorAll('input[type="radio"]');
     if (!radios.length) return;
@@ -544,12 +573,90 @@
       window.scrollTo?.(0, document.body?.scrollHeight || 99999);
 
       fillBpceCustomConsentSelects(profile);
+      fillBpceDirectDpsSelects();
       fillBpceConsentRadioGroups(profile);
       fillBpceCommunicationPreferences(profile);
       fillBpceVeuillezIndiquerAccord(profile);
 
       if (pass < 7) await sleep(550);
     }
+  }
+
+  function getVisibleInvalidElements() {
+    return Array.from(document.querySelectorAll(":invalid")).filter((el) => el.offsetParent !== null);
+  }
+
+  function getInvalidFieldHints() {
+    return getVisibleInvalidElements()
+      .map((el) => getQuestionLabelText(el) || el.getAttribute("name") || el.id || el.tagName)
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  function findSubmitControl() {
+    return (
+      Array.from(document.querySelectorAll('input[type="submit"], button[type="submit"], button')).find((el) => {
+        if (el.offsetParent === null || el.disabled) return false;
+        const text = normText(el.textContent || el.value || el.getAttribute("aria-label") || "");
+        return /soumettre|envoyer|postuler|submit/.test(text);
+      }) || null
+    );
+  }
+
+  function detectLumesseSuccess() {
+    const text = normText(document.body?.innerText || document.body?.textContent || "");
+    return (
+      !detectLumesseForm() &&
+      /merci|candidature envoyee|application submitted|thank you for applying|votre candidature a bien ete envoyee|nous avons bien recu/.test(text)
+    );
+  }
+
+  async function maybeNotifyLumesseSuccess() {
+    if (successSent || !detectLumesseSuccess()) return;
+    successSent = true;
+    const { taleos_pending_bpce } = await chrome.storage.local.get("taleos_pending_bpce");
+    const pending = taleos_pending_bpce || {};
+    log("🎉 Confirmation Lumesse détectée — notification de succès à Taleos");
+    chrome.runtime.sendMessage({
+      action: "candidature_success",
+      bankId: "bpce",
+      jobId: pending.jobId || "",
+      jobTitle: pending.jobTitle || "",
+      companyName: pending.companyName || "BPCE",
+      offerUrl: pending.offerUrl || location.href
+    }).catch((e) => log(`⚠️ Notification Taleos impossible: ${e?.message || e}`));
+  }
+
+  async function maybeSubmitLumesseApplication(rawProfile) {
+    if (submitTriggered) return;
+    const invalidHints = getInvalidFieldHints();
+    if (invalidHints.length) {
+      log(`⚠️ Soumission Lumesse bloquée — champs invalides visibles : ${invalidHints.join(" | ")}`);
+      return;
+    }
+    const submit = findSubmitControl();
+    if (!submit) {
+      log("⚠️ Soumission Lumesse — bouton Soumettre introuvable");
+      return;
+    }
+    submitTriggered = true;
+    const label = (submit.textContent || submit.value || "Soumettre").trim();
+    log(`🚀 Soumission Lumesse — clic sur « ${label} »`);
+    submit.click();
+    chrome.runtime.sendMessage({
+      action: 'track_event',
+      eventName: 'apply_success',
+      params: { site: 'bpce' },
+      userId: rawProfile?.uid
+    }).catch(() => {});
+    await sleep(3000);
+    const remaining = getInvalidFieldHints();
+    if (remaining.length) {
+      submitTriggered = false;
+      log(`⚠️ Après clic Soumettre, des champs restent invalides : ${remaining.join(" | ")}`);
+      return;
+    }
+    log("⏳ Soumission Lumesse lancée — attente de la confirmation finale…");
   }
 
   async function fetchCvAsFileFromFirebase(storagePath, filename) {
@@ -690,6 +797,8 @@
   // 4) Orchestrateur
   // =========================
   async function run() {
+    await maybeNotifyLumesseSuccess();
+    if (successSent) return;
     if (filling || done) return;
 
     const pending = await hasPendingBpce();
@@ -752,11 +861,18 @@
       await sleep(250);
       await fillCv(profile);
       await fillAllConsentAndCommunication(profile);
+      await maybeSubmitLumesseApplication(raw);
 
-      done = true;
-      showBanner("✅ Taleos — formulaire Lumesse traité. Vérifiez les champs avant envoi.");
-      log("✅ Filler Lumesse terminé.");
-      setPing("done", "ok");
+      if (submitTriggered) {
+        done = true;
+        showBanner("✅ Taleos — formulaire Lumesse traité. Soumission en cours ou terminée.");
+        log("✅ Filler Lumesse terminé.");
+        setPing("done", "ok");
+      } else {
+        showBanner("⚠️ Taleos — formulaire rempli mais soumission bloquée par un champ requis.");
+        log("⚠️ Filler Lumesse terminé, mais la soumission n'a pas pu partir.");
+        setPing("waiting_submit", "champ requis restant ou bouton indisponible");
+      }
     } catch (e) {
       const msg = e?.message || String(e);
       log(`❌ ${msg}`);
