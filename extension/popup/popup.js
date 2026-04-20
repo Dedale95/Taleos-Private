@@ -103,7 +103,6 @@ async function setVersion() {
     const versionLabel = versionName ? `v${v} (${versionName})` : `v${v}`;
     const badge = document.getElementById('version-badge');
     const badgeLogged = document.getElementById('version-badge-logged');
-    const dateEl = document.getElementById('version-date');
     const reloadLoginEl = document.getElementById('version-reload-login');
     if (badge) badge.textContent = versionLabel;
     if (badgeLogged) badgeLogged.textContent = `Version ${versionLabel.replace(/^v/, '')}`;
@@ -111,14 +110,6 @@ async function setVersion() {
       'taleosLastUpdate',
       'taleosLastPopupReload'
     ]);
-    if (dateEl) {
-      let line = taleosLastUpdate ? `Mise à jour : ${taleosLastUpdate}` : '';
-      if (taleosLastPopupReload?.at && taleosLastPopupReload?.label) {
-        line = line ? `${line} · ` : '';
-        line += `Bouton « Mettre à jour » : ${taleosLastPopupReload.at} (${taleosLastPopupReload.label})`;
-      }
-      dateEl.textContent = line;
-    }
     if (reloadLoginEl) {
       reloadLoginEl.textContent =
         taleosLastPopupReload?.at && taleosLastPopupReload?.label
@@ -191,41 +182,6 @@ function compactUrl(url) {
   }
 }
 
-function summarizeBlueprintEntry(entry) {
-  const time = formatIsoDate(entry.at);
-  if (entry.kind === 'snapshot') {
-    const tag = entry.tag || 'snapshot';
-    const detected = entry.detected || 'unknown';
-    const bits = [`${time} | ${tag}`, `page=${detected}`];
-    if (entry.offerStructure?.entryMode) bits.push(`mode=${entry.offerStructure.entryMode}`);
-    if (entry.applicationStructure?.ok === true) bits.push('form=ok');
-    if (entry.successStructure?.ok === true) bits.push('success=ok');
-    const url = compactUrl(entry.url);
-    return `${bits.join(' | ')}${url ? `\n${url}` : ''}`;
-  }
-  const label = toFrenchBlueprintKind(entry.kind);
-  const state = entry.ok === true ? 'OK' : entry.ok === false ? 'KO' : 'INFO';
-  const bits = [`${time} | ${label}`, state];
-  if (entry.detected) bits.push(`detecté=${entry.detected}`);
-  if (entry.expected?.length) bits.push(`attendu=${entry.expected.join(',')}`);
-  if (entry.detectedPage) bits.push(`page=${entry.detectedPage}`);
-  if (entry.relevantSections?.length) bits.push(`sections=${entry.relevantSections.join(',')}`);
-  if (entry.entryMode) bits.push(`mode=${entry.entryMode}`);
-  if (Array.isArray(entry.criticalMissing) && entry.criticalMissing.length) {
-    bits.push(`missing=${entry.criticalMissing.join(',')}`);
-  }
-  if (typeof entry.textHits === 'number') bits.push(`text=${entry.textHits}`);
-  if (typeof entry.unresolvedQuestionCount === 'number') bits.push(`a_traiter=${entry.unresolvedQuestionCount}`);
-  if (Array.isArray(entry.sections) && entry.sections.length) {
-    const active = entry.sections.filter((section) => section.active);
-    if (active.length) {
-      bits.push(active.map((section) => `${section.key}:${section.presentCount}/${section.expectedCount || section.total}`).join(' | '));
-    }
-  }
-  const url = compactUrl(entry.url);
-  return `${bits.join(' | ')}${url ? `\n${url}` : ''}`;
-}
-
 const PILOT_TIER_STYLE = {
   local_only: { color: '#6b7280', hint: 'Scripts embarqués dans l’extension (routage local).' },
   firebase_remote: { color: '#059669', hint: 'Script chargé depuis l’URL (ancien mode, si session).' },
@@ -258,101 +214,15 @@ async function refreshPilotStatus() {
   }
 }
 
-async function refreshAnalyticsStatus() {
-  const analyticsEl = document.getElementById('analytics-status');
-  if (!analyticsEl) return;
-  try {
-    const { taleos_ga4_last_event } = await chrome.storage.local.get('taleos_ga4_last_event');
-    if (!taleos_ga4_last_event) {
-      analyticsEl.textContent = 'Analytics: aucun événement encore';
-      analyticsEl.style.color = '#6b7280';
-      return;
-    }
-    const t = formatLastEventTime(taleos_ga4_last_event.at);
-    const eventName = taleos_ga4_last_event.name || 'unknown';
-    const eventLabel = toFrenchAnalyticsLabel(eventName);
-    if (taleos_ga4_last_event.ok) {
-      if (taleos_ga4_last_event.debug_valid === false) {
-        const issue = (taleos_ga4_last_event.debug_issue || 'événement à corriger').slice(0, 70);
-        analyticsEl.textContent = `Analytics: ${eventLabel} envoyé, mais invalide (${issue})`;
-        analyticsEl.style.color = '#d97706';
-      } else {
-        analyticsEl.textContent = `Analytics: ${eventLabel} validé (${t})`;
-        analyticsEl.style.color = '#059669';
-      }
-    } else {
-      const reason = taleos_ga4_last_event.status || taleos_ga4_last_event.error || 'erreur';
-      analyticsEl.textContent = `Analytics: ${eventLabel} en échec (${reason})`;
-      analyticsEl.style.color = '#dc2626';
-    }
-  } catch (e) {
-    analyticsEl.textContent = `Analytics: erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
-    analyticsEl.style.color = '#dc2626';
-  }
-}
-
-
-async function refreshBpceScriptStatus() {
-  const el = document.getElementById('bpce-script-status');
-  if (!el) return;
-  try {
-    const { taleos_bpce_script_ping } = await chrome.storage.local.get('taleos_bpce_script_ping');
-    if (!taleos_bpce_script_ping?.script) {
-      el.textContent = 'BPCE script: aucun ping détecté';
-      el.style.color = '#6b7280';
-      return;
-    }
-    const t = taleos_bpce_script_ping.at ? formatLastEventTime(taleos_bpce_script_ping.at) : 'maintenant';
-    const script = String(taleos_bpce_script_ping.script || 'unknown');
-    const phase = String(taleos_bpce_script_ping.phase || '');
-    const topFr = taleos_bpce_script_ping.topFrame === true ? 'top' : taleos_bpce_script_ping.topFrame === false ? 'iframe' : '';
-    const detail = String(taleos_bpce_script_ping.detail || '').slice(0, 60);
-    const url = String(taleos_bpce_script_ping.url || '');
-    const phaseBit = phase ? ` · ${phase}` : '';
-    const frameBit = topFr ? ` · ${topFr}` : '';
-    el.textContent = `BPCE script: ${script} (${t})${phaseBit}${frameBit}`;
-    el.title = [url, detail].filter(Boolean).join('\n');
-    el.style.color = phase === 'error' ? '#dc2626' : phase === 'done' ? '#059669' : '#2563eb';
-  } catch (e) {
-    el.textContent = 'BPCE script: erreur lecture';
-    el.style.color = '#dc2626';
-  }
-}
-
-async function refreshAnalyticsLog() {
-  const logEl = document.getElementById('analytics-log');
-  if (!logEl) return;
-  try {
-    const { taleos_ga4_event_log = [] } = await chrome.storage.local.get('taleos_ga4_event_log');
-    if (!taleos_ga4_event_log.length) {
-      logEl.textContent = 'Aucun envoi enregistré.';
-      return;
-    }
-    const lines = taleos_ga4_event_log.slice(0, 8).map((e) => {
-      const t = formatLastEventTime(e.at);
-      const label = toFrenchAnalyticsLabel(e.name);
-      const state = e.ok ? 'OK' : 'KO';
-      const status = e.status ? `HTTP ${e.status}` : '';
-      const dbg = e.debug_valid === false ? 'debug invalide' : 'debug ok';
-      const errType = e.error_type ? ` | ${e.error_type}` : '';
-      return `${t} | ${label} | ${state} ${status} | ${dbg}${errType}`;
-    });
-    logEl.textContent = lines.join('\n');
-  } catch (e) {
-    logEl.textContent = `Erreur log analytics: ${(e?.message || 'unknown').slice(0, 40)}`;
-  }
-}
 
 async function refreshCABlueprintPanel() {
   const statusEl = document.getElementById('ca-blueprint-status');
-  const logEl = document.getElementById('ca-blueprint-log');
-  if (!statusEl || !logEl) return;
+  if (!statusEl) return;
   try {
-    const data = await chrome.storage.local.get([CA_BLUEPRINT_LAST_CHECK_KEY, CA_BLUEPRINT_LOG_KEY]);
+    const data = await chrome.storage.local.get([CA_BLUEPRINT_LAST_CHECK_KEY]);
     const lastCheck = data[CA_BLUEPRINT_LAST_CHECK_KEY];
-    const log = Array.isArray(data[CA_BLUEPRINT_LOG_KEY]) ? data[CA_BLUEPRINT_LOG_KEY] : [];
     if (!lastCheck) {
-      statusEl.textContent = 'CA blueprint: aucun diagnostic encore';
+      statusEl.textContent = 'Crédit Agricole : aucun diagnostic';
       statusEl.className = '';
       statusEl.classList.add('status-warn');
     } else {
@@ -360,53 +230,25 @@ async function refreshCABlueprintPanel() {
       const time = formatIsoDate(lastCheck.at);
       const state = lastCheck.ok === true ? 'OK' : 'KO';
       const suffix = lastCheck.detected ? ` · ${lastCheck.detected}` : lastCheck.entryMode ? ` · ${lastCheck.entryMode}` : '';
-      statusEl.textContent = `CA blueprint: ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
+      statusEl.textContent = `Crédit Agricole : ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
       statusEl.className = '';
       statusEl.classList.add(lastCheck.ok === true ? 'status-good' : 'status-bad');
     }
-    if (!log.length) {
-      logEl.textContent = 'Aucun log CA enregistré.';
-      return;
-    }
-    logEl.textContent = log.slice().reverse().slice(0, 12).map(summarizeBlueprintEntry).join('\n\n');
   } catch (e) {
-    statusEl.textContent = `CA blueprint: erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    statusEl.textContent = `Crédit Agricole : erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
     statusEl.className = '';
     statusEl.classList.add('status-bad');
-    logEl.textContent = 'Impossible de lire les logs CA.';
-  }
-}
-
-async function clearCABlueprintPanel() {
-  const statusEl = document.getElementById('ca-blueprint-status');
-  const logEl = document.getElementById('ca-blueprint-log');
-  try {
-    await chrome.storage.local.remove([CA_BLUEPRINT_LAST_CHECK_KEY, CA_BLUEPRINT_LOG_KEY]);
-    if (statusEl) {
-      statusEl.textContent = 'CA blueprint: logs effacés';
-      statusEl.className = '';
-      statusEl.classList.add('status-good');
-    }
-    if (logEl) logEl.textContent = 'Aucun log CA enregistré.';
-  } catch (e) {
-    if (statusEl) {
-      statusEl.textContent = `CA blueprint: erreur suppression (${(e?.message || 'unknown').slice(0, 40)})`;
-      statusEl.className = '';
-      statusEl.classList.add('status-bad');
-    }
   }
 }
 
 async function refreshSGBlueprintPanel() {
   const statusEl = document.getElementById('sg-blueprint-status');
-  const logEl = document.getElementById('sg-blueprint-log');
-  if (!statusEl || !logEl) return;
+  if (!statusEl) return;
   try {
-    const data = await chrome.storage.local.get([SG_BLUEPRINT_LAST_CHECK_KEY, SG_BLUEPRINT_LOG_KEY]);
+    const data = await chrome.storage.local.get([SG_BLUEPRINT_LAST_CHECK_KEY]);
     const lastCheck = data[SG_BLUEPRINT_LAST_CHECK_KEY];
-    const log = Array.isArray(data[SG_BLUEPRINT_LOG_KEY]) ? data[SG_BLUEPRINT_LOG_KEY] : [];
     if (!lastCheck) {
-      statusEl.textContent = 'SG blueprint: aucun diagnostic encore';
+      statusEl.textContent = 'Société Générale : aucun diagnostic';
       statusEl.className = '';
       statusEl.classList.add('status-warn');
     } else {
@@ -417,40 +259,14 @@ async function refreshSGBlueprintPanel() {
         lastCheck.detected ? ` · ${lastCheck.detected}` :
         lastCheck.detectedPage ? ` · ${lastCheck.detectedPage}` :
         '';
-      statusEl.textContent = `SG blueprint: ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
+      statusEl.textContent = `Société Générale : ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
       statusEl.className = '';
       statusEl.classList.add(lastCheck.ok === true ? 'status-good' : 'status-bad');
     }
-    if (!log.length) {
-      logEl.textContent = 'Aucun log SG enregistré.';
-      return;
-    }
-    logEl.textContent = log.slice().reverse().slice(0, 12).map(summarizeBlueprintEntry).join('\n\n');
   } catch (e) {
-    statusEl.textContent = `SG blueprint: erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    statusEl.textContent = `Société Générale : erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
     statusEl.className = '';
     statusEl.classList.add('status-bad');
-    logEl.textContent = 'Impossible de lire les logs SG.';
-  }
-}
-
-async function clearSGBlueprintPanel() {
-  const statusEl = document.getElementById('sg-blueprint-status');
-  const logEl = document.getElementById('sg-blueprint-log');
-  try {
-    await chrome.storage.local.remove([SG_BLUEPRINT_LAST_CHECK_KEY, SG_BLUEPRINT_LOG_KEY]);
-    if (statusEl) {
-      statusEl.textContent = 'SG blueprint: logs effacés';
-      statusEl.className = '';
-      statusEl.classList.add('status-good');
-    }
-    if (logEl) logEl.textContent = 'Aucun log SG enregistré.';
-  } catch (e) {
-    if (statusEl) {
-      statusEl.textContent = `SG blueprint: erreur suppression (${(e?.message || 'unknown').slice(0, 40)})`;
-      statusEl.className = '';
-      statusEl.classList.add('status-bad');
-    }
   }
 }
 
@@ -492,27 +308,11 @@ async function init() {
   };
   document.getElementById('reload-btn')?.addEventListener('click', () => { void doReload(); });
   document.getElementById('reload-btn-login')?.addEventListener('click', () => { void doReload(); });
-  document.getElementById('refresh-ca-blueprint-btn')?.addEventListener('click', () => { void refreshCABlueprintPanel(); });
-  document.getElementById('clear-ca-blueprint-btn')?.addEventListener('click', () => { void clearCABlueprintPanel(); });
-  document.getElementById('refresh-sg-blueprint-btn')?.addEventListener('click', () => { void refreshSGBlueprintPanel(); });
-  document.getElementById('clear-sg-blueprint-btn')?.addEventListener('click', () => { void clearSGBlueprintPanel(); });
   setupLogout();
   refreshPilotStatus();
-  refreshAnalyticsStatus();
-  refreshBpceScriptStatus();
-  refreshAnalyticsLog();
   refreshCABlueprintPanel();
   refreshSGBlueprintPanel();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.taleos_ga4_last_event) {
-      refreshAnalyticsStatus();
-    }
-    if (area === 'local' && changes.taleos_ga4_event_log) {
-      refreshAnalyticsLog();
-    }
-    if (area === 'local' && changes.taleos_bpce_script_ping) {
-      refreshBpceScriptStatus();
-    }
     if (area === 'local' && changes.taleos_last_pilot) {
       refreshPilotStatus();
     }
