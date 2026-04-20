@@ -194,6 +194,7 @@ function toFrenchBlueprintKind(kind) {
   if (key === 'offer_structure' || key === 'validate_offer_structure') return 'Structure offre';
   if (key === 'apply_dialog_structure' || key === 'validate_apply_dialog_structure') return 'Dialogue candidature';
   if (key === 'application_structure' || key === 'validate_application_structure') return 'Structure formulaire';
+  if (key === 'application_questions' || key === 'validate_application_questions') return 'Questions formulaire';
   if (key === 'success_structure' || key === 'validate_success_structure') return 'Structure succès';
   if (key === 'snapshot') return 'Snapshot';
   return kind || 'Entrée';
@@ -230,6 +231,7 @@ function summarizeBlueprintEntry(entry) {
     bits.push(`missing=${entry.criticalMissing.join(',')}`);
   }
   if (typeof entry.textHits === 'number') bits.push(`text=${entry.textHits}`);
+  if (typeof entry.unresolvedQuestionCount === 'number') bits.push(`a_traiter=${entry.unresolvedQuestionCount}`);
   const url = compactUrl(entry.url);
   return `${bits.join(' | ')}${url ? `\n${url}` : ''}`;
 }

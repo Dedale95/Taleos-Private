@@ -35,7 +35,7 @@
   async function snapshot(tag, extra = {}) {
     const api = globalThis.__TALEOS_CA_BLUEPRINT__;
     if (!api?.capturePageSnapshot) return;
-    await api.capturePageSnapshot(tag, { extra });
+    await api.capturePageSnapshot(tag, extra);
   }
 
   async function validateBlueprint(expected, options = {}) {
@@ -74,6 +74,23 @@
     if (jobId) sendCandidatureFailure(jobId, reason || 'Structure formulaire CA incomplète');
     hideAutomationBanner();
     return false;
+  }
+
+  async function auditApplicationQuestions(profile) {
+    const api = globalThis.__TALEOS_CA_BLUEPRINT__;
+    if (!api?.validateApplicationQuestions) return true;
+    const result = await api.validateApplicationQuestions(profile);
+    const summary = result.sections
+      .map((section) => `${section.key}:${section.expectedCount} attendues/${section.matchingCount} deja conformes`)
+      .join(' | ');
+    log(`🧩 Audit questions CA : ${summary}`);
+    if (result.criticalMissing.length) {
+      log(`⚠️ Questions critiques absentes du DOM : ${result.criticalMissing.join(', ')}`);
+    }
+    if (result.unresolvedQuestionCount) {
+      log(`ℹ️ Questions a remplir ou verifier : ${result.unresolvedQuestionCount}`);
+    }
+    return result.ok;
   }
 
   async function validateOfferStructure(jobId, reason) {
@@ -887,8 +904,9 @@
           sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
           return;
         }
-        await snapshot('ca_application_phase3_form_detected');
+        await snapshot('ca_application_phase3_form_detected', { profile: p });
         if (!(await validateApplicationStructure(jobId, 'Structure formulaire CA incomplète en phase 3'))) return;
+        await auditApplicationQuestions(p);
         log('   ✅ Formulaire détecté (DOM).');
         log('   ⏳ Attente formulaire prêt (hydration)...');
         const hydrated = await waitForFormReady(15000);
@@ -994,8 +1012,9 @@
         sendCandidatureFailure(jobId, 'Timeout: formulaire non affiché');
         return;
       }
-      await snapshot('ca_application_after_login_form_detected');
+      await snapshot('ca_application_after_login_form_detected', { profile: p });
       if (!(await validateApplicationStructure(jobId, 'Structure formulaire CA incomplète après login'))) return;
+      await auditApplicationQuestions(p);
       log('   ✅ Formulaire détecté (DOM).');
       log('   ⏳ Attente formulaire prêt (hydration)...');
       await waitForFormReady(25000);

@@ -115,6 +115,14 @@ Formaliser le parcours d'automatisation Crédit Agricole pour :
 - `diploma_status` -> `div[aria-controls="customSelect-diploma-status"]`
 - `diploma_year` -> `#form-apply-diploma-date-obtained`
 
+### Section Langues
+- `languages[i].name` -> `div[aria-controls="customSelect-language-{i+1}"]`
+- `languages[i].level` -> `div[aria-controls="customSelect-language-level-{i+1}"]`
+- slots additionnels via `#add-language-btn`
+
+### Section Consentement
+- case RGPD détectée via `.checkbox-btn` et le texte du label associé
+
 ## Règle de contrôle avant action
 
 Avant chaque action importante, on valide le blueprint attendu :
@@ -142,6 +150,30 @@ Avant remplissage, le blueprint peut aussi auditer la structure du formulaire :
 Fonctions exposées :
 - `getApplicationStructureReport()`
 - `validateApplicationStructure()`
+
+## Audit question par question
+
+Le blueprint maintient maintenant un registre détaillé des questions de candidature, pas seulement des sections.
+
+Il audite notamment :
+- les champs texte des informations personnelles
+- les sélecteurs simples et multisélecteurs du profil
+- les pièces jointes `CV` et `lettre de motivation`
+- les questions de formation
+- les langues, y compris les slots dynamiques ajoutés via `Ajouter langue`
+- le consentement RGPD
+
+Pour chaque question, l'audit compare :
+- si la question est attendue d'après Firebase
+- si l'élément existe dans le DOM
+- s'il est visible ou seulement présent
+- la valeur attendue
+- la valeur actuellement affichée
+- si la question est déjà conforme, vide, différente, absente ou encore à créer dynamiquement
+
+Fonctions exposées :
+- `getApplicationQuestionAuditReport(profile)`
+- `validateApplicationQuestions(profile)`
 
 ## Audit structurel de l'offre
 

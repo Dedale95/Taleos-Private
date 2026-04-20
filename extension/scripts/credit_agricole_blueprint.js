@@ -233,8 +233,52 @@
     ]
   };
 
+  const APPLICATION_QUESTIONS = {
+    personal: [
+      { key: 'firstname', profileKey: 'firstname', selector: '#form-apply-firstname', type: 'input', label: 'Prenom', critical: true },
+      { key: 'lastname', profileKey: 'lastname', selector: '#form-apply-lastname', type: 'input', label: 'Nom', critical: true },
+      { key: 'address', profileKey: 'address', selector: '#form-apply-address', type: 'input', label: 'Adresse' },
+      { key: 'zipcode', profileKey: 'zipcode', selector: '#form-apply-zipcode', type: 'input', label: 'Code postal' },
+      { key: 'city', profileKey: 'city', selector: '#form-apply-city', type: 'input', label: 'Ville' },
+      { key: 'phone_number', profileKey: 'phone-number', selector: '#form-apply-phone-number', type: 'input', label: 'Telephone' },
+      { key: 'civility', profileKey: 'civility', selector: 'div[aria-controls="customSelect-civility"]', type: 'combobox', label: 'Civilite' },
+      { key: 'country', profileKey: 'country', selector: 'div[aria-controls="customSelect-country"]', type: 'combobox', label: 'Pays' }
+    ],
+    documents: [
+      { key: 'cv', profileKey: 'cv_storage_path', selector: '#form-apply-cv', type: 'file', label: 'CV' },
+      { key: 'lm', profileKey: 'lm_storage_path', selector: '#form-apply-lm', type: 'file', label: 'Lettre de motivation' }
+    ],
+    profile: [
+      { key: 'job_families', profileKey: 'job_families', selector: '#form-apply-input-families', type: 'multiselect', label: 'Metiers' },
+      { key: 'contract_type', profileKey: 'contract_types', selector: 'div[aria-controls="customSelect-contract"]', type: 'combobox_first', label: 'Contrat' },
+      { key: 'available_date', profileKey: 'available_date', selector: '#form-apply-available-date', type: 'input', label: 'Disponibilite' },
+      { key: 'continents', profileKey: 'continents', selector: '#form-apply-input-continents', type: 'multiselect', label: 'Continents' },
+      { key: 'target_countries', profileKey: 'target_countries', selector: '#form-apply-input-countries', type: 'multiselect', label: 'Pays cibles' },
+      { key: 'target_regions', profileKey: 'target_regions', selector: '#form-apply-input-regions', type: 'multiselect', label: 'Regions' },
+      { key: 'experience_level', profileKey: 'experience_level', selector: 'div[aria-controls="customSelect-experience-level"]', type: 'combobox', label: 'Experience' }
+    ],
+    education: [
+      { key: 'education_level', profileKey: 'education_level', selector: 'div[aria-controls="customSelect-education-level"]', type: 'combobox', label: 'Niveau d etudes' },
+      { key: 'school_type', profileKey: 'school_type', selector: 'div[aria-controls="customSelect-school"]', type: 'combobox', label: 'Type d ecole' },
+      { key: 'diploma_status', profileKey: 'diploma_status', selector: 'div[aria-controls="customSelect-diploma-status"]', type: 'combobox', label: 'Statut diplome' },
+      { key: 'diploma_year', profileKey: 'diploma_year', selector: '#form-apply-diploma-date-obtained', type: 'input', label: 'Annee diplome' }
+    ],
+    consent: [
+      { key: 'rgpd_consent', profileKey: null, selector: '.checkbox-btn', type: 'checkbox', label: 'Consentement RGPD', optional: true }
+    ]
+  };
+
   function getPageText(doc) {
     return String(doc?.body?.textContent || '').toLowerCase();
+  }
+
+  function normalizeText(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function isVisible(el) {
@@ -249,6 +293,197 @@
     } catch (_) {
       return null;
     }
+  }
+
+  function getRawProfileValue(profile, question) {
+    if (!profile || !question?.profileKey) return undefined;
+    return profile[question.profileKey];
+  }
+
+  function getExpectedProfileValue(profile, question) {
+    const raw = getRawProfileValue(profile, question);
+    if (question?.type === 'combobox_first') {
+      return Array.isArray(raw) ? raw[0] : raw;
+    }
+    return raw;
+  }
+
+  function hasExpectedProfileValue(profile, question) {
+    const value = getExpectedProfileValue(profile, question);
+    if (Array.isArray(value)) return value.length > 0;
+    return value != null && String(value).trim() !== '';
+  }
+
+  function normalizeExpectedValue(value) {
+    if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean);
+    return normalizeText(value);
+  }
+
+  function summarizeExpectedValue(value, question) {
+    if (value == null) return '';
+    if (Array.isArray(value)) return value.join(', ');
+    if (question?.type === 'file') return String(value).split('/').pop() || 'fichier';
+    return String(value);
+  }
+
+  function summarizeCurrentValue(question, element) {
+    if (!element) return '';
+    if (question.type === 'input') return String(element.value || '').trim();
+    if (question.type === 'file') {
+      if (element.files?.length) return Array.from(element.files).map((file) => file.name).join(', ');
+      const containerText = String(element.parentElement?.textContent || '').trim();
+      const fileMatch = containerText.match(/[A-Za-z0-9 _.-]+\.(pdf|doc|docx)/i);
+      return fileMatch ? fileMatch[0] : '';
+    }
+    if (question.type === 'checkbox') {
+      return element.classList.contains('checked') || element.classList.contains('active') ? 'checked' : 'unchecked';
+    }
+    return String(element.textContent || '').trim();
+  }
+
+  function valuesMatch(question, expected, current) {
+    if (!expected) return true;
+    if (question.type === 'file') {
+      return !!current;
+    }
+    if (Array.isArray(expected)) {
+      const cur = normalizeText(current);
+      return expected.every((item) => !item || cur.includes(item));
+    }
+    const exp = normalizeText(expected);
+    const cur = normalizeText(current);
+    if (!exp) return true;
+    if (!cur) return false;
+    return cur.includes(exp) || exp.includes(cur);
+  }
+
+  function buildLanguageQuestions(profile) {
+    const languages = Array.isArray(profile?.languages) ? profile.languages : [];
+    return languages.flatMap((language, index) => {
+      const slot = index + 1;
+      return [
+        {
+          key: `language_${slot}_name`,
+          profileKey: 'languages',
+          selector: `div[aria-controls="customSelect-language-${slot}"]`,
+          type: 'combobox',
+          label: `Langue ${slot}`,
+          expectedValue: language?.name || '',
+          dynamicAdd: slot > 1,
+          addButtonSelector: '#add-language-btn'
+        },
+        {
+          key: `language_${slot}_level`,
+          profileKey: 'languages',
+          selector: `div[aria-controls="customSelect-language-level-${slot}"]`,
+          type: 'combobox',
+          label: `Niveau langue ${slot}`,
+          expectedValue: language?.level || '',
+          dynamicAdd: slot > 1,
+          addButtonSelector: '#add-language-btn'
+        }
+      ];
+    });
+  }
+
+  function getQuestionDefinitions(profile) {
+    return {
+      ...APPLICATION_QUESTIONS,
+      languages: buildLanguageQuestions(profile)
+    };
+  }
+
+  function getQuestionExpectedValue(profile, question) {
+    if (question.expectedValue != null) return question.expectedValue;
+    return getExpectedProfileValue(profile, question);
+  }
+
+  function getQuestionElement(doc, question) {
+    return queryVisible(doc, question.selector) || doc.querySelector(question.selector);
+  }
+
+  function getQuestionState(doc, question, profile) {
+    const element = getQuestionElement(doc, question);
+    const expectedValue = getQuestionExpectedValue(profile, question);
+    const expectedNormalized = normalizeExpectedValue(expectedValue);
+    const currentValue = summarizeCurrentValue(question, element);
+    const present = !!element;
+    const visible = !!queryVisible(doc, question.selector);
+    const expectedFromProfile = question.expectedValue != null
+      ? normalizeText(question.expectedValue) !== ''
+      : (question.profileKey ? hasExpectedProfileValue(profile, question) : false);
+    const addButtonAvailable = question.dynamicAdd ? !!doc.querySelector(question.addButtonSelector || '') : false;
+    const missingButAddable = !present && question.dynamicAdd && addButtonAvailable;
+    const matches = present ? valuesMatch(question, expectedNormalized, currentValue) : false;
+
+    let status = 'unmapped';
+    if (!question.profileKey && question.type === 'checkbox') {
+      status = present ? 'present' : 'missing';
+    } else if (!expectedFromProfile) {
+      status = present ? 'not_needed_present' : 'not_needed_missing';
+    } else if (missingButAddable) {
+      status = 'dynamic_slot_pending';
+    } else if (!present) {
+      status = 'missing';
+    } else if (matches) {
+      status = 'matching';
+    } else if (!normalizeText(currentValue)) {
+      status = 'empty';
+    } else {
+      status = 'different';
+    }
+
+    return {
+      key: question.key,
+      label: question.label,
+      profileKey: question.profileKey,
+      selector: question.selector,
+      type: question.type,
+      critical: !!question.critical,
+      optional: !!question.optional,
+      dynamicAdd: !!question.dynamicAdd,
+      addButtonAvailable,
+      expectedFromProfile,
+      expectedValue: summarizeExpectedValue(expectedValue, question),
+      currentValue,
+      present,
+      visible,
+      matches,
+      status
+    };
+  }
+
+  function getApplicationQuestionAuditReport(profile = {}, doc = document) {
+    const sections = Object.entries(getQuestionDefinitions(profile)).map(([sectionKey, questions]) => {
+      const details = questions.map((question) => getQuestionState(doc, question, profile));
+      const expectedQuestions = details.filter((detail) => detail.expectedFromProfile);
+      const missingQuestions = details.filter((detail) => detail.status === 'missing');
+      const mismatchedQuestions = details.filter((detail) => detail.status === 'different' || detail.status === 'empty');
+      const dynamicPending = details.filter((detail) => detail.status === 'dynamic_slot_pending');
+      return {
+        key: sectionKey,
+        total: details.length,
+        expectedCount: expectedQuestions.length,
+        presentCount: details.filter((detail) => detail.present).length,
+        matchingCount: details.filter((detail) => detail.status === 'matching').length,
+        missing: missingQuestions.map((detail) => detail.label),
+        mismatched: mismatchedQuestions.map((detail) => detail.label),
+        dynamicPending: dynamicPending.map((detail) => detail.label),
+        details
+      };
+    });
+
+    const expectedQuestions = sections.flatMap((section) => section.details).filter((detail) => detail.expectedFromProfile);
+    const unresolvedExpected = expectedQuestions.filter((detail) => detail.status === 'missing' || detail.status === 'different' || detail.status === 'empty');
+    const criticalMissing = expectedQuestions.filter((detail) => detail.critical && detail.status === 'missing').map((detail) => detail.label);
+
+    return {
+      ok: criticalMissing.length === 0,
+      expectedQuestionCount: expectedQuestions.length,
+      unresolvedQuestionCount: unresolvedExpected.length,
+      criticalMissing,
+      sections
+    };
   }
 
   function pathMatches(def, pathname, href) {
@@ -369,6 +604,20 @@
       criticalMissing,
       sections
     };
+  }
+
+  async function validateApplicationQuestions(profile = {}, options = {}) {
+    const doc = options.document || document;
+    const report = getApplicationQuestionAuditReport(profile, doc);
+    const result = {
+      ok: report.ok,
+      kind: 'application_questions',
+      url: String((options.location || window.location)?.href || ''),
+      ...report
+    };
+    await persistLastCheck(result);
+    await appendDiagnosticLog({ kind: 'validate_application_questions', ...result });
+    return result;
   }
 
   function countVisibleSelectors(doc, selectors = []) {
@@ -605,6 +854,9 @@
     }
     if (detected.key === 'application') {
       snapshot.applicationStructure = getApplicationStructureReport(doc);
+      if (options.profile) {
+        snapshot.applicationQuestions = getApplicationQuestionAuditReport(options.profile, doc);
+      }
     }
     if (detected.key === 'success') {
       snapshot.successStructure = getSuccessStructureReport(doc, loc);
@@ -650,6 +902,8 @@
     validateOfferStructure,
     getApplicationStructureReport,
     validateApplicationStructure,
+    getApplicationQuestionAuditReport,
+    validateApplicationQuestions,
     getLoginStructureReport,
     validateLoginStructure,
     getApplyDialogStructureReport,
