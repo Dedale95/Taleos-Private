@@ -35,6 +35,13 @@
       'renvoyer le code',
       'confirmer votre identite'
     ],
+    oracleInvalidPin: [
+      'le code n est pas valide',
+      'entrez un code valide',
+      'code de verification est obligatoire',
+      'code verification est obligatoire',
+      'invalid code'
+    ],
     oracleThrottle: [
       'trop de tentatives',
       'reessayez plus tard',
@@ -103,6 +110,18 @@
       hostIncludes: ['oraclecloud.com'],
       pathMatches: [/\/apply\/email/, /CandidateExperience/],
       textPatterns: TEXT_PATTERNS.oraclePin,
+      selectorsAny: [
+        '#pin-code-1',
+        '#pin-code-2',
+        'button[title="Vérifier"]',
+        'button[title="Verifier"]'
+      ]
+    },
+    oracle_invalid_pin: {
+      label: 'Oracle code invalide',
+      hostIncludes: ['oraclecloud.com'],
+      pathMatches: [/\/apply\/email/, /CandidateExperience/],
+      textPatterns: TEXT_PATTERNS.oracleInvalidPin,
       selectorsAny: [
         '#pin-code-1',
         '#pin-code-2',
@@ -385,16 +404,19 @@
     const pinCount = Array.from({ length: 6 }, (_, idx) => idx + 1)
       .filter((n) => !!queryVisible(doc, `#pin-code-${n}`))
       .length;
+    const text = getPageText(doc);
     return {
       kind: 'oracle_pin_structure',
-      ok: pinCount >= 1,
+      ok: pinCount === 6,
       pinInputCount: pinCount,
       hasVerifyButton: !!(
         queryVisible(doc, 'button[title="Vérifier"]') ||
         queryVisible(doc, 'button[title="Verifier"]') ||
         Array.from(doc.querySelectorAll('button')).find((el) => isVisible(el) && /verifier|verify/i.test(el.textContent || ''))
       ),
-      hasResendButton: !!Array.from(doc.querySelectorAll('button, a')).find((el) => isVisible(el) && /renvoyer|resend/i.test(el.textContent || ''))
+      hasResendButton: !!Array.from(doc.querySelectorAll('button, a')).find((el) => isVisible(el) && /renvoyer|resend/i.test(el.textContent || '')),
+      hasInvalidCodeMessage: TEXT_PATTERNS.oracleInvalidPin.some((pattern) => text.includes(pattern)),
+      matchedInvalidText: TEXT_PATTERNS.oracleInvalidPin.filter((pattern) => text.includes(pattern))
     };
   }
 
@@ -451,6 +473,7 @@
     if (page === 'offer') return getOfferStructureReport(doc);
     if (page === 'oracle_email') return getOracleEmailStructureReport(doc);
     if (page === 'oracle_pin') return getOraclePinStructureReport(doc);
+    if (page === 'oracle_invalid_pin') return getOraclePinStructureReport(doc);
     if (page === 'oracle_throttle') return {
       kind: 'oracle_throttle_structure',
       ok: true,

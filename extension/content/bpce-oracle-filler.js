@@ -464,9 +464,15 @@
           }).catch(() => {});
           return;
         }
-        const allowed = ['oracle_email', 'oracle_pin', 'oracle_form', 'oracle_throttle', 'success'];
+        const allowed = ['oracle_email', 'oracle_pin', 'oracle_invalid_pin', 'oracle_form', 'oracle_throttle', 'success'];
         if (!allowed.includes(detected.page)) {
           logOnce(`⚠️ Blueprint BPCE mismatch : page Oracle inattendue (${detected.page})`);
+          return;
+        }
+        if (detected.page === 'oracle_invalid_pin') {
+          const report = bpceBlueprint.getPageStructureReport('oracle_invalid_pin');
+          await bpceBlueprint.logCheck('oracle_invalid_pin_detected', report || {});
+          logOnce('⚠️ Oracle a rejeté le code PIN courant. Attente d\'un nouveau code.');
           return;
         }
         if (detected.page === 'oracle_throttle') {

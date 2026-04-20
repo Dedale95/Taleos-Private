@@ -5,6 +5,7 @@ Ce blueprint couvre les variantes BPCE actuellement reconnues par l'extension :
 - `offer` : page offre publique `recrutement.bpce.fr/job/...`
 - `oracle_email` : page Oracle `.../apply/email` avec email + consentement
 - `oracle_pin` : écran Oracle de vérification par code PIN
+- `oracle_invalid_pin` : écran PIN Oracle avec message de code invalide / expiré
 - `oracle_throttle` : limitation temporaire Oracle après trop de tentatives
 - `oracle_form` : formulaire Oracle complet de candidature
 - `lumesse_form` : formulaire Lumesse / TalentLink
@@ -35,6 +36,8 @@ Le runtime `bpce_blueprint.js` vérifie désormais :
   - `.apply-flow-input-checkbox__button`
   - `button[title="Suivant"]`
 - que la page PIN expose des champs `#pin-code-*`
+- que la page PIN valide désormais la présence des `6` champs `#pin-code-1` à `#pin-code-6`
+- que le message Oracle `Le code n'est pas valide. Entrez un code valide.` soit reconnu comme un état distinct `oracle_invalid_pin`
 - que la page de blocage Oracle (`Trop de tentatives. Réessayez plus tard.`) soit reconnue explicitement
 - que la page formulaire Oracle expose au moins :
   - `input[id*="lastName"]`
