@@ -583,6 +583,10 @@
             logOnce(`❌ Blueprint formulaire Oracle incomplet: ${JSON.stringify(report)}`);
             return;
           }
+          if (typeof bpceBlueprint.getOracleQuestionAudit === 'function') {
+            const audit = bpceBlueprint.getOracleQuestionAudit();
+            await bpceBlueprint.logCheck('Questions oracle formulaire', audit);
+          }
         }
         logOnce('📋 Étape 2 : Formulaire complet détecté !', 2);
         

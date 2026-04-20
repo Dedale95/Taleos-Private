@@ -17,6 +17,7 @@ Ce blueprint couvre les variantes BPCE actuellement reconnues par l'extension :
 Offre réelle inspectée :
 
 - `https://recrutement.bpce.fr/job/technology-risk-management`
+- `https://recrutement.bpce.fr/job/liquidity-steering-analyst-alm`
 
 Signatures relevées :
 
@@ -42,8 +43,44 @@ Le runtime `bpce_blueprint.js` vérifie désormais :
 - que la page formulaire Oracle expose au moins :
   - `input[id*="lastName"]`
   - `input[id*="firstName"]`
+  - `input[id*="siteLink"]`
   - et des sélecteurs utiles au remplissage
 - que la variante Lumesse expose les champs de base `form_of_address`, `last_name`, `first_name`, `e-mail_address`
+
+## Cartographie Natixis Oracle confirmée
+
+Sur `Liquidity steering & analyst (ALM)`, le flux réel Oracle confirmé est :
+
+- `oracle_email`
+- `oracle_pin`
+- `oracle_form`
+
+La première page formulaire réelle observée est `étape 1 sur 3` avec les blocs :
+
+- `Informations de contact`
+- `Questions de candidature`
+- `Documents annexes et URL (LINKEDIN...)`
+- `Documents divers`
+
+Questions / zones confirmées sur cette étape :
+
+- `Nom`
+- `Prénom`
+- `Titre`
+- `Adresse électronique`
+- `Numéro de téléphone`
+- `Code pays`
+- `Travailleur en situation de handicap`
+- `Disponibilité`
+- `J'accepte que Natixis conserve mon profil dans le vivier Candidats`
+- `CV`
+- `Lettre de motivation`
+- `URL de votre profil LinkedIn`
+- `Ajouter un autre lien`
+- `Documents divers`
+- consentement `J'accepte de recevoir ...`
+
+Le blueprint embarque maintenant un audit `questionAudit` pour cette étape Oracle Natixis et le content script logge aussi `Questions oracle formulaire` dans le stockage local.
 
 ## Logs stockage local
 

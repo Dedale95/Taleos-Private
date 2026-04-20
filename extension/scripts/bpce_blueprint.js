@@ -56,7 +56,11 @@
       'disponibilite',
       'vivier natixis',
       'handicap',
-      'origine de votre candidature'
+      'origine de votre candidature',
+      'informations de contact',
+      'questions de candidature',
+      'documents annexes et url',
+      'documents divers'
     ],
     lumesseForm: [
       'comment souhaitez-vous postuler',
@@ -423,7 +427,8 @@
   function getOracleFormStructureReport(doc = document) {
     const criticalSelectors = [
       'input[id*="lastName"]',
-      'input[id*="firstName"]'
+      'input[id*="firstName"]',
+      'input[id*="siteLink"]'
     ];
     const helpfulSelectors = [
       'textarea[name="300000620007177"]',
@@ -439,8 +444,101 @@
       ok: matchedCritical.length >= 1 && matchedHelpful.length >= 1,
       matchedCritical,
       missingCritical: criticalSelectors.filter((selector) => !matchedCritical.includes(selector)),
-      matchedHelpful
+      matchedHelpful,
+      questionAudit: getOracleQuestionAudit(doc)
     };
+  }
+
+  function hasVisibleText(doc, rawText) {
+    const text = getPageText(doc);
+    return text.includes(normalizeText(rawText));
+  }
+
+  function getOracleQuestionAudit(doc = document) {
+    const groups = {
+      contact: [
+        ['Nom', 'input[id*="lastName"]'],
+        ['Prenom', 'input[id*="firstName"]'],
+        ['Email', 'input[name="e-mail_address"], input[id^="e-mail_address_"]'],
+        ['Telephone', 'input[type="tel"], input[data-talentlink-apply-number="phone_number"], input[id^="phone-number_phone__mobile__"]'],
+        ['Code pays', 'select[data-talentlink-apply-number="country_code"], input[id*="country-codes-dropdown"], select[id^="country-code_phone__mobile__"]'],
+        ['Civilite', 'select[name="form_of_address"], select[id^="form_of_address_"]']
+      ],
+      questions: [
+        ['Handicap', '.apply-flow-block, .input-row'],
+        ['Disponibilite', 'textarea[name="300000620007177"], textarea[id^="300000620007177"]'],
+        ['Vivier Natixis', '.apply-flow-block, .input-row'],
+        ['Origine candidature', '.apply-flow-block, .input-row']
+      ],
+      documents: [
+        ['CV', 'button:has-text("RETIRER"), input[type="file"][id*="uploadedFile"]'],
+        ['Lettre motivation', 'input[type="file"][id*="uploadedFile"], .apply-flow-block'],
+        ['LinkedIn', 'input[id*="siteLink"]'],
+        ['Ajouter autre lien', 'button']
+      ],
+      consent: [
+        ['Alertes emploi', '.apply-flow-input-checkbox__button']
+      ]
+    };
+
+    const textChecks = {
+      Handicap: ['travailleur en situation de handicap', 'titre de reconnaissance administrative'],
+      Disponibilite: ['disponibilite'],
+      'Vivier Natixis': ['natixis conserve mon profil', 'vivier candidats'],
+      'Origine candidature': ['origine de votre candidature'],
+      CV: ['resume -', 'cv'],
+      'Lettre motivation': ['lettre de motivation'],
+      LinkedIn: ['url de votre profil linkedin'],
+      'Ajouter autre lien': ['ajouter un autre lien'],
+      'Alertes emploi': ['j accepte de recevoir']
+    };
+
+    const result = {};
+    for (const [groupName, entries] of Object.entries(groups)) {
+      const fields = [];
+      for (const [label, selector] of entries) {
+        let present = false;
+        if (selector.includes(':has-text(')) {
+          try {
+            present = !!Array.from(doc.querySelectorAll('button')).find((el) => isVisible(el) && normalizeText(el.textContent || '').includes('retirer'));
+          } catch (_) {}
+        } else if (label === 'Ajouter autre lien') {
+          present = !!Array.from(doc.querySelectorAll('button')).find((el) => isVisible(el) && normalizeText(el.textContent || '').includes('ajouter un autre lien'));
+        } else if (['Handicap', 'Vivier Natixis', 'Origine candidature', 'Lettre motivation'].includes(label)) {
+          present = (textChecks[label] || []).every((text) => hasVisibleText(doc, text));
+        } else if (label === 'CV') {
+          present = (textChecks[label] || []).some((text) => hasVisibleText(doc, text));
+        } else if (label === 'Alertes emploi') {
+          present = hasVisibleText(doc, 'j accepte de recevoir');
+        } else {
+          present = !!queryVisible(doc, selector);
+        }
+        fields.push({ label, present });
+      }
+      result[groupName] = {
+        expected: fields.length,
+        present: fields.filter((field) => field.present).length,
+        fields
+      };
+    }
+
+    result.sections = {
+      expected: 4,
+      present: [
+        hasVisibleText(doc, 'informations de contact'),
+        hasVisibleText(doc, 'questions de candidature'),
+        hasVisibleText(doc, 'documents annexes et url'),
+        hasVisibleText(doc, 'documents divers')
+      ].filter(Boolean).length,
+      fields: [
+        { label: 'Informations de contact', present: hasVisibleText(doc, 'informations de contact') },
+        { label: 'Questions de candidature', present: hasVisibleText(doc, 'questions de candidature') },
+        { label: 'Documents annexes et URL', present: hasVisibleText(doc, 'documents annexes et url') },
+        { label: 'Documents divers', present: hasVisibleText(doc, 'documents divers') }
+      ]
+    };
+
+    return result;
   }
 
   function getLumesseStructureReport(doc = document) {
@@ -535,6 +633,7 @@
     getOracleEmailStructureReport,
     getOraclePinStructureReport,
     getOracleFormStructureReport,
+    getOracleQuestionAudit,
     getLumesseStructureReport,
     getSuccessStructureReport,
     getPageStructureReport,
