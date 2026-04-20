@@ -138,27 +138,6 @@ function setupLogout() {
   });
 }
 
-async function runDiagnostic() {
-  const statusEl = document.getElementById('diagnostic-status');
-  if (!statusEl) return;
-  statusEl.textContent = 'Test en cours...';
-  statusEl.style.color = '#6b7280';
-  try {
-    const t0 = Date.now();
-    await chrome.runtime.sendMessage({ action: 'ping' });
-    const ms = Date.now() - t0;
-    statusEl.textContent = `✅ Connexion OK (${ms} ms)`;
-    statusEl.style.color = '#059669';
-  } catch (e) {
-    const msg = (e?.message || String(e)).toLowerCase();
-    const invalidated = /context invalidated|receiving end does not exist/i.test(msg);
-    statusEl.textContent = invalidated
-      ? '❌ Extension déconnectée — Rafraîchissez les pages Taleos'
-      : `❌ Erreur : ${(e?.message || String(e)).slice(0, 50)}`;
-    statusEl.style.color = '#dc2626';
-  }
-}
-
 function formatLastEventTime(ts) {
   if (!ts) return '';
   try {
@@ -475,32 +454,6 @@ async function clearSGBlueprintPanel() {
   }
 }
 
-async function refreshTaleosTabs() {
-  try {
-    const [t1, t2, t3] = await Promise.all([
-      chrome.tabs.query({ url: 'https://*.taleos.co/*' }),
-      chrome.tabs.query({ url: 'https://*.github.io/*' }),
-      chrome.tabs.query({ url: 'http://localhost/*' })
-    ]);
-    const seen = new Set();
-    const tabs = [].concat(t1, t2, t3).filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-    for (const tab of tabs) {
-      chrome.tabs.reload(tab.id).catch(() => {});
-    }
-    const statusEl = document.getElementById('diagnostic-status');
-    if (statusEl) {
-      statusEl.textContent = tabs.length ? `✅ ${tabs.length} page(s) Taleos rafraîchie(s)` : 'Aucune page Taleos ouverte';
-      statusEl.style.color = '#059669';
-    }
-  } catch (e) {
-    const statusEl = document.getElementById('diagnostic-status');
-    if (statusEl) {
-      statusEl.textContent = '❌ ' + (e?.message || 'Erreur');
-      statusEl.style.color = '#dc2626';
-    }
-  }
-}
-
 async function init() {
   loadingWatchdog = setTimeout(() => {
     loadingWatchdog = null;
@@ -539,14 +492,11 @@ async function init() {
   };
   document.getElementById('reload-btn')?.addEventListener('click', () => { void doReload(); });
   document.getElementById('reload-btn-login')?.addEventListener('click', () => { void doReload(); });
-  document.getElementById('diagnostic-btn')?.addEventListener('click', runDiagnostic);
-  document.getElementById('refresh-taleos-btn')?.addEventListener('click', refreshTaleosTabs);
   document.getElementById('refresh-ca-blueprint-btn')?.addEventListener('click', () => { void refreshCABlueprintPanel(); });
   document.getElementById('clear-ca-blueprint-btn')?.addEventListener('click', () => { void clearCABlueprintPanel(); });
   document.getElementById('refresh-sg-blueprint-btn')?.addEventListener('click', () => { void refreshSGBlueprintPanel(); });
   document.getElementById('clear-sg-blueprint-btn')?.addEventListener('click', () => { void clearSGBlueprintPanel(); });
   setupLogout();
-  runDiagnostic();
   refreshPilotStatus();
   refreshAnalyticsStatus();
   refreshBpceScriptStatus();
