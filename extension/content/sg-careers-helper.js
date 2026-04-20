@@ -5,6 +5,30 @@
 (function() {
   'use strict';
 
+  async function snapshot(tag, extra = {}) {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.capturePageSnapshot) return;
+    await api.capturePageSnapshot(tag, extra);
+  }
+
+  async function validateBlueprint(expected, reason) {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.validateExpectedPage) return true;
+    const result = await api.validateExpectedPage(expected);
+    if (result.ok) return true;
+    console.warn('[Taleos SG Careers] Blueprint mismatch:', reason || '', result);
+    return false;
+  }
+
+  async function validateOfferStructure() {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.validateOfferStructure) return true;
+    const result = await api.validateOfferStructure();
+    if (result.ok) return true;
+    console.warn('[Taleos SG Careers] Offre SG non conforme au blueprint:', result);
+    return false;
+  }
+
   const BANNER_ID = 'taleos-sg-automation-banner';
   function showBanner() {
     if (document.getElementById(BANNER_ID)) return;
@@ -40,6 +64,7 @@
   }
 
   async function run() {
+    await snapshot('sg_public_offer_script_start');
     let { taleos_pending_sg, taleos_apply_fallback } = await chrome.storage.local.get(['taleos_pending_sg', 'taleos_apply_fallback']);
     if (!taleos_pending_sg && taleos_apply_fallback) {
       const age = Date.now() - (taleos_apply_fallback.timestamp || 0);
@@ -109,6 +134,9 @@
       return;
     }
 
+    if (!(await validateBlueprint('public_offer', 'Page offre publique SG non reconnue'))) return;
+    if (!(await validateOfferStructure())) return;
+
     showBanner();
     const delay = ms => new Promise(r => setTimeout(r, ms));
 
@@ -121,28 +149,19 @@
     } catch (_) {}
     await delay(2000);
 
-    const applySelectors = [
-      'a[data-gtm-label="postuler"]',
-      'a[data-gtm-label="apply"]',
-      'a:has-text("Postuler")',
-      'a:has-text("Apply")',
-      'button:has-text("Postuler")',
-      'button:has-text("Apply")',
-      '[href*="postuler"], [href*="apply"]'
-    ];
-
     for (let i = 0; i < 30; i++) {
-      const btn = document.querySelector('a[data-gtm-label="postuler"]') ||
-        document.querySelector('a[data-gtm-label="apply"]') ||
-        Array.from(document.querySelectorAll('a, button')).find(el => {
-          const t = (el.textContent || '').trim().toLowerCase();
-          const label = (el.getAttribute('data-gtm-label') || '').toLowerCase();
-          return /^postuler$|^apply$/i.test(t) || label === 'postuler' || label === 'apply';
+      const taleoUrl = String(document.querySelector('#taleo_url')?.getAttribute('data-value') || '').trim();
+      const btn = Array.from(document.querySelectorAll('a.btnApply[href*="jobapply.ftl"], a[data-gtm-label="postuler"][href*="jobapply.ftl"]'))
+        .find((el) => {
+          if (el.offsetParent === null) return false;
+          const href = String(el.getAttribute('href') || '').trim();
+          return taleoUrl ? href === taleoUrl : /socgen\.taleo\.net\/careersection\/sgcareers\/jobapply\.ftl/i.test(href);
         });
       if (btn && btn.offsetParent !== null) {
         console.log('[Taleos SG Careers] Clic sur Postuler...');
         btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
         await delay(500);
+        await snapshot('sg_public_offer_before_apply_click', { taleoUrl });
         btn.click();
         return;
       }

@@ -14,6 +14,45 @@
     console.log(`[${t}] [Taleos SG] ${msg}`);
   }
 
+  async function snapshot(tag, extra = {}) {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.capturePageSnapshot) return;
+    await api.capturePageSnapshot(tag, extra);
+  }
+
+  async function validateBlueprint(expected, options = {}) {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.validateExpectedPage) return true;
+    const result = await api.validateExpectedPage(expected);
+    if (result.ok) return true;
+    log(`⚠️ Blueprint SG mismatch : attendu ${[].concat(expected).join(', ')} / detecte ${result.detected}`);
+    if (options.fatal) return false;
+    return true;
+  }
+
+  async function validateLoginStructure() {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.validateLoginStructure) return true;
+    const result = await api.validateLoginStructure();
+    if (result.ok) return true;
+    log(`⚠️ Structure login SG incomplete : ${result.criticalMissing.join(', ')}`);
+    return false;
+  }
+
+  async function auditQuestions(profile) {
+    const api = globalThis.__TALEOS_SG_BLUEPRINT__;
+    if (!api?.validateQuestionAudit) return true;
+    const result = await api.validateQuestionAudit(profile);
+    const summary = result.sections
+      .map((section) => `${section.key}:${section.expectedCount} attendues/${section.presentCount} presentes`)
+      .join(' | ');
+    log(`🧩 Audit questions SG : ${summary}`);
+    if (result.criticalMissing.length) {
+      log(`⚠️ Questions critiques absentes : ${result.criticalMissing.join(', ')}`);
+    }
+    return result.ok;
+  }
+
   const BANNER_ID = 'taleos-sg-automation-banner';
   function showBanner() {
     if (document.getElementById(BANNER_ID)) return;
@@ -434,6 +473,7 @@
   }
 
   async function main(profile) {
+    await snapshot('sg_taleo_script_start', { profile });
     if (DEBUG) log(`main() - frame: ${window === window.top ? 'main' : 'iframe'}`);
     if (isSgFinalConfirmationPage()) {
       const jobId = profile?.__jobId || profile?.jobId || '';
@@ -441,6 +481,8 @@
       const companyName = profile?.__companyName || profile?.companyName || 'Société Générale';
       const offerUrl = profile?.__offerUrl || profile?.offerUrl || '';
       log('🎉 Page de confirmation finale — Candidature envoyée.');
+      await snapshot('sg_success_detected', { profile });
+      await validateBlueprint('success');
       trySendSgCandidatureSuccess(jobId, jobTitle, companyName, offerUrl);
       return;
     }
@@ -526,6 +568,9 @@
         document.querySelector('input[id*="login-defaultCmd"]');
 
       if (loginName && loginPass && profile.auth_email && profile.auth_password) {
+        await snapshot('sg_login_detected', { profile });
+        await validateBlueprint('login');
+        await validateLoginStructure();
         log('🔑 Connexion Taleo...');
         loginName.focus();
         loginName.value = profile.auth_email;
@@ -995,6 +1040,9 @@
       const onStep2NotStep3 = !isSgVerifierReviewPage() &&
         (hasProfileFormVisible() || isInformationsPersonnellesPage()) && currentStep !== 'pieces' && !isPiecesJointesPage() && !profileFilled;
       if (onStep2NotStep3) {
+      await snapshot('sg_personal_information_detected', { profile });
+      await validateBlueprint(['personal_information', 'screening']);
+      await auditQuestions(profile);
       log('📂 [2/4] Informations personnelles');
       let fn = findByIdContains('personal_info_FirstName') || findByIdContains('FirstName');
       if (!fn) {
@@ -1124,6 +1172,9 @@
       }
 
       if (isPiecesJointesPage()) {
+      await snapshot('sg_attachments_detected', { profile });
+      await validateBlueprint('attachments');
+      await auditQuestions(profile);
       log('📂 [3/4] Pièces jointes (CV)');
       if (window !== window.top) {
         if (DEBUG) log('   ⏭️ Pièces jointes : iframe — traitement principal dans la frame du haut');
@@ -1402,6 +1453,9 @@
       const finalPostuler = findFinalSgPostulerButton();
       const onVerifierRecap = stepNavNow === 'verifier' || isSgVerifierReviewPage();
       if (window === window.top && onVerifierRecap && finalPostuler) {
+        await snapshot('sg_review_submit_detected', { profile });
+        await validateBlueprint('review_submit');
+        await auditQuestions(profile);
         log('📂 [4/4] Validation finale — Clic « Postuler » (récap Vérifier et postuler)');
         finalPostuler.scrollIntoView({ behavior: 'instant', block: 'center' });
         await delay(500);
@@ -1414,6 +1468,7 @@
         const bodyTxt = document.body?.textContent || '';
         if ((isStrictSgSubmissionMessage(bodyTxt) || isSgFinalConfirmationPage()) && (jobId || offerUrl)) {
           log('🎉 Confirmation de soumission détectée — candidature_success');
+          await snapshot('sg_review_submit_success', { profile });
           trySendSgCandidatureSuccess(jobId, jobTitle, companyName, offerUrl);
         }
       }

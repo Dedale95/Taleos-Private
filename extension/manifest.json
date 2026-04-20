@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.56",
-  "version_name": "1.1.56-ca-blueprint-question-audit",
+  "version": "1.1.57",
+  "version_name": "1.1.57-sg-blueprint-runtime",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -126,6 +126,7 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
+        "scripts/societe_generale_blueprint.js",
         "content/sg-careers-helper.js"
       ],
       "run_at": "document_idle"
@@ -135,6 +136,7 @@
         "https://socgen.taleo.net/*"
       ],
       "js": [
+        "scripts/societe_generale_blueprint.js",
         "content/sg-at-click-polyfill.js",
         "content/sg-taleo-runner.js"
       ],
