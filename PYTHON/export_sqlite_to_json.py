@@ -69,6 +69,22 @@ def extract_bnp_jobs_from_json(jobs: list, patterns: list[str]) -> list:
     ]
 
 
+def db_has_jobs_table(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'"
+            ).fetchone()
+            return bool(row)
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
 def slim_full_job(job: dict) -> dict:
     """Version légère pour l'archive complète afin de rester sous les limites GitHub."""
     if not isinstance(job, dict):
@@ -476,12 +492,14 @@ def main():
         # lors d'un export local partiel sans base BNP.
         preserve_bnp_if_missing = True
 
-    # Si BNP_DB absent : préserver les offres BNP du JSON existant uniquement en mode explicite.
+    bnp_db_usable = db_has_jobs_table(BNP_DB)
+
+    # Si BNP_DB est absent/inutilisable : préserver les offres BNP du JSON existant.
     bnp_jobs_preserved = []
-    if not BNP_DB.exists():
+    if not bnp_db_usable:
         if require_bnp_db:
             raise RuntimeError(
-                f"BNP DB manquante: {BNP_DB}. Abandon export (TALEOS_REQUIRE_BNP_DB=1) pour éviter des offres BNP obsolètes."
+                f"BNP DB absente ou inutilisable: {BNP_DB}. Abandon export (TALEOS_REQUIRE_BNP_DB=1) pour éviter des offres BNP obsolètes."
             )
         if preserve_bnp_if_missing:
             existing_sources = [
@@ -498,12 +516,12 @@ def main():
                 if bnp_jobs_preserved:
                     print(
                         f"   📌 {len(bnp_jobs_preserved)} offres BNP préservées depuis {existing_path.name} "
-                        f"(base absente)"
+                        f"(base absente/inutilisable)"
                     )
                     break
             if not bnp_jobs_preserved:
                 print(
-                    "   ⚠️ Base BNP absente et aucune offre BNP à préserver dans les JSON existants. "
+                    "   ⚠️ Base BNP absente/inutilisable et aucune offre BNP à préserver dans les JSON existants. "
                     "L'export continuera sans BNP."
                 )
 
@@ -541,10 +559,10 @@ def main():
         # Version complète (Live + Expired) pour mes-candidatures / référence
         all_jobs_full = []
         for name, db_path in sources_info:
-            if db_path.exists():
+            if db_has_jobs_table(db_path):
                 full = read_from_db(db_path, name, live_only=False)
                 all_jobs_full.extend(full)
-        if bnp_jobs_preserved and not BNP_DB.exists():
+        if bnp_jobs_preserved and not bnp_db_usable:
             all_jobs_full.extend(bnp_jobs_preserved)
         OUTPUT_JSON_FULL = HTML_DIR / "scraped_jobs_full.json"
         if all_jobs_full:

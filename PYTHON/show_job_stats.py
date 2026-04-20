@@ -44,6 +44,13 @@ def main():
             print(f"   {name}: base manquante")
             continue
         conn = sqlite3.connect(db_path)
+        has_jobs = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'"
+        ).fetchone()
+        if not has_jobs:
+            conn.close()
+            print(f"   {name}: table jobs absente")
+            continue
         row = conn.execute("""
             SELECT 
                 SUM(CASE WHEN status = 'Live' AND is_valid = 1 THEN 1 ELSE 0 END) as live,

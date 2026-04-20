@@ -50,14 +50,73 @@ EXPIRED_PAGE_PATTERNS = [
     "the requested page no longer exists",
 ]
 
+INCONCLUSIVE_STATUS_CODES = {401, 403, 429}
 
-def _is_offer_url_expired(url: str, timeout_sec: int = 12) -> bool:
+SHELL_PAGE_PATTERNS = {
+    "BPCE": [
+        "le groupe bpce, 2e groupe bancaire en france",
+        "nos offres d'emploi",
+        "rejoindre le groupe bpce",
+    ],
+}
+
+
+def _normalize_offer_url_for_compare(url: str) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    return raw.rstrip("/")
+
+
+def _get_current_live_urls_for_source(source_name: str) -> Optional[set[str]]:
+    """Charge la liste d'URLs actuellement exposées par la source quand un endpoint fiable existe."""
+    if source_name != "BPCE":
+        return None
+
+    try:
+        from bpce_scraper import fetch_all_jobs_from_api, transform_api_item_to_job
+
+        current_urls = set()
+        for item in fetch_all_jobs_from_api():
+            job = transform_api_item_to_job(item)
+            normalized = _normalize_offer_url_for_compare(job.get("job_url", ""))
+            if normalized:
+                current_urls.add(normalized)
+        print(f"   ↳ {source_name}: {len(current_urls)} URL live chargées depuis l'API source")
+        return current_urls
+    except Exception as exc:
+        print(f"⚠️ {source_name}: impossible de charger les URL live source ({exc})")
+        return None
+
+
+def _db_has_jobs_table(db_path: Path) -> bool:
+    if not db_path.exists():
+        return False
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+        ).fetchone()
+        return bool(row)
+    finally:
+        conn.close()
+
+
+def _is_offer_url_expired(
+    url: str,
+    source_name: str = "",
+    current_live_urls: Optional[set[str]] = None,
+    timeout_sec: int = 12,
+) -> bool:
     """Détecte rapidement si une URL d'offre est expirée/introuvable."""
     raw = (url or "").strip()
     if not raw:
         return True
-    low = raw.lower()
+    normalized_raw = _normalize_offer_url_for_compare(raw)
+    low = normalized_raw.lower()
     if "/404/" in low or low.endswith("/404"):
+        return True
+    if current_live_urls is not None and normalized_raw not in current_live_urls:
         return True
     try:
         resp = requests.get(
@@ -67,12 +126,23 @@ def _is_offer_url_expired(url: str, timeout_sec: int = 12) -> bool:
             headers={"User-Agent": "Mozilla/5.0 (Taleos-Revalidator)"},
         )
         final_url = (resp.url or raw).lower()
+        if resp.status_code in INCONCLUSIVE_STATUS_CODES:
+            return False
+        if resp.status_code in {404, 410}:
+            return True
+        if resp.status_code >= 500:
+            return False
         if resp.status_code >= 400:
             return True
         if "/404/" in final_url or final_url.endswith("/404"):
             return True
         txt = (resp.text or "")[:20000].lower()
-        return any(p in txt for p in EXPIRED_PAGE_PATTERNS)
+        if any(p in txt for p in EXPIRED_PAGE_PATTERNS):
+            return True
+        for pattern in SHELL_PAGE_PATTERNS.get(source_name, []):
+            if pattern in txt:
+                return True
+        return False
     except Exception:
         # En cas d'erreur réseau, on ne force pas l'expiration
         return False
@@ -87,6 +157,9 @@ def revalidate_live_offers_in_db(
     """Revalide toutes les offres Live d'une base et expire celles devenues introuvables."""
     if not db_path.exists():
         print(f"⚠️ Revalidation ignorée ({source_name}) : base absente")
+        return 0
+    if not _db_has_jobs_table(db_path):
+        print(f"⚠️ Revalidation ignorée ({source_name}) : table jobs absente")
         return 0
 
     conn = sqlite3.connect(db_path)
@@ -107,9 +180,13 @@ def revalidate_live_offers_in_db(
 
         print(f"🔎 Revalidation {source_name}: vérification de {len(urls)} URL Live...")
         to_expire = set()
+        current_live_urls = _get_current_live_urls_for_source(source_name)
 
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = {ex.submit(_is_offer_url_expired, u): u for u in urls}
+            futures = {
+                ex.submit(_is_offer_url_expired, u, source_name, current_live_urls): u
+                for u in urls
+            }
             for fut in as_completed(futures):
                 u = futures[fut]
                 try:
@@ -542,4 +619,3 @@ if __name__ == "__main__":
     print("=" * 80)
     print("✅ PROCESSUS TERMINÉ")
     print("=" * 80)
-
