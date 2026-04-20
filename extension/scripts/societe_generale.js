@@ -468,7 +468,7 @@
     try {
       if (sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, '1');
-      chrome.runtime.sendMessage({ action: 'candidature_success', jobId, jobTitle, companyName, offerUrl });
+      chrome.runtime.sendMessage({ action: 'candidature_success', bankId: 'societe_generale', jobId, jobTitle, companyName, offerUrl });
     } catch (_) {}
   }
 

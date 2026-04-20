@@ -1839,78 +1839,81 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
 
 async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
   const { jobId, jobTitle, companyName, offerUrl } = msg;
-  const { taleosUserId, taleosIdToken, taleos_pending_tab, taleos_offer_meta_by_job = {}, taleos_offer_meta_by_url = {} } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab', 'taleos_offer_meta_by_job', 'taleos_offer_meta_by_url']);
-  chrome.storage.local.remove('taleos_pending_tab');
-  if (!taleosUserId || !taleosIdToken) return;
+  try {
+    const { taleosUserId, taleosIdToken, taleos_pending_tab, taleos_offer_meta_by_job = {}, taleos_offer_meta_by_url = {} } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', 'taleos_pending_tab', 'taleos_offer_meta_by_job', 'taleos_offer_meta_by_url']);
+    chrome.storage.local.remove('taleos_pending_tab');
+    if (!taleosUserId || !taleosIdToken) return;
 
-  const safe = (s) => (s || '').trim().replace(/[/\\.]/g, '_').replace(/\s+/g, '_').slice(0, 150) || 'inconnu';
-  const now = new Date();
-  const dd = String(now.getDate()).padStart(2, '0');
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const yyyy = now.getFullYear();
-  const datePart = dd + '\uFF0F' + mm + '\uFF0F' + yyyy;
-  const docId = (datePart + ' \u203A ' + safe(companyName) + ' \u203A ' + safe(jobTitle) + ' \u203A ' + (jobId || 'unknown')).slice(0, 1500);
+    const safe = (s) => (s || '').trim().replace(/[/\\.]/g, '_').replace(/\s+/g, '_').slice(0, 150) || 'inconnu';
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const datePart = dd + '\uFF0F' + mm + '\uFF0F' + yyyy;
+    const docId = (datePart + ' \u203A ' + safe(companyName) + ' \u203A ' + safe(jobTitle) + ' \u203A ' + (jobId || 'unknown')).slice(0, 1500);
 
-  const metaFromStore = taleos_offer_meta_by_job[String(jobId || '').trim()] || {};
-  const metaFromUrl = taleos_offer_meta_by_url[getOfferMetaUrlKey(offerUrl)] || {};
-  const mergedMeta = { ...metaFromUrl, ...metaFromStore };
-  const location = (msg.location || mergedMeta.location || '').trim();
-  const contractType = (msg.contractType || mergedMeta.contractType || '').trim();
-  const experienceLevel = (msg.experienceLevel || mergedMeta.experienceLevel || '').trim();
-  const jobFamily = (msg.jobFamily || mergedMeta.jobFamily || '').trim();
-  const publicationDate = (msg.publicationDate || mergedMeta.publicationDate || '').trim();
+    const metaFromStore = taleos_offer_meta_by_job[String(jobId || '').trim()] || {};
+    const metaFromUrl = taleos_offer_meta_by_url[getOfferMetaUrlKey(offerUrl)] || {};
+    const mergedMeta = { ...metaFromUrl, ...metaFromStore };
+    const location = (msg.location || mergedMeta.location || '').trim();
+    const contractType = (msg.contractType || mergedMeta.contractType || '').trim();
+    const experienceLevel = (msg.experienceLevel || mergedMeta.experienceLevel || '').trim();
+    const jobFamily = (msg.jobFamily || mergedMeta.jobFamily || '').trim();
+    const publicationDate = (msg.publicationDate || mergedMeta.publicationDate || '').trim();
 
-  const doc = {
-    jobId: String(jobId || '').trim(),
-    jobTitle: (jobTitle || '').trim(),
-    jobUrl: offerUrl || '',
-    companyName: companyName || 'Non spécifié',
-    location: location || 'Non spécifié',
-    contractType: contractType || 'Non spécifié',
-    experienceLevel: experienceLevel || 'Non spécifié',
-    jobFamily: jobFamily || 'Non spécifié',
-    publicationDate: publicationDate || 'Non spécifié',
-    appliedDate: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
-    status: 'envoyée'
-  };
+    const doc = {
+      jobId: String(jobId || '').trim(),
+      jobTitle: (jobTitle || '').trim(),
+      jobUrl: offerUrl || '',
+      companyName: companyName || 'Non spécifié',
+      location: location || 'Non spécifié',
+      contractType: contractType || 'Non spécifié',
+      experienceLevel: experienceLevel || 'Non spécifié',
+      jobFamily: jobFamily || 'Non spécifié',
+      publicationDate: publicationDate || 'Non spécifié',
+      appliedDate: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
+      status: 'envoyée'
+    };
 
-  const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-  const docPath = `profiles/${taleosUserId}/job_applications/${encodeURIComponent(docId)}`;
-  const fields = {};
-  for (const [k, v] of Object.entries(doc)) {
-    if (typeof v === 'string') fields[k] = { stringValue: v };
-    else if (typeof v === 'number') fields[k] = { integerValue: String(v) };
-    else if (v && typeof v === 'object' && 'seconds' in v) fields[k] = { timestampValue: new Date(v.seconds * 1000).toISOString() };
-  }
-  const res = await fetch(`${base}/${docPath}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${taleosIdToken}`
-    },
-    body: JSON.stringify({ fields })
-  });
-  if (!res.ok) console.error('[Taleos] Firestore save:', await res.text());
+    const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+    const docPath = `profiles/${taleosUserId}/job_applications/${encodeURIComponent(docId)}`;
+    const fields = {};
+    for (const [k, v] of Object.entries(doc)) {
+      if (typeof v === 'string') fields[k] = { stringValue: v };
+      else if (typeof v === 'number') fields[k] = { integerValue: String(v) };
+      else if (v && typeof v === 'object' && 'seconds' in v) fields[k] = { timestampValue: new Date(v.seconds * 1000).toISOString() };
+    }
+    const res = await fetch(`${base}/${docPath}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${taleosIdToken}`
+      },
+      body: JSON.stringify({ fields })
+    });
+    if (!res.ok) console.error('[Taleos] Firestore save:', await res.text());
 
-  let taleosTab = taleos_pending_tab;
-  if (!taleosTab) {
-    const taleosTabs = await chrome.tabs.query({ url: '*://*.taleos.co/*' });
-    taleosTab = taleosTabs[0]?.id;
-  }
-  if (!taleosTab) {
-    const ghTabs = await chrome.tabs.query({ url: '*://*.github.io/*' });
-    taleosTab = ghTabs[0]?.id;
-  }
-  if (taleosTab) {
-    try {
-      await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_success', jobId, status: 'envoyée' });
-      chrome.tabs.update(taleosTab, { active: true }).catch(() => {});
-    } catch (_) {}
-  }
-  if (tabIdToClose) {
-    setTimeout(() => {
-      chrome.tabs.remove(tabIdToClose).catch(() => {});
-    }, 3000);
+    let taleosTab = taleos_pending_tab;
+    if (!taleosTab) {
+      const taleosTabs = await chrome.tabs.query({ url: '*://*.taleos.co/*' });
+      taleosTab = taleosTabs[0]?.id;
+    }
+    if (!taleosTab) {
+      const ghTabs = await chrome.tabs.query({ url: '*://*.github.io/*' });
+      taleosTab = ghTabs[0]?.id;
+    }
+    if (taleosTab) {
+      try {
+        await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_success', jobId, status: 'envoyée' });
+        chrome.tabs.update(taleosTab, { active: true }).catch(() => {});
+      } catch (_) {}
+    }
+  } finally {
+    if (tabIdToClose) {
+      setTimeout(() => {
+        chrome.tabs.remove(tabIdToClose).catch(() => {});
+      }, 3000);
+    }
   }
 }
 
