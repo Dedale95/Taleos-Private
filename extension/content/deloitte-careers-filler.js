@@ -28,6 +28,55 @@
     console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Deloitte] ${prefix}${msg}`);
   }
 
+  const blueprintApi = globalThis.__TALEOS_DELOITTE_BLUEPRINT__ || null;
+
+  async function logBlueprint(entry) {
+    if (!blueprintApi?.recordLog) return;
+    try {
+      await blueprintApi.recordLog(entry);
+    } catch (_) {}
+  }
+
+  async function snapshotBlueprint(profile, label) {
+    if (!blueprintApi?.snapshotCurrentPage) return null;
+    try {
+      return await blueprintApi.snapshotCurrentPage({ profile });
+    } catch (e) {
+      log('Snapshot blueprint Deloitte impossible: ' + (e && e.message), 0);
+      return null;
+    }
+  }
+
+  async function validateBlueprintPage(expected, profile, label) {
+    if (!blueprintApi?.validateCurrentPage) return null;
+    try {
+      const res = await blueprintApi.validateCurrentPage(expected);
+      log(`Blueprint Deloitte ${label || 'page'}: ${res.ok ? 'OK' : 'KO'} (${res.detected})`, 0);
+      if (!res.ok) {
+        await logBlueprint({ kind: 'blueprint_mismatch', ok: false, expected, detected: res.detected, href: location.href, label: label || '' });
+      }
+      if (profile && blueprintApi.snapshotCurrentPage) {
+        await snapshotBlueprint(profile, label);
+      }
+      return res;
+    } catch (e) {
+      log('Validation blueprint Deloitte impossible: ' + (e && e.message), 0);
+      return null;
+    }
+  }
+
+  async function auditBlueprintQuestions(profile, pageKey, label) {
+    if (!blueprintApi?.validateQuestionAudit) return null;
+    try {
+      const res = await blueprintApi.validateQuestionAudit(profile, { pageKey });
+      log(`Blueprint Deloitte ${label || pageKey}: ${res.ok ? 'OK' : 'KO'} (${res.report?.unresolvedQuestionCount || 0} a traiter)`, 5);
+      return res;
+    } catch (e) {
+      log('Audit blueprint Deloitte impossible: ' + (e && e.message), 5);
+      return null;
+    }
+  }
+
   function showBanner() {
     if (document.getElementById(BANNER_ID)) return;
     const api = globalThis.__TALEOS_AUTOMATION_BANNER__;
@@ -830,8 +879,34 @@
     // Détection "Offre introuvable"
     const pageText = (document.body?.innerText || '').toLowerCase();
     if (pageText.includes('offre introuvable') || pageText.includes('job not found') || pageText.includes('this position is no longer available') || pageText.includes('cette offre est peut-être expirée')) {
+      await validateBlueprintPage(['unavailable'], profile, 'offre_indisponible');
       log('Offre introuvable → notification Taleos', 0);
       await notifyOfferUnavailable(jobId, jobTitle);
+      return;
+    }
+
+    const successDetected = blueprintApi?.detectPage?.({ document, location })?.key === 'success' ||
+      pageText.includes('merci pour votre candidature') ||
+      pageText.includes('thank you for applying') ||
+      pageText.includes('application submitted');
+    if (successDetected) {
+      await validateBlueprintPage(['success'], profile, 'succes');
+      log('Page Deloitte/Workday de confirmation detectee', 0);
+      chrome.runtime.sendMessage({
+        action: 'candidature_success',
+        bankId: 'deloitte',
+        jobId,
+        jobTitle,
+        companyName: taleos_pending_deloitte.companyName || 'Deloitte',
+        offerUrl: taleos_pending_deloitte.offerUrl || url,
+        location: taleos_pending_deloitte.location || '',
+        contractType: taleos_pending_deloitte.contractType || '',
+        experienceLevel: taleos_pending_deloitte.experienceLevel || '',
+        jobFamily: taleos_pending_deloitte.jobFamily || '',
+        publicationDate: taleos_pending_deloitte.publicationDate || ''
+      }).catch(() => {});
+      chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
+      hideBanner();
       return;
     }
 
@@ -845,6 +920,7 @@
 
     // Sur deloitte.com : d'abord essayer un lien direct Workday, sinon chercher le bouton Postuler
     if (url.includes('deloitte.com') && !url.includes('myworkdayjobs.com')) {
+      await validateBlueprintPage(['public_offer', 'unavailable'], profile, 'offre_publique');
       const workdayLink = document.querySelector('a[href*="myworkdayjobs.com"][href*="apply"], a[href*="myworkdayjobs.com"]');
       if (workdayLink?.href) {
         log('Lien Workday trouvé → redirection', 1);
@@ -869,6 +945,11 @@
         return;
       }
       if (url.includes('deloitte.com')) {
+        const offerReport = blueprintApi?.getPublicOfferStructureReport?.(document, url);
+        if (offerReport && !offerReport.ok) {
+          await logBlueprint({ kind: 'offer_structure', ok: false, ...offerReport, href: url });
+          await blueprintApi.storeLastCheck?.({ kind: 'offer_structure', ok: false, ...offerReport, at: new Date().toISOString() });
+        }
         log('Bouton Postuler non trouvé → retry dans 2s', 1);
         maybeRetryForPostuler();
         return;
@@ -906,6 +987,7 @@
 
     // 2a. Si le formulaire CONNEXION est visible (sans champ "Confirmer mot de passe") → on le remplit et on envoie
     if (emailInput && passwordInput && !isCreationForm) {
+      await validateBlueprintPage(['login', 'apply_choice'], profile, 'connexion');
       log('Formulaire connexion visible → remplissage email/mot de passe', 2);
       fillInput(emailInput, email);
       fillInput(passwordInput, password);
@@ -921,6 +1003,7 @@
       }
     } else {
       // 2b. Sinon, on cherche le bouton / span "Connexion" pour afficher le formulaire
+      await validateBlueprintPage(['apply_choice', 'login', 'personal_details'], profile, 'choix_candidature');
       const connexionSpan = Array.from(document.querySelectorAll('span')).find(s => /^connexion$/i.test((s.textContent || '').trim()));
       const connexionBtn = document.querySelector('[aria-label="Connexion"][role="button"], [data-automation-id="click_filter"][aria-label="Connexion"]');
       const btn = connexionSpan || connexionBtn;
@@ -1002,6 +1085,8 @@
         return;
       }
       step3Done = true;
+      await validateBlueprintPage(['questionnaire'], profile, 'questions_candidature');
+      await auditBlueprintQuestions(profile, 'questionnaire', 'questions_candidature');
       log('📋 Étape 3 "Questions de candidature" détectée', 5);
       fillWorkdayStep3Questions(profile);
       clickNextAndContinue(4000);
@@ -1030,6 +1115,8 @@
         return;
       }
       step2Done = true;
+      await validateBlueprintPage(['experience'], profile, 'experience');
+      await auditBlueprintQuestions(profile, 'experience', 'experience');
       log('📋 Étape 2 "Mon expérience" détectée', 5);
       fillWorkdayStep2Education(profile);
       uploadCvInStep2(profile).then(function () {
@@ -1048,6 +1135,11 @@
       chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
       setTimeout(hideBanner, 2000);
       return;
+    }
+
+    await validateBlueprintPage(['personal_details', 'apply_choice', 'login'], profile, 'donnees_personnelles');
+    if (isOnApplyForm) {
+      await auditBlueprintQuestions(profile, 'personal_details', 'donnees_personnelles');
     }
 
     let filled = false;

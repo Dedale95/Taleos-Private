@@ -40,7 +40,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 const BANK_SCRIPT_MAP = {
   credit_agricole: 'scripts/credit_agricole.js',
   societe_generale: 'scripts/societe_generale.js',
-  deloitte: 'scripts/credit_agricole.js',
+  deloitte: 'content/deloitte-careers-filler.js',
   bpce: 'content/bpce-careers-filler.js'
 };
 
@@ -59,6 +59,7 @@ const TALEOS_BANNER_SCRIPT = 'scripts/taleos-automation-banner.js';
 const CA_BLUEPRINT_SCRIPT = 'scripts/credit_agricole_blueprint.js';
 const SG_BLUEPRINT_SCRIPT = 'scripts/societe_generale_blueprint.js';
 const BPCE_BLUEPRINT_SCRIPT = 'scripts/bpce_blueprint.js';
+const DELOITTE_BLUEPRINT_SCRIPT = 'scripts/deloitte_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -77,7 +78,24 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'bpce') {
     return injectFilesWithBanner([BPCE_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'deloitte') {
+    return injectFilesWithBanner([DELOITTE_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
+}
+
+async function clearPendingStateForBank(bankId, tabId) {
+  const bid = String(bankId || '').toLowerCase();
+  const keys = [];
+  if (bid === 'societe_generale') keys.push('taleos_pending_sg', 'taleos_sg_tab_id');
+  if (bid === 'credit_agricole') keys.push('taleos_pending_offer', 'taleos_ca_apply_tab_id');
+  if (bid === 'deloitte') keys.push('taleos_pending_deloitte', 'taleos_deloitte_did_login_click');
+  if (bid === 'bpce') keys.push('taleos_pending_bpce', 'taleos_bpce_tab_id');
+  if (keys.length) {
+    await chrome.storage.local.remove(keys);
+  }
+  if (tabId && bid === 'societe_generale') sgLastInject.delete(tabId);
+  if (tabId && bid === 'credit_agricole') caLastInject.delete(tabId);
 }
 
 let authSyncResolve = null;
@@ -1003,8 +1021,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'candidature_success') {
     clearApplyStuckWatchdog();
-    chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
-    if (sender.tab?.id) sgLastInject.delete(sender.tab.id);
+    clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
     const tabIdToClose = sender.tab?.id;
     trackApplySuccess(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
     saveCandidatureAndNotifyTaleos(msg, tabIdToClose).then(sendResponse).catch(e => sendResponse({ error: e.message }));
@@ -1025,11 +1042,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       trackError('apply_failure', error || 'Erreur candidature', msg.bankId, jobId, msg.offerUrl).catch(() => {});
     }
     clearApplyStuckWatchdog();
-    chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
-    if (sender.tab?.id) {
-      sgLastInject.delete(sender.tab.id);
-      if (isExpired) chrome.tabs.remove(sender.tab.id).catch(() => {});
-    }
+    clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
+    if (sender.tab?.id && isExpired) chrome.tabs.remove(sender.tab.id).catch(() => {});
     if (isExpired && jobId) {
       notifyTaleosOfferUnavailable({ jobId, jobTitle: jobTitle || '' }).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
     } else {

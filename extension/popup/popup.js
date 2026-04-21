@@ -28,6 +28,8 @@ const CA_BLUEPRINT_LAST_CHECK_KEY = 'taleos_ca_blueprint_last_check';
 const CA_BLUEPRINT_LOG_KEY = 'taleos_ca_blueprint_log';
 const SG_BLUEPRINT_LAST_CHECK_KEY = 'taleos_sg_blueprint_last_check';
 const SG_BLUEPRINT_LOG_KEY = 'taleos_sg_blueprint_log';
+const DELOITTE_BLUEPRINT_LAST_CHECK_KEY = 'taleos_deloitte_blueprint_last_check';
+const DELOITTE_BLUEPRINT_LOG_KEY = 'taleos_deloitte_blueprint_log';
 
 /** Si l’init reste bloquée sur « Vérification de la connexion… », on débloque après ce délai. */
 let loadingWatchdog = null;
@@ -169,6 +171,12 @@ function toFrenchBlueprintKind(kind) {
   if (key === 'application_questions' || key === 'validate_application_questions') return 'Questions formulaire';
   if (key === 'question_audit' || key === 'validate_question_audit') return 'Audit questions';
   if (key === 'success_structure' || key === 'validate_success_structure') return 'Structure succès';
+  if (key === 'offer_structure') return 'Structure offre';
+  if (key === 'apply_choice') return 'Choix candidature';
+  if (key === 'login_structure') return 'Structure login';
+  if (key === 'personal_details') return 'Donnees personnelles';
+  if (key === 'experience') return 'Experience';
+  if (key === 'questionnaire') return 'Questionnaire';
   if (key === 'snapshot') return 'Snapshot';
   return kind || 'Entrée';
 }
@@ -270,6 +278,36 @@ async function refreshSGBlueprintPanel() {
   }
 }
 
+async function refreshDeloitteBlueprintPanel() {
+  const statusEl = document.getElementById('deloitte-blueprint-status');
+  if (!statusEl) return;
+  try {
+    const data = await chrome.storage.local.get([DELOITTE_BLUEPRINT_LAST_CHECK_KEY]);
+    const lastCheck = data[DELOITTE_BLUEPRINT_LAST_CHECK_KEY];
+    if (!lastCheck) {
+      statusEl.textContent = 'Deloitte : aucun diagnostic';
+      statusEl.className = '';
+      statusEl.classList.add('status-warn');
+    } else {
+      const label = toFrenchBlueprintKind(lastCheck.kind || 'validate_page');
+      const time = formatIsoDate(lastCheck.at);
+      const state = lastCheck.ok === true ? 'OK' : 'KO';
+      const suffix =
+        lastCheck.detected ? ` · ${lastCheck.detected}` :
+        lastCheck.detectedPage ? ` · ${lastCheck.detectedPage}` :
+        lastCheck.pageKey ? ` · ${lastCheck.pageKey}` :
+        '';
+      statusEl.textContent = `Deloitte : ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
+      statusEl.className = '';
+      statusEl.classList.add(lastCheck.ok === true ? 'status-good' : 'status-bad');
+    }
+  } catch (e) {
+    statusEl.textContent = `Deloitte : erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    statusEl.className = '';
+    statusEl.classList.add('status-bad');
+  }
+}
+
 async function init() {
   loadingWatchdog = setTimeout(() => {
     loadingWatchdog = null;
@@ -312,6 +350,7 @@ async function init() {
   refreshPilotStatus();
   refreshCABlueprintPanel();
   refreshSGBlueprintPanel();
+  refreshDeloitteBlueprintPanel();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_last_pilot) {
       refreshPilotStatus();
@@ -321,6 +360,9 @@ async function init() {
     }
     if (area === 'local' && (changes[SG_BLUEPRINT_LAST_CHECK_KEY] || changes[SG_BLUEPRINT_LOG_KEY])) {
       refreshSGBlueprintPanel();
+    }
+    if (area === 'local' && (changes[DELOITTE_BLUEPRINT_LAST_CHECK_KEY] || changes[DELOITTE_BLUEPRINT_LOG_KEY])) {
+      refreshDeloitteBlueprintPanel();
     }
   });
 
