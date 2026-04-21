@@ -458,6 +458,46 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   }
 });
 
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try {
+    const state = await chrome.storage.local.get([
+      'taleos_sg_tab_id',
+      'taleos_bpce_tab_id',
+      'taleos_ca_apply_tab_id',
+      'taleos_pending_sg',
+      'taleos_pending_bpce',
+      'taleos_pending_deloitte',
+      'taleos_pending_offer',
+      'taleos_ca_candidature_pending',
+      'taleos_deloitte_did_login_click'
+    ]);
+    const keysToRemove = new Set();
+    if (state.taleos_sg_tab_id === tabId) {
+      keysToRemove.add('taleos_pending_sg');
+      keysToRemove.add('taleos_sg_tab_id');
+    }
+    if (state.taleos_bpce_tab_id === tabId || state.taleos_pending_bpce?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_bpce');
+      keysToRemove.add('taleos_bpce_tab_id');
+      keysToRemove.add('taleos_bpce_pin_code');
+    }
+    if (state.taleos_ca_apply_tab_id === tabId || state.taleos_ca_candidature_pending?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_offer');
+      keysToRemove.add('taleos_ca_apply_tab_id');
+      keysToRemove.add('taleos_ca_candidature_pending');
+      keysToRemove.add('taleos_ca_candidature_reloaded');
+      keysToRemove.add('taleos_redirect_fallback');
+    }
+    if (state.taleos_pending_deloitte?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_deloitte');
+      keysToRemove.add('taleos_deloitte_did_login_click');
+    }
+    if (keysToRemove.size) {
+      await chrome.storage.local.remove(Array.from(keysToRemove));
+    }
+  } catch (_) {}
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (info.status !== 'complete') return;
   const url = (tab?.url || '').toLowerCase();
@@ -545,6 +585,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'ping') {
     sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.action === 'taleos_get_current_tab_id') {
+    sendResponse({ tabId: sender.tab?.id || null });
     return true;
   }
   if (msg.action === 'ca_offer_page_ready') {

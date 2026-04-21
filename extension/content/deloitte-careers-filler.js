@@ -21,6 +21,7 @@
   const BANNER_ID = 'taleos-deloitte-automation-banner';
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const SITE_DELOITTE_CAREERS = 'Site Deloitte Careers';
+  let currentTabIdPromise = null;
 
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {
@@ -29,6 +30,15 @@
   }
 
   const blueprintApi = globalThis.__TALEOS_DELOITTE_BLUEPRINT__ || null;
+
+  async function getCurrentTabId() {
+    if (!currentTabIdPromise) {
+      currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
+        .then((res) => res?.tabId || null)
+        .catch(() => null);
+    }
+    return currentTabIdPromise;
+  }
 
   async function logBlueprint(entry) {
     if (!blueprintApi?.recordLog) return;
@@ -1117,6 +1127,7 @@
   }
 
   async function runAutomation() {
+    const currentTabId = await getCurrentTabId();
     const { taleos_pending_deloitte, taleos_deloitte_did_login_click } = await chrome.storage.local.get(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
     if (!taleos_pending_deloitte) {
       log('Pending absent → skip', 0);
@@ -1144,6 +1155,10 @@
     log('URL: ' + url.replace(/^https?:\/\/[^/]+/, ''), 0);
 
     const { profile, tabId } = taleos_pending_deloitte;
+    if (!currentTabId || !tabId || currentTabId !== tabId) {
+      log('Onglet Deloitte non armé par "Candidater" → skip', 0);
+      return;
+    }
     const jobId = taleos_pending_deloitte.jobId || '';
     const jobTitle = taleos_pending_deloitte.jobTitle || '';
     const email = profile?.auth_email || profile?.email || '';

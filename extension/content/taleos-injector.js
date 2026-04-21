@@ -403,32 +403,7 @@
         showProfileIncompletePopup(checkRes?.missingFields || [], bankId);
         return;
       }
-      if (bankId === 'societe_generale' || jobUrl.includes('careers.societegenerale.com') || jobUrl.includes('socgen.taleo.net')) {
-        chrome.storage.local.set({
-          taleos_apply_fallback: {
-            offerUrl: jobUrl,
-            bankId,
-            jobId,
-            jobTitle,
-            companyName,
-            offerMeta,
-            timestamp: Date.now()
-          }
-        });
-      }
-      if (bankId === 'bpce' || jobUrl.includes('recrutement.bpce.fr')) {
-        chrome.storage.local.set({
-          taleos_apply_fallback: {
-            offerUrl: jobUrl,
-            bankId,
-            jobId,
-            jobTitle,
-            companyName,
-            offerMeta,
-            timestamp: Date.now()
-          }
-        });
-      }
+      chrome.storage.local.remove('taleos_apply_fallback');
       window.open(openUrl, '_blank');
     }
 

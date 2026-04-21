@@ -18,6 +18,25 @@
   let successSent = false;
   let lastWaitLog = 0;
   let lastPingPhase = "";
+  let currentTabIdPromise = null;
+
+  async function getCurrentTabId() {
+    if (!currentTabIdPromise) {
+      currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
+        .then((res) => res?.tabId || null)
+        .catch(() => null);
+    }
+    return currentTabIdPromise;
+  }
+
+  async function getPendingBpceEntry() {
+    const currentTabId = await getCurrentTabId();
+    const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get(["taleos_pending_bpce", "taleos_bpce_tab_id"]);
+    if (!taleos_pending_bpce || !taleos_pending_bpce.profile) return null;
+    const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+    if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) return null;
+    return taleos_pending_bpce;
+  }
 
   function setPing(phase, detail) {
     try {
@@ -41,12 +60,11 @@
   // 1) Chargement du profil
   // =========================
   async function hasPendingBpce() {
-    const { taleos_pending_bpce } = await chrome.storage.local.get("taleos_pending_bpce");
-    return !!(taleos_pending_bpce && taleos_pending_bpce.profile);
+    return !!(await getPendingBpceEntry());
   }
 
   async function getPendingBpceProfile() {
-    const { taleos_pending_bpce } = await chrome.storage.local.get("taleos_pending_bpce");
+    const taleos_pending_bpce = await getPendingBpceEntry();
     if (!taleos_pending_bpce || !taleos_pending_bpce.profile) {
       throw new Error("Profil BPCE introuvable (taleos_pending_bpce.profile)");
     }
@@ -614,7 +632,7 @@
   async function maybeNotifyLumesseSuccess() {
     if (successSent || !detectLumesseSuccess()) return;
     successSent = true;
-    const { taleos_pending_bpce } = await chrome.storage.local.get("taleos_pending_bpce");
+    const taleos_pending_bpce = await getPendingBpceEntry();
     const pending = taleos_pending_bpce || {};
     log("🎉 Confirmation Lumesse détectée — notification de succès à Taleos");
     chrome.runtime.sendMessage({

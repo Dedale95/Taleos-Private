@@ -11,8 +11,18 @@
   let loggedMessages = new Set();
   let filledFields = new Set();
   const bpceBlueprint = globalThis.__TALEOS_BPCE_BLUEPRINT__ || null;
+  let currentTabIdPromise = null;
   /** Dernier cv_storage_path pour lequel l’upload Firebase a réussi (permet re-upload si le profil change). */
   let bpceCvUploadedStoragePath = null;
+
+  async function getCurrentTabId() {
+    if (!currentTabIdPromise) {
+      currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
+        .then((res) => res?.tabId || null)
+        .catch(() => null);
+    }
+    return currentTabIdPromise;
+  }
 
   function logOnce(msg, stepNum) {
     const prefix = stepNum ? `[STEP ${stepNum}] ` : '';
@@ -438,8 +448,15 @@
     isAutomationRunning = true;
 
     try {
-      const { taleos_pending_bpce } = await chrome.storage.local.get('taleos_pending_bpce');
+      const currentTabId = await getCurrentTabId();
+      const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get(['taleos_pending_bpce', 'taleos_bpce_tab_id']);
       if (!taleos_pending_bpce) {
+        isAutomationRunning = false;
+        return;
+      }
+      const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+      if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) {
+        logOnce('⏭️  Onglet Oracle non armé par "Candidater" → skip', 1);
         isAutomationRunning = false;
         return;
       }

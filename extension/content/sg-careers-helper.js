@@ -5,6 +5,16 @@
 (function() {
   'use strict';
 
+  let currentTabIdPromise = null;
+  async function getCurrentTabId() {
+    if (!currentTabIdPromise) {
+      currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
+        .then((res) => res?.tabId || null)
+        .catch(() => null);
+    }
+    return currentTabIdPromise;
+  }
+
   async function snapshot(tag, extra = {}) {
     const api = globalThis.__TALEOS_SG_BLUEPRINT__;
     if (!api?.capturePageSnapshot) return;
@@ -66,41 +76,19 @@
   async function run() {
     await snapshot('sg_public_offer_script_start');
     const api = globalThis.__TALEOS_SG_BLUEPRINT__;
-    let { taleos_pending_sg, taleos_apply_fallback } = await chrome.storage.local.get(['taleos_pending_sg', 'taleos_apply_fallback']);
-    if (!taleos_pending_sg && taleos_apply_fallback) {
-      const age = Date.now() - (taleos_apply_fallback.timestamp || 0);
-      if (age > 5 * 60 * 1000) {
-        chrome.storage.local.remove('taleos_apply_fallback');
-        console.log('[Taleos SG Careers] Fallback expiré.');
-        return;
-      }
-      if (urlMatchesOffer(window.location.href, taleos_apply_fallback.offerUrl)) {
-        console.log('[Taleos SG Careers] Récupération depuis fallback (taleos_apply_fallback)...');
-        try {
-          await chrome.runtime.sendMessage({
-            action: 'taleos_setup_for_open_tab',
-            offerUrl: taleos_apply_fallback.offerUrl,
-            bankId: taleos_apply_fallback.bankId,
-            jobId: taleos_apply_fallback.jobId,
-            jobTitle: taleos_apply_fallback.jobTitle,
-            companyName: taleos_apply_fallback.companyName
-          });
-          await new Promise(r => setTimeout(r, 2500));
-          const s = await chrome.storage.local.get('taleos_pending_sg');
-          taleos_pending_sg = s.taleos_pending_sg;
-        } catch (e) {
-          console.warn('[Taleos SG Careers] Erreur setup fallback:', e);
-          return;
-        }
-      }
-    }
+    const currentTabId = await getCurrentTabId();
+    const { taleos_pending_sg, taleos_sg_tab_id } = await chrome.storage.local.get(['taleos_pending_sg', 'taleos_sg_tab_id']);
     if (!taleos_pending_sg) {
       console.log('[Taleos SG Careers] Pas de candidature en cours (taleos_pending_sg absent).');
       return;
     }
+    if (!currentTabId || !taleos_sg_tab_id || currentTabId !== taleos_sg_tab_id) {
+      console.log('[Taleos SG Careers] Onglet ouvert manuellement ou non armé → skip.');
+      return;
+    }
     const age = Date.now() - (taleos_pending_sg.timestamp || 0);
     if (age > 3 * 60 * 1000) {
-      chrome.storage.local.remove('taleos_pending_sg');
+      chrome.storage.local.remove(['taleos_pending_sg', 'taleos_sg_tab_id']);
       return;
     }
 

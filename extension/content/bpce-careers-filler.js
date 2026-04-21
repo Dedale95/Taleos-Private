@@ -8,7 +8,17 @@
 
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const BANNER_ID = 'taleos-bpce-automation-banner';
+  let currentTabIdPromise = null;
   try { chrome.storage.local.set({ taleos_bpce_script_ping: { script: 'bpce-careers-filler.js', url: location.href, at: new Date().toISOString() } }); } catch (_) {}
+
+  async function getCurrentTabId() {
+    if (!currentTabIdPromise) {
+      currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
+        .then((res) => res?.tabId || null)
+        .catch(() => null);
+    }
+    return currentTabIdPromise;
+  }
 
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {
@@ -100,9 +110,15 @@
   }
 
   async function runAutomation() {
-    const { taleos_pending_bpce } = await chrome.storage.local.get('taleos_pending_bpce');
+    const currentTabId = await getCurrentTabId();
+    const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get(['taleos_pending_bpce', 'taleos_bpce_tab_id']);
     if (!taleos_pending_bpce) {
       log('⏭️  Pas de candidature BPCE en cours (taleos_pending_bpce absent) → skip', 1);
+      return;
+    }
+    const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+    if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) {
+      log('⏭️  Onglet BPCE non armé par "Candidater" → skip', 1);
       return;
     }
 

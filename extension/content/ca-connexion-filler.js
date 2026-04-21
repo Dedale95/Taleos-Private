@@ -6,8 +6,24 @@
 (function() {
   'use strict';
   const path = window.location.pathname.toLowerCase();
+  let currentTabIdPromise = null;
 
   const BANNER_ID = 'taleos-ca-automation-banner';
+  async function getCurrentTabId() {
+    if (!currentTabIdPromise) {
+      currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
+        .then((res) => res?.tabId || null)
+        .catch(() => null);
+    }
+    return currentTabIdPromise;
+  }
+
+  async function isActiveCaApplyTab() {
+    const currentTabId = await getCurrentTabId();
+    const { taleos_ca_apply_tab_id } = await chrome.storage.local.get('taleos_ca_apply_tab_id');
+    return !!(currentTabId && taleos_ca_apply_tab_id && currentTabId === taleos_ca_apply_tab_id);
+  }
+
   function isUnavailablePage() {
     const txt = (document.body?.textContent || '').toLowerCase();
     const href = (window.location?.href || '').toLowerCase();
@@ -90,7 +106,8 @@
 
   if (path.includes('/candidature/') || path.includes('/application/') || path.includes('/apply/') ||
       path.includes('/nos-offres-emploi/') || path.includes('/our-offers/') || path.includes('/our-offres/')) {
-    chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback', 'taleos_pending_tab']).then((s) => {
+    chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback', 'taleos_pending_tab']).then(async (s) => {
+      if (!(await isActiveCaApplyTab())) return;
       if (s.taleos_pending_offer || s.taleos_redirect_fallback || s.taleos_pending_tab) showAutomationBanner();
     });
   }
@@ -98,6 +115,7 @@
   if (path.includes('admin-ajax')) {
     const delay = ms => new Promise(r => setTimeout(r, ms));
     chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback']).then(async (s) => {
+      if (!(await isActiveCaApplyTab())) return;
       const url = s.taleos_pending_offer?.offerUrl || s.taleos_redirect_fallback;
       if (url) {
         await delay(8000);
@@ -113,7 +131,8 @@
       notifyUnavailableAndStop('Offre non disponible (404) — L\'offre n\'est plus en ligne.');
       return;
     }
-    chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback']).then((s) => {
+    chrome.storage.local.get(['taleos_pending_offer', 'taleos_redirect_fallback']).then(async (s) => {
+      if (!(await isActiveCaApplyTab())) return;
       const url = s.taleos_pending_offer?.offerUrl || s.taleos_redirect_fallback;
       const normalized = String(url || '').toLowerCase();
       const is404Target = /\/404(\/|$)/.test(normalized);
@@ -277,6 +296,9 @@
 
   async function run() {
     await snapshot('ca_login_script_start');
+    if (!(await isActiveCaApplyTab())) {
+      return;
+    }
     const { taleos_pending_offer } = await chrome.storage.local.get('taleos_pending_offer');
     if (!taleos_pending_offer) return;
     const age = Date.now() - (taleos_pending_offer.timestamp || 0);
