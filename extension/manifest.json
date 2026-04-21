@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.73",
-  "version_name": "1.1.73-deloitte-fixes",
+  "version": "1.1.74",
+  "version_name": "1.1.74-deloitte-retry-fixes",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

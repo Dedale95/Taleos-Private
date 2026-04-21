@@ -473,10 +473,20 @@
     setTimeout(function tryClickOption() {
       // NB: pas de sélecteur [value!=""] car non supporté par querySelectorAll → provoquait un SyntaxError et des boucles infinies
       const opts = document.querySelectorAll('[data-automation-id="promptOption"], [data-automation-id="menuItem"], [data-automation-id="selectedItem"], [role="option"]');
+      var normalizedTarget = target.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
       for (const opt of opts) {
         const t = (opt.textContent || opt.getAttribute('aria-label') || opt.getAttribute('data-automation-label') || '').trim().toLowerCase();
         const v = (opt.getAttribute && opt.getAttribute('value')) || '';
         if (!t && !v) continue;
+        if (label && /niveau d'?exp/i.test(label)) {
+          var normalizedOption = t.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
+          if (normalizedOption === normalizedTarget && opt.offsetParent !== null) {
+            opt.click();
+            log('   ✅ ' + label + ' → ' + (opt.textContent || opt.getAttribute('data-automation-label') || t).trim(), 5);
+            return;
+          }
+          continue;
+        }
         // Pour "Mobile Personnel" : exiger "mobile" dans l'option (éviter de cocher "Fixe Personnel")
         const match = t.includes(target) || (target.includes('monsieur') && t.includes('monsieur')) || (target.includes('madame') && t.includes('madame')) ||
             (target.includes('mobile') && t.includes('mobile')) ||
@@ -934,29 +944,41 @@
       return;
     }
 
-    // Workday masque le vrai input[type=file] ; on le cherche en priorité par la drop zone
-    var dropZone = document.querySelector('[data-automation-id="file-upload-drop-zone"]');
+    // Workday masque parfois le vrai input[type=file] pendant quelques centaines de ms.
+    var dropZone = null;
     var fileInput = null;
+    for (var attempt = 0; attempt < 6 && !fileInput; attempt++) {
+      dropZone = document.querySelector('[data-automation-id="file-upload-drop-zone"]');
+      if (dropZone) {
+        fileInput = dropZone.querySelector('input[type="file"]');
+        if (!fileInput) {
+          var parent = dropZone.closest('[data-automation-id*="attachment"], [data-automation-id*="resume"], [data-automation-id*="file"], section, form, div');
+          if (parent) {
+            fileInput = parent.querySelector('input[type="file"]') ||
+              parent.querySelector('input[type="file"][accept]') ||
+              parent.querySelector('input[data-automation-id*="file"]');
+          }
+        }
+      }
 
-    if (dropZone) {
-      fileInput = dropZone.querySelector('input[type="file"]');
       if (!fileInput) {
-        // L'input peut être un frère de la drop zone ou plus haut dans l'arbre
-        var parent = dropZone.closest('[data-automation-id*="attachment"], [data-automation-id*="resume"], section, div');
-        if (parent) fileInput = parent.querySelector('input[type="file"]');
+        fileInput = document.querySelector('input[type="file"][id*="resumeAttachments"]') ||
+          document.querySelector('input[type="file"][id*="uploadedFile"]') ||
+          document.querySelector('input[type="file"][id*="file"]') ||
+          document.querySelector('input[type="file"][accept*=".pdf"]') ||
+          document.querySelector('input[type="file"][accept*="pdf"]') ||
+          document.querySelector('input[type="file"]') ||
+          document.querySelector('input[data-automation-id*="file"]');
+      }
+
+      if (!fileInput) {
+        await new Promise(function(resolve) { setTimeout(resolve, 700); });
       }
     }
 
     if (!fileInput) {
-      fileInput = document.querySelector('input[type="file"][id*="resumeAttachments"]') ||
-        document.querySelector('input[type="file"][id*="uploadedFile"]') ||
-        document.querySelector('input[type="file"][id*="file"]') ||
-        document.querySelector('input[type="file"]');
-    }
-
-    if (!fileInput) {
       log('   ⏭️  CV → input file non trouvé', 5);
-      return;
+      return false;
     }
 
     var cvName = (profile.cv_filename || (profile.cv_storage_path || '').split('/').pop()) || 'cv.pdf';
@@ -972,8 +994,10 @@
     var ok = await setFileInputFromStorage(fileInput, profile.cv_storage_path, cvName);
     if (ok) {
       log('   ✅ CV → ' + cvName + ' uploadé depuis Firebase', 5);
+      return true;
     } else {
       log('   ❌ CV → échec upload', 5);
+      return false;
     }
   }
 
@@ -1229,16 +1253,16 @@
       !document.querySelector('[data-automation-id="file-upload-drop-zone"]')?.offsetParent &&
       (step3HasExpField || step3HasDateField);
     if (isStep3Form) {
-      if (step3Done) {
-        log('📋 Étape 3 déjà traitée → arrêt', 5);
+      if (step3AttemptCount >= MAX_STEP_ATTEMPTS) {
+        log('📋 Étape 3 : ' + step3AttemptCount + ' tentatives → arrêt', 5);
         chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
         setTimeout(hideBanner, 2000);
         return;
       }
-      step3Done = true;
+      step3AttemptCount++;
       await validateBlueprintPage(['questionnaire'], profile, 'questions_candidature');
       await auditBlueprintQuestions(profile, 'questionnaire', 'questions_candidature');
-      log('📋 Étape 3 "Questions de candidature" détectée', 5);
+      log('📋 Étape 3 "Questions de candidature" détectée (tentative ' + step3AttemptCount + '/' + MAX_STEP_ATTEMPTS + ')', 5);
       fillWorkdayStep3Questions(profile);
       clickNextAndContinue(4000);
       return;
@@ -1259,23 +1283,24 @@
       (step2DropZone && step2DropZone.offsetParent !== null)
     );
     if (isStep2Form) {
-      if (step2Done) {
-        log('📋 Étape 2 déjà traitée → arrêt', 5);
+      if (step2AttemptCount >= MAX_STEP_ATTEMPTS) {
+        log('📋 Étape 2 : ' + step2AttemptCount + ' tentatives → arrêt', 5);
         chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
         setTimeout(hideBanner, 2000);
         return;
       }
-      step2Done = true;
+      step2AttemptCount++;
+      step3AttemptCount = 0;
       await validateBlueprintPage(['experience'], profile, 'experience');
       await auditBlueprintQuestions(profile, 'experience', 'experience');
-      log('📋 Étape 2 "Mon expérience" détectée', 5);
+      log('📋 Étape 2 "Mon expérience" détectée (tentative ' + step2AttemptCount + '/' + MAX_STEP_ATTEMPTS + ')', 5);
       fillWorkdayStep2Education(profile);
-      uploadCvInStep2(profile).then(function () {
+      uploadCvInStep2(profile).then(function (uploadOk) {
         setTimeout(refreshWorkdayRequiredFields, 800);
-        clickNextAndContinue(7000);
+        clickNextAndContinue(uploadOk ? 7000 : 9000);
       }).catch(function () {
         setTimeout(refreshWorkdayRequiredFields, 800);
-        clickNextAndContinue(7000);
+        clickNextAndContinue(9000);
       });
       return;
     }
@@ -1651,8 +1676,9 @@
   let formFillRetryCount = 0;
   const MAX_FORM_FILL_RETRIES = 12;
   var step1Attempts = 0;
-  let step2Done = false;
-  let step3Done = false;
+  let step2AttemptCount = 0;
+  let step3AttemptCount = 0;
+  const MAX_STEP_ATTEMPTS = 4;
 
   function maybeRetryForPostuler() {
     if (postulerRetryCount >= MAX_POSTULER_RETRIES) return;
