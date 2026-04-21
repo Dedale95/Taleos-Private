@@ -324,6 +324,10 @@
       return checked ? String(checked.value || '').trim() : '';
     }
     if (question.type === 'file') {
+      const attachmentScope = el.closest?.('[data-automation-id*="attachment"], [data-automation-id*="resume"], [data-automation-id*="file"], section, form, div') || doc.body;
+      const scopeText = String(attachmentScope?.textContent || '');
+      const fileNameMatch = scopeText.match(/[A-Za-z0-9 _.-]+\.pdf/gi);
+      if (fileNameMatch?.length) return fileNameMatch[fileNameMatch.length - 1].trim();
       const fileInput = el.matches?.('input[type="file"]') ? el : doc.querySelector('input[type="file"]');
       if (fileInput?.files?.[0]?.name) return fileInput.files[0].name;
       return normalizeText(el.textContent || '').includes('upload') ? 'zone_visible' : '';

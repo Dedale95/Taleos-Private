@@ -118,6 +118,10 @@
     return String(value || '').trim().replace(/\s+/g, '');
   }
 
+  function normalizeLoose(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
   function normalizeDigits(value) {
     return String(value || '').replace(/\D/g, '');
   }
@@ -220,6 +224,22 @@
       return fileInput.closest('[data-automation-id*="attachment"], [data-automation-id*="resume"], section, article, form, div') || fileInput.parentElement || document.body;
     }
     return document.body;
+  }
+
+  function isFilenameVisible(expectedName) {
+    var target = normalizeLoose(expectedName);
+    if (!target) return false;
+    var text = normalizeLoose(document.body?.textContent || '');
+    return text.includes(target);
+  }
+
+  function isEstablishmentAlreadySet(inputEl, expectedValue) {
+    var target = normalizeLoose(expectedValue);
+    if (!target) return false;
+    if (normalizeLoose(inputEl?.value || '').includes(target)) return true;
+    var scope = inputEl?.closest('[data-automation-id*="school"], [data-automation-id*="education"], [data-fkit-id], section, form, div');
+    var scopeText = normalizeLoose(scope?.textContent || '');
+    return scopeText.includes(target);
   }
 
   function getVisibleAttachmentRemoveButtons(scope, expectedName) {
@@ -771,18 +791,26 @@
       document.querySelector('input[id*="school"][placeholder="Rechercher"]') ||
       findInputByLabel(['établissement ou université', 'institution']);
     if (estabInput && estabInput.offsetParent !== null && establishmentVal) {
-      scrollIntoViewIfNeeded(estabInput);
-      log('   ⌨️  Établissement → frappe "' + establishmentVal + '"…', 5);
-      simulateTyping(estabInput, establishmentVal, function() {
-        log('   ⌨️  Établissement → frappe terminée, attente résultats puis double Enter…', 5);
-        setTimeout(function() {
-          pressEnterSequence(estabInput);
+      if (step2LastEstablishmentApplied && normalizeLoose(step2LastEstablishmentApplied) === normalizeLoose(establishmentVal)) {
+        log('   — Établissement → déjà traité pendant cette session', 5);
+      } else if (isEstablishmentAlreadySet(estabInput, establishmentVal)) {
+        log('   — Établissement → déjà OK', 5);
+        step2LastEstablishmentApplied = establishmentVal;
+      } else {
+        scrollIntoViewIfNeeded(estabInput);
+        log('   ⌨️  Établissement → frappe "' + establishmentVal + '"…', 5);
+        simulateTyping(estabInput, establishmentVal, function() {
+          log('   ⌨️  Établissement → frappe terminée, attente résultats puis double Enter…', 5);
           setTimeout(function() {
             pressEnterSequence(estabInput);
-            log('   ✅ Établissement → ' + establishmentVal + ' (double Enter)', 5);
-          }, 400);
-        }, 1500);
-      });
+            setTimeout(function() {
+              pressEnterSequence(estabInput);
+              step2LastEstablishmentApplied = establishmentVal;
+              log('   ✅ Établissement → ' + establishmentVal + ' (double Enter)', 5);
+            }, 400);
+          }, 1500);
+        });
+      }
     } else if (!establishmentVal) {
       log('   ⏭️  Établissement → pas de valeur Firebase', 5);
     } else {
@@ -902,8 +930,12 @@
         }
         if (yearInput && yearInput.offsetParent !== null) {
           scrollIntoViewIfNeeded(yearInput);
-          fillInput(yearInput, String(yearEnd));
-          log('   ✅ Année fin → ' + yearEnd, 5);
+          if (normalizeDigits(yearInput.value || yearInput.textContent || '') === String(yearEnd)) {
+            log('   — Année fin → déjà OK', 5);
+          } else {
+            fillInput(yearInput, String(yearEnd));
+            log('   ✅ Année fin → ' + yearEnd, 5);
+          }
         } else {
           log('   ⏭️  Année → champ non trouvé', 5);
         }
@@ -982,18 +1014,29 @@
     }
 
     var cvName = (profile.cv_filename || (profile.cv_storage_path || '').split('/').pop()) || 'cv.pdf';
+    if (step2LastCvHandled && normalizeLoose(step2LastCvHandled) === normalizeLoose(cvName)) {
+      log('   — CV → déjà traité pendant cette session, skip upload', 5);
+      return true;
+    }
+    if (isFilenameVisible(cvName)) {
+      log('   — CV → ' + cvName + ' déjà visible dans le formulaire, skip upload', 5);
+      step2LastCvHandled = cvName;
+      return true;
+    }
     var cleanup = await cleanupExistingCvUploads(cvName);
     if (cleanup.removed > 0) {
       log('   🧹 CV → ' + cleanup.removed + ' ancienne(s) pièce(s) jointe(s) supprimée(s)', 5);
     } else if (cleanup.alreadyPresent) {
       log('   — CV → ' + cvName + ' déjà présent, skip upload pour éviter les doublons', 5);
-      return;
+      step2LastCvHandled = cvName;
+      return true;
     }
 
     scrollIntoViewIfNeeded(fileInput);
     var ok = await setFileInputFromStorage(fileInput, profile.cv_storage_path, cvName);
     if (ok) {
       log('   ✅ CV → ' + cvName + ' uploadé depuis Firebase', 5);
+      step2LastCvHandled = cvName;
       return true;
     } else {
       log('   ❌ CV → échec upload', 5);
@@ -1678,6 +1721,8 @@
   var step1Attempts = 0;
   let step2AttemptCount = 0;
   let step3AttemptCount = 0;
+  let step2LastEstablishmentApplied = '';
+  let step2LastCvHandled = '';
   const MAX_STEP_ATTEMPTS = 4;
 
   function maybeRetryForPostuler() {
