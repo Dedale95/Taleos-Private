@@ -248,9 +248,63 @@
     return String(value).trim();
   }
 
+  function normalizeDateString(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    let day = '';
+    let month = '';
+    let year = '';
+    let parts = [];
+
+    if (raw.includes('/')) {
+      parts = raw.split('/');
+      day = String(parts[0] || '').replace(/\D/g, '');
+      month = String(parts[1] || '').replace(/\D/g, '');
+      year = String(parts[2] || '').replace(/\D/g, '');
+    } else if (raw.includes('-')) {
+      parts = raw.split('-');
+      if ((parts[0] || '').length === 4) {
+        year = String(parts[0] || '').replace(/\D/g, '');
+        month = String(parts[1] || '').replace(/\D/g, '');
+        day = String(parts[2] || '').replace(/\D/g, '');
+      } else {
+        day = String(parts[0] || '').replace(/\D/g, '');
+        month = String(parts[1] || '').replace(/\D/g, '');
+        year = String(parts[2] || '').replace(/\D/g, '');
+      }
+    }
+
+    if (!day || !month || year.length !== 4) return normalizeText(raw);
+    return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+  }
+
+  function mapExperienceLevel(value) {
+    const normalized = normalizeText(value).replace(/\s*-\s*/g, '-');
+    const directMap = {
+      '0-1 an': '0-1 an',
+      '1-3 ans': '1-3 ans',
+      '0-2 ans': '1-3 ans',
+      '3-5 ans': '3-5 ans',
+      '5-7 ans': '5-7 ans',
+      '6-10 ans': '7-10 ans',
+      '7-10 ans': '7-10 ans',
+      '10 ans et plus': '7-10 ans',
+      '11 ans et plus': '7-10 ans'
+    };
+    if (directMap[normalized]) return directMap[normalized];
+    if (normalized.includes('11') || normalized.includes('plus') || normalized.includes('+')) return '7-10 ans';
+    return summarizeValue(value);
+  }
+
   function getExpectedValue(profile, question) {
+    if (typeof question.expectedValue === 'function') return summarizeValue(question.expectedValue(profile || {}));
     if (typeof question.expectedValue !== 'undefined') return summarizeValue(question.expectedValue);
-    return summarizeValue(profile?.[question.profileKey]);
+
+    const raw = summarizeValue(profile?.[question.profileKey]);
+    if (question.key === 'experience_level') return mapExperienceLevel(raw);
+    if (question.key === 'available_date') return normalizeDateString(raw);
+    if (question.key === 'phone_number') return String(raw || '').replace(/\D/g, '');
+    return raw;
   }
 
   function getQuestionElement(doc, question) {
@@ -285,7 +339,10 @@
         const node = queryVisible(doc, selector) || doc.querySelector(selector);
         return node?.value || node?.textContent || '';
       }).filter(Boolean);
-      return values.join('/');
+      return normalizeDateString(values.join('/'));
+    }
+    if (question.key === 'phone_number') {
+      return String(el.value || el.textContent || '').replace(/\D/g, '');
     }
     return String(el.value || el.textContent || '').trim();
   }

@@ -114,6 +114,180 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function normalizeCompact(value) {
+    return String(value || '').trim().replace(/\s+/g, '');
+  }
+
+  function normalizeDigits(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function fillInputStrict(el, value, label, options) {
+    if (!el) return false;
+    var target = value != null ? String(value).trim() : '';
+    if (!target) return false;
+
+    var normalize = (options && options.normalize) || normalizeCompact;
+    var current = normalize(el.value || '');
+    var expected = normalize(target);
+    if (current === expected) {
+      log('   — ' + label + ' → déjà OK', 5);
+      return false;
+    }
+
+    log('   ✅ ' + label + ' → ' + target, 5);
+    fillInput(el, target);
+
+    setTimeout(function() {
+      var refreshed = normalize(el.value || '');
+      if (refreshed !== expected) {
+        fillInput(el, target);
+        log('   🔁 ' + label + ' → seconde écriture forcée', 5);
+      }
+    }, 250);
+    return true;
+  }
+
+  function parseAvailabilityDateParts(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return null;
+
+    var day = '';
+    var month = '';
+    var year = '';
+    var parts;
+
+    if (raw.includes('/')) {
+      parts = raw.split('/');
+      day = (parts[0] || '').replace(/\D/g, '');
+      month = (parts[1] || '').replace(/\D/g, '');
+      year = (parts[2] || '').replace(/\D/g, '');
+    } else if (raw.includes('-')) {
+      parts = raw.split('-');
+      if ((parts[0] || '').length === 4) {
+        year = (parts[0] || '').replace(/\D/g, '');
+        month = (parts[1] || '').replace(/\D/g, '');
+        day = (parts[2] || '').replace(/\D/g, '');
+      } else {
+        day = (parts[0] || '').replace(/\D/g, '');
+        month = (parts[1] || '').replace(/\D/g, '');
+        year = (parts[2] || '').replace(/\D/g, '');
+      }
+    }
+
+    if (!day || !month || year.length !== 4) return null;
+    return {
+      day: day.padStart(2, '0'),
+      month: month.padStart(2, '0'),
+      year: year
+    };
+  }
+
+  function mapFirebaseExperienceToDeloitteOption(value) {
+    var raw = String(value || '').trim().toLowerCase();
+    if (!raw) return null;
+    var normalized = raw.replace(/\s+/g, ' ').replace(/\s*-\s*/g, '-');
+
+    var directMap = {
+      '0-1 an': '0-1 an',
+      '1-3 ans': '1-3 ans',
+      '0-2 ans': '1-3 ans',
+      '3-5 ans': '3-5 ans',
+      '5-7 ans': '5-7 ans',
+      '6-10 ans': '7-10 ans',
+      '7-10 ans': '7-10 ans',
+      '11 ans et plus': '7-10 ans',
+      '10 ans et plus': '7-10 ans'
+    };
+
+    if (directMap[normalized]) return directMap[normalized];
+    if (normalized.includes('11') || normalized.includes('plus') || normalized.includes('+')) return '7-10 ans';
+    if (normalized.includes('6-10')) return '7-10 ans';
+    if (normalized.includes('5-7')) return '5-7 ans';
+    if (normalized.includes('3-5')) return '3-5 ans';
+    if (normalized.includes('1-3') || normalized.includes('0-2')) return '1-3 ans';
+    if (normalized.includes('0-1')) return '0-1 an';
+    return null;
+  }
+
+  function getAttachmentScope() {
+    var dropZone = document.querySelector('[data-automation-id="file-upload-drop-zone"]');
+    if (dropZone) {
+      return dropZone.closest('[data-automation-id*="attachment"], [data-automation-id*="resume"], section, article, form, div') || dropZone.parentElement || document.body;
+    }
+    var fileInput = document.querySelector('input[type="file"]');
+    if (fileInput) {
+      return fileInput.closest('[data-automation-id*="attachment"], [data-automation-id*="resume"], section, article, form, div') || fileInput.parentElement || document.body;
+    }
+    return document.body;
+  }
+
+  function getVisibleAttachmentRemoveButtons(scope, expectedName) {
+    var fileNameNorm = String(expectedName || '').trim().toLowerCase();
+    return Array.from((scope || document).querySelectorAll('button, [role="button"], a'))
+      .filter(function(btn) {
+        if (!btn || btn.offsetParent === null) return false;
+        var label = String(btn.textContent || btn.getAttribute('aria-label') || btn.getAttribute('title') || '').trim().toLowerCase();
+        if (!/(supprimer|delete|remove|retirer)/i.test(label)) return false;
+        if (!fileNameNorm) return true;
+        var rowText = String((btn.closest('li, tr, [role="row"], section, article, div') || scope || document.body).textContent || '').toLowerCase();
+        return rowText.includes(fileNameNorm);
+      });
+  }
+
+  async function cleanupAttachmentConfirmDialog() {
+    var confirmBtn = Array.from(document.querySelectorAll('button, [role="button"]')).find(function(btn) {
+      if (!btn || btn.offsetParent === null) return false;
+      var insideDialog = btn.closest('[role="dialog"], [aria-modal="true"], [data-automation-id*="dialog"], [data-automation-id*="modal"]');
+      if (!insideDialog) return false;
+      var label = String(btn.textContent || btn.getAttribute('aria-label') || '').trim().toLowerCase();
+      return /^(oui|yes|supprimer|delete|remove|confirmer|confirm)$/.test(label);
+    });
+    if (confirmBtn) {
+      try {
+        scrollIntoViewIfNeeded(confirmBtn);
+        confirmBtn.click();
+      } catch (_) {}
+      await new Promise(function(resolve) { setTimeout(resolve, 800); });
+      return true;
+    }
+    return false;
+  }
+
+  async function cleanupExistingCvUploads(expectedName) {
+    var scope = getAttachmentScope();
+    var scopeText = String(scope?.textContent || '').toLowerCase();
+    var fileName = String(expectedName || '').trim();
+    var fileNameNorm = fileName.toLowerCase();
+    var nameOccurrences = fileName ? (scopeText.match(new RegExp(fileNameNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length : 0;
+    var removeButtons = getVisibleAttachmentRemoveButtons(scope, fileName);
+
+    if (!removeButtons.length) {
+      return {
+        removed: 0,
+        alreadyPresent: !!(fileNameNorm && scopeText.includes(fileNameNorm))
+      };
+    }
+
+    var removed = 0;
+    for (var i = 0; i < removeButtons.length; i++) {
+      var btn = removeButtons[i];
+      try {
+        scrollIntoViewIfNeeded(btn);
+        btn.click();
+        removed++;
+      } catch (_) {}
+      await new Promise(function(resolve) { setTimeout(resolve, 700); });
+      await cleanupAttachmentConfirmDialog();
+      await new Promise(function(resolve) { setTimeout(resolve, 700); });
+    }
+
+    return {
+      removed: removed,
+      alreadyPresent: nameOccurrences > 0
+    };
+  }
+
   function pressEnterSequence(el) {
     if (!el) return;
     try {
@@ -502,19 +676,7 @@
     log('   Expérience: ' + (expLevel || '—') + '  |  Disponibilité: ' + (availDate || '—'), 5);
 
     // ——— Niveau d'expérience : mapping Firebase → Workday ———
-    var expMap = {
-      '0-2 ans': '0-1 an',
-      '3-5 ans': '3-5 ans',
-      '6-10 ans': '7-10 ans',
-      '11 ans et plus': '10 ans et +'
-    };
-    var expOption = expMap[expLevel] || null;
-    if (!expOption && expLevel) {
-      if (expLevel.includes('0') || expLevel.includes('1') || expLevel.includes('2')) expOption = '0-1 an';
-      else if (expLevel.includes('3') || expLevel.includes('4') || expLevel.includes('5')) expOption = '3-5 ans';
-      else if (expLevel.includes('6') || expLevel.includes('7') || expLevel.includes('8') || expLevel.includes('9') || expLevel.includes('10')) expOption = '7-10 ans';
-      else if (expLevel.includes('11') || expLevel.includes('plus') || expLevel.includes('+')) expOption = '10 ans et +';
-    }
+    var expOption = mapFirebaseExperienceToDeloitteOption(expLevel);
     if (expOption) {
       var expBtns = Array.from(document.querySelectorAll('button[aria-haspopup="listbox"][id*="primaryQuestionnaire"]'));
       var expBtn = expBtns.find(function(b) {
@@ -533,24 +695,8 @@
     }
 
     // ——— Date de disponibilité (JJ/MM/AAAA) ———
-    var day = '', month = '', year = '';
-    if (availDate) {
-      var parts;
-      if (availDate.includes('/')) {
-        parts = availDate.split('/');
-        day = (parts[0] || '').replace(/\D/g, '');
-        month = (parts[1] || '').replace(/\D/g, '');
-        year = (parts[2] || '').replace(/\D/g, '');
-      } else if (availDate.includes('-')) {
-        parts = availDate.split('-');
-        if (parts[0].length === 4) {
-          year = parts[0]; month = (parts[1] || '').replace(/\D/g, ''); day = (parts[2] || '').replace(/\D/g, '');
-        } else {
-          day = (parts[0] || '').replace(/\D/g, ''); month = (parts[1] || '').replace(/\D/g, ''); year = (parts[2] || '').replace(/\D/g, '');
-        }
-      }
-    }
-    if (day && month && year && year.length === 4) {
+    var parsedDate = parseAvailabilityDateParts(availDate);
+    if (parsedDate) {
       var dateFields = document.querySelectorAll('[id*="primaryQuestionnaire"][id*="dateSection"]');
       var dayInput = document.querySelector('[id*="primaryQuestionnaire"][data-automation-id="dateSectionDay-input"]');
       var monthInput = document.querySelector('[id*="primaryQuestionnaire"][data-automation-id="dateSectionMonth-input"]');
@@ -561,20 +707,17 @@
 
       if (dayInput) {
         scrollIntoViewIfNeeded(dayInput);
-        fillInput(dayInput, day);
-        log('   ✅ Date dispo (jour) → ' + day, 5);
+        fillInputStrict(dayInput, parsedDate.day, 'Date dispo (jour)', { normalize: normalizeDigits });
       }
       setTimeout(function() {
         if (monthInput) {
           scrollIntoViewIfNeeded(monthInput);
-          fillInput(monthInput, month);
-          log('   ✅ Date dispo (mois) → ' + month, 5);
+          fillInputStrict(monthInput, parsedDate.month, 'Date dispo (mois)', { normalize: normalizeDigits });
         }
         setTimeout(function() {
           if (yearInput) {
             scrollIntoViewIfNeeded(yearInput);
-            fillInput(yearInput, year);
-            log('   ✅ Date dispo (année) → ' + year, 5);
+            fillInputStrict(yearInput, parsedDate.year, 'Date dispo (année)', { normalize: normalizeDigits });
           }
         }, 300);
       }, 300);
@@ -817,6 +960,14 @@
     }
 
     var cvName = (profile.cv_filename || (profile.cv_storage_path || '').split('/').pop()) || 'cv.pdf';
+    var cleanup = await cleanupExistingCvUploads(cvName);
+    if (cleanup.removed > 0) {
+      log('   🧹 CV → ' + cleanup.removed + ' ancienne(s) pièce(s) jointe(s) supprimée(s)', 5);
+    } else if (cleanup.alreadyPresent) {
+      log('   — CV → ' + cvName + ' déjà présent, skip upload pour éviter les doublons', 5);
+      return;
+    }
+
     scrollIntoViewIfNeeded(fileInput);
     var ok = await setFileInputFromStorage(fileInput, profile.cv_storage_path, cvName);
     if (ok) {
@@ -1387,7 +1538,7 @@
     // ——— Numéro de téléphone : id="phoneNumber--phoneNumber" ou name="phoneNumber" ———
     const phoneVal = (profile.phone_number || profile['phone-number'] || profile.phone || '').trim().replace(/\s/g, '');
     const phoneEl = document.getElementById('phoneNumber--phoneNumber') || document.querySelector('input[name="phoneNumber"][id*="phoneNumber"]') || document.querySelector('input[name="phoneNumber"]');
-    if (phoneEl && phoneVal && fillInputIfNeeded(phoneEl, phoneVal, 'Numéro de téléphone')) filled = true;
+    if (phoneEl && phoneVal && fillInputStrict(phoneEl, phoneVal, 'Numéro de téléphone', { normalize: normalizeDigits })) filled = true;
 
     // Détection : on est sur un formulaire de candidature (apply ou applyManually, mais pas useMyLastApplication)
     var isOnApplyForm = url.includes('/apply') && !url.includes('useMyLastApplication');
@@ -1408,6 +1559,11 @@
         if (pvEmailEl) validationFields.push({ el: pvEmailEl, label: 'Ancienne email', val: (profile.deloitte_old_email || '').trim() });
       }
       setTimeout(function() { workdayClickThenClickAway(validationFields); }, 800);
+      if (phoneEl && phoneVal) {
+        setTimeout(function() {
+          fillInputStrict(phoneEl, phoneVal, 'Numéro de téléphone', { normalize: normalizeDigits });
+        }, 1800);
+      }
 
       // ——— Indicatif de pays (code téléphone) : exécuté EN DERNIER, après toutes les validations ———
       var phoneCountryCode = (profile.phone_country_code || '').trim().replace(/\s/g, '');
