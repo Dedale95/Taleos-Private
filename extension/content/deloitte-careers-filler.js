@@ -351,6 +351,56 @@
     setTimeout(next, 200);
   }
 
+  function clickVisibleOptionMatchingText(expectedText, options) {
+    var target = normalizeLoose(expectedText);
+    if (!target) return false;
+    var selectors = options?.selectors || [
+      '[data-automation-id="promptOption"]',
+      '[role="option"]',
+      '[data-automation-id="menuItem"]'
+    ];
+    var nodes = Array.from(document.querySelectorAll(selectors.join(', '))).filter(function(node) {
+      return node && node.offsetParent !== null;
+    });
+
+    var exact = nodes.find(function(node) {
+      var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-automation-label') || '');
+      return text === target;
+    });
+    if (!exact) {
+      exact = nodes.find(function(node) {
+        var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-automation-label') || '');
+        return text.includes(target) || target.includes(text);
+      });
+    }
+    if (!exact) return false;
+    try {
+      scrollIntoViewIfNeeded(exact);
+      exact.click();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function selectWorkdaySearchOption(inputEl, expectedText, label, options) {
+    if (!inputEl || !expectedText) return;
+    var waitMs = options?.waitMs || 1200;
+    setTimeout(function() {
+      if (clickVisibleOptionMatchingText(expectedText, options)) {
+        if (options?.onSelected) options.onSelected();
+        log('   ✅ ' + label + ' → ' + expectedText + ' (suggestion sélectionnée)', 5);
+        return;
+      }
+      pressEnterSequence(inputEl);
+      setTimeout(function() {
+        pressEnterSequence(inputEl);
+        if (options?.onSelected) options.onSelected();
+        log('   ✅ ' + label + ' → ' + expectedText + ' (fallback Enter)', 5);
+      }, 400);
+    }, waitMs);
+  }
+
   /**
    * Clic sur "Enregistrer et continuer" (pageFooterNextButton) puis relance runAutomation
    * pour détecter l'étape suivante après transition Workday.
@@ -800,15 +850,13 @@
         scrollIntoViewIfNeeded(estabInput);
         log('   ⌨️  Établissement → frappe "' + establishmentVal + '"…', 5);
         simulateTyping(estabInput, establishmentVal, function() {
-          log('   ⌨️  Établissement → frappe terminée, attente résultats puis double Enter…', 5);
-          setTimeout(function() {
-            pressEnterSequence(estabInput);
-            setTimeout(function() {
-              pressEnterSequence(estabInput);
+          log('   ⌨️  Établissement → frappe terminée, attente des propositions Workday…', 5);
+          selectWorkdaySearchOption(estabInput, establishmentVal, 'Établissement', {
+            waitMs: 1500,
+            onSelected: function() {
               step2LastEstablishmentApplied = establishmentVal;
-              log('   ✅ Établissement → ' + establishmentVal + ' (double Enter)', 5);
-            }, 400);
-          }, 1500);
+            }
+          });
         });
       }
     } else if (!establishmentVal) {

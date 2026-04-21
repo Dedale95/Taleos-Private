@@ -332,6 +332,10 @@
       if (fileInput?.files?.[0]?.name) return fileInput.files[0].name;
       return normalizeText(el.textContent || '').includes('upload') ? 'zone_visible' : '';
     }
+    if (question.key === 'establishment') {
+      const scope = el.closest?.('[data-automation-id*="school"], [data-automation-id*="education"], [data-fkit-id], section, form, div') || doc.body;
+      return String(el.value || scope?.textContent || '').trim();
+    }
     if (question.type === 'listbox') {
       return String(el.getAttribute('aria-label') || el.textContent || '').trim();
     }
