@@ -1,5 +1,5 @@
-# Mise à jour quotidienne des offres d'emploi privées
-# Réactive la consolidation de ce dépôt source pour éviter les JSON périmés.
+# Pipeline de secours / maintenance pour le dépôt privé.
+# Le batch quotidien planifié vit sur Taleos-Public ; ici on garde seulement le lancement manuel.
 
 name: Mise à jour offres quotidienne
 
@@ -8,8 +8,6 @@ permissions:
   issues: write
 
 on:
-  schedule:
-    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       source:
