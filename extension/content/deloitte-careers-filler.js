@@ -1014,22 +1014,28 @@
     }
 
     var cvName = (profile.cv_filename || (profile.cv_storage_path || '').split('/').pop()) || 'cv.pdf';
-    if (step2LastCvHandled && normalizeLoose(step2LastCvHandled) === normalizeLoose(cvName)) {
-      log('   — CV → déjà traité pendant cette session, skip upload', 5);
+    if (step2CvSynchronized && step2LastCvHandled && normalizeLoose(step2LastCvHandled) === normalizeLoose(cvName)) {
+      log('   — CV → déjà resynchronisé depuis Firebase pendant cette session', 5);
       return true;
     }
-    if (isFilenameVisible(cvName)) {
-      log('   — CV → ' + cvName + ' déjà visible dans le formulaire, skip upload', 5);
-      step2LastCvHandled = cvName;
-      return true;
-    }
+
     var cleanup = await cleanupExistingCvUploads(cvName);
     if (cleanup.removed > 0) {
       log('   🧹 CV → ' + cleanup.removed + ' ancienne(s) pièce(s) jointe(s) supprimée(s)', 5);
     } else if (cleanup.alreadyPresent) {
-      log('   — CV → ' + cvName + ' déjà présent, skip upload pour éviter les doublons', 5);
-      step2LastCvHandled = cvName;
-      return true;
+      if (step2CvRefreshAttempted) {
+        log('   ⏭️  CV → fichier existant détecté mais suppression impossible, on évite un doublon', 5);
+        return false;
+      }
+      step2CvRefreshAttempted = true;
+      log('   🔄 CV → une ancienne version est déjà présente, nouvelle tentative de suppression avant ré-upload', 5);
+      cleanup = await cleanupExistingCvUploads();
+      if (cleanup.removed > 0) {
+        log('   🧹 CV → ' + cleanup.removed + ' pièce(s) jointe(s) supprimée(s) sans filtrage de nom', 5);
+      } else if (isFilenameVisible(cvName)) {
+        log('   ⏭️  CV → suppression impossible de la version déjà affichée, upload annulé pour éviter les doublons', 5);
+        return false;
+      }
     }
 
     scrollIntoViewIfNeeded(fileInput);
@@ -1037,6 +1043,7 @@
     if (ok) {
       log('   ✅ CV → ' + cvName + ' uploadé depuis Firebase', 5);
       step2LastCvHandled = cvName;
+      step2CvSynchronized = true;
       return true;
     } else {
       log('   ❌ CV → échec upload', 5);
@@ -1723,6 +1730,8 @@
   let step3AttemptCount = 0;
   let step2LastEstablishmentApplied = '';
   let step2LastCvHandled = '';
+  let step2CvRefreshAttempted = false;
+  let step2CvSynchronized = false;
   const MAX_STEP_ATTEMPTS = 4;
 
   function maybeRetryForPostuler() {
