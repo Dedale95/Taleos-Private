@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.78",
-  "version_name": "1.1.78-manual-offer-tab-guard",
+  "version": "1.1.79",
+  "version_name": "1.1.79-bnp-connection-test",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -29,6 +29,7 @@
     "https://careers.societegenerale.com/*",
     "https://socgen.taleo.net/*",
     "https://groupecreditagricole.jobs/*",
+    "https://bwelcome.hr.bnpparibas/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",

@@ -1128,6 +1128,7 @@ const CA_CONNEXION_URL = 'https://groupecreditagricole.jobs/fr/connexion/';
 
 const CONNECTION_TEST_URLS = {
   credit_agricole: 'https://groupecreditagricole.jobs/fr/connexion/',
+  bnp_paribas: 'https://bwelcome.hr.bnpparibas/fr_FR/externalcareers/Login',
   societe_generale: 'https://socgen.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=fr-FR&redirectionURI=https%3A%2F%2Fsocgen.taleo.net%2Fcareersection%2Fsgcareers%2Fprofile.ftl%3Flang%3Dfr-FR%26src%3DCWS-1%26pcid%3Dmjlsx8hz6i4vn92z&TARGET=https%3A%2F%2Fsocgen.taleo.net%2Fcareersection%2Fsgcareers%2Fprofile.ftl%3Flang%3Dfr-FR%26src%3DCWS-1%26pcid%3Dmjlsx8hz6i4vn92z',
   deloitte: 'https://fina.wd103.myworkdayjobs.com/fr-FR/DeloitteRecrute'
 };
