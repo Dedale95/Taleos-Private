@@ -2231,10 +2231,12 @@ async function fetchProfile(uid, bankId, token) {
 
   const authPassword = creds.password ? decodeBase64(creds.password) : '';
 
-  const cvStoragePath = profile.cv_storage_path || null;
-  const lmStoragePath = profile.letter_storage_path || null;
-  const cvFilename = profile.cv_filename || (cvStoragePath ? cvStoragePath.split('/').pop() : null);
-  const lmFilename = profile.letter_filename || (lmStoragePath ? lmStoragePath.split('/').pop() : null);
+  const cvResolved = await resolveLatestProfileAsset(uid, 'cv', profile.cv_storage_path || null, profile.cv_filename || null);
+  const lmResolved = await resolveLatestProfileAsset(uid, 'letter', profile.letter_storage_path || null, profile.letter_filename || null);
+  const cvStoragePath = cvResolved.storagePath || null;
+  const lmStoragePath = lmResolved.storagePath || null;
+  const cvFilename = cvResolved.filename || (cvStoragePath ? cvStoragePath.split('/').pop() : null);
+  const lmFilename = lmResolved.filename || (lmStoragePath ? lmStoragePath.split('/').pop() : null);
 
   const cType = profile.contract_type;
   const contractList = Array.isArray(cType) ? cType : (cType ? [cType] : []);
@@ -2349,6 +2351,90 @@ async function getStorageDownloadUrl(storagePath, token) {
   }
 }
 
+function parseFilenameFromContentDisposition(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const utf8Match = raw.match(/filename\\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try { return decodeURIComponent(utf8Match[1]).trim(); } catch (_) {}
+  }
+  const quotedMatch = raw.match(/filename=\"([^\"]+)\"/i);
+  if (quotedMatch?.[1]) return quotedMatch[1].trim();
+  const plainMatch = raw.match(/filename=([^;]+)/i);
+  if (plainMatch?.[1]) return plainMatch[1].trim().replace(/^\"|\"$/g, '');
+  return '';
+}
+
+async function fetchStorageObjectMetadata(storagePath) {
+  const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+  if (!taleosIdToken || !storagePath) return null;
+  const url = `https://firebasestorage.googleapis.com/v0/b/project-taleos.firebasestorage.app/o/${encodeURIComponent(storagePath)}`;
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${taleosIdToken}` } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function listStorageObjects(prefix) {
+  const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+  if (!taleosIdToken || !prefix) return [];
+  const url = `https://firebasestorage.googleapis.com/v0/b/project-taleos.firebasestorage.app/o?prefix=${encodeURIComponent(prefix)}`;
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${taleosIdToken}` } });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json?.items) ? json.items : [];
+  } catch {
+    return [];
+  }
+}
+
+function extractTimestampFromStorageName(name) {
+  const match = String(name || '').match(/_(\\d{10,})\\.[a-z0-9]+$/i);
+  return match ? Number(match[1]) : 0;
+}
+
+async function resolveLatestProfileAsset(uid, kind, currentPath, currentFilename) {
+  if (!uid) {
+    return { storagePath: currentPath || null, filename: currentFilename || null };
+  }
+
+  const prefix = `users/${uid}/`;
+  const objectPrefix = kind === 'letter' ? `letter_${uid}_` : `cv_${uid}_`;
+  const items = await listStorageObjects(prefix);
+  const candidates = items
+    .filter((item) => String(item?.name || '').startsWith(`${prefix}${objectPrefix}`))
+    .sort((a, b) => {
+      const aTs = extractTimestampFromStorageName(a?.name) || Date.parse(a?.updated || 0) || 0;
+      const bTs = extractTimestampFromStorageName(b?.name) || Date.parse(b?.updated || 0) || 0;
+      return bTs - aTs;
+    });
+
+  const chosen = candidates[0] || null;
+  const chosenPath = chosen?.name || currentPath || null;
+  let filename = currentFilename || null;
+
+  const meta = chosenPath ? await fetchStorageObjectMetadata(chosenPath) : null;
+  const metaFilename = parseFilenameFromContentDisposition(meta?.contentDisposition)
+    || meta?.metadata?.originalName
+    || meta?.metadata?.filename
+    || null;
+
+  if (metaFilename) {
+    filename = metaFilename;
+  } else if (!filename && chosenPath) {
+    filename = chosenPath.split('/').pop() || null;
+  }
+
+  return {
+    storagePath: chosenPath,
+    filename
+  };
+}
+
 async function fetchStorageFileAsBase64(storagePath) {
   const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
   if (!taleosIdToken) throw new Error('Non connecté');
@@ -2356,9 +2442,15 @@ async function fetchStorageFileAsBase64(storagePath) {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${taleosIdToken}` } });
   if (!res.ok) throw new Error(`Storage ${res.status}`);
   const blob = await res.blob();
+  const meta = await fetchStorageObjectMetadata(storagePath).catch(() => null);
+  const filename = parseFilenameFromContentDisposition(meta?.contentDisposition)
+    || meta?.metadata?.originalName
+    || meta?.metadata?.filename
+    || (storagePath ? storagePath.split('/').pop() : '')
+    || 'document.pdf';
   return new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = () => resolve({ base64: r.result.split(',')[1], type: blob.type || 'application/pdf' });
+    r.onload = () => resolve({ base64: r.result.split(',')[1], type: blob.type || 'application/pdf', filename });
     r.onerror = () => reject(new Error('Lecture fichier'));
     r.readAsDataURL(blob);
   });

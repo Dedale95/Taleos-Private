@@ -281,7 +281,8 @@
     const bin = atob(r.base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const file = new File([bytes], filename || 'document.pdf', { type: r.type || 'application/pdf' });
+    const effectiveFilename = String(r.filename || filename || 'document.pdf').trim();
+    const file = new File([bytes], effectiveFilename, { type: r.type || 'application/pdf' });
     const dt = new DataTransfer();
     dt.items.add(file);
     inputEl.files = dt.files;
