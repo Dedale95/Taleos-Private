@@ -9,6 +9,10 @@
   if (window.__taleosInjectorLoaded) return;
   window.__taleosInjectorLoaded = true;
   try { document.documentElement.setAttribute('data-taleos-injector', 'ready'); } catch (_) { }
+  try {
+    const manifestVersion = chrome?.runtime?.getManifest?.()?.version || '';
+    if (manifestVersion) document.documentElement.setAttribute('data-taleos-injector-version', manifestVersion);
+  } catch (_) { }
 
   function syncAuthFromPage(forceRefresh) {
     try {
@@ -524,6 +528,14 @@
         detail: { success: false, message: err?.message || 'Extension non disponible' }
       }));
     });
+  });
+
+  window.addEventListener('taleos-request-bridge-health', function () {
+    let version = '';
+    try { version = chrome?.runtime?.getManifest?.()?.version || ''; } catch (_) { }
+    window.dispatchEvent(new CustomEvent('taleos-bridge-health-result', {
+      detail: { ok: true, extensionId: chrome?.runtime?.id || '', version }
+    }));
   });
 
   window.addEventListener('taleos-request-gmail-status', function () {
