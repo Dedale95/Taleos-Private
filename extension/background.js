@@ -1450,8 +1450,15 @@ async function runTestConnection(msg) {
     return { success: false, message: 'Vous devez être connecté à Taleos' };
   }
 
-  const tab = await chrome.tabs.create({ url: loginUrl, active: true });
+  const tab = await chrome.tabs.create({ url: loginUrl, active: false });
   const tabId = tab.id;
+
+  async function restoreTaleosTabIfNeeded() {
+    if (!taleosTabId) return;
+    try {
+      await chrome.tabs.update(taleosTabId, { active: true });
+    } catch (_) {}
+  }
 
   await chrome.storage.local.set({
     taleos_connection_test: { bankId, tabId, firebaseUserId, taleosTabId, bankName, timestamp: Date.now() }
@@ -1516,6 +1523,7 @@ async function runTestConnection(msg) {
     if (fillRes?.[0]?.result?.error && !fillRes[0].result?.submitted) {
       await chrome.tabs.remove(tabId).catch(() => {});
       chrome.storage.local.remove('taleos_connection_test');
+      await restoreTaleosTabIfNeeded();
       return { success: false, message: fillRes[0].result.error };
     }
 
@@ -1533,6 +1541,7 @@ async function runTestConnection(msg) {
 
     await chrome.tabs.remove(tabId).catch(() => {});
     chrome.storage.local.remove('taleos_connection_test');
+    await restoreTaleosTabIfNeeded();
 
     if (result && result.success) {
       const encryptedPassword = btoa(password);
@@ -1554,6 +1563,7 @@ async function runTestConnection(msg) {
   } catch (e) {
     await chrome.tabs.remove(tabId).catch(() => {});
     chrome.storage.local.remove('taleos_connection_test');
+    await restoreTaleosTabIfNeeded();
     return { success: false, message: e.message || 'Erreur technique' };
   }
 }
