@@ -188,6 +188,89 @@
     return true;
   }
 
+  function mapBnpLanguageName(language) {
+    const raw = normalizeText(language || '');
+    if (!raw) return '';
+    const directMap = {
+      'francais': 'Français',
+      'français': 'Français',
+      'anglais': 'Anglais',
+      'espagnol': 'Espagnol',
+      'allemand': 'Allemand',
+      'italien': 'Italien',
+      'portugais': 'Portugais',
+      'neerlandais': 'Néerlandais',
+      'néerlandais': 'Néerlandais',
+      'arabe': 'Arabe',
+      'chinois': 'Chinois (mandarin)',
+      'mandarin': 'Chinois (mandarin)',
+      'russe': 'Russe',
+      'japonais': 'Japonais'
+    };
+    return directMap[raw] || String(language).trim();
+  }
+
+  async function setAutocompleteSelectValue(name, targetText, label) {
+    const hiddenSelect = qs([`select[name="${name}"]`], false);
+    if (!hiddenSelect || !targetText) return false;
+
+    const selectedOption = hiddenSelect.options?.[hiddenSelect.selectedIndex];
+    const selectedText = String(selectedOption?.textContent || '').replace(/×/g, '').trim();
+    if (selectedText && normalizeText(selectedText) === normalizeText(targetText)) {
+      log(`— ${label} déjà OK`);
+      return false;
+    }
+
+    const fieldSpec = hiddenSelect.closest('.fieldSpec');
+    const selection = fieldSpec?.querySelector('.select2-selection');
+    if (!selection) return false;
+
+    selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    selection.click();
+    await sleep(250);
+
+    const searchInput = document.querySelector('.select2-container--open input.select2-search__field');
+    if (!searchInput) {
+      log(`⚠️ ${label} → widget de recherche BNP introuvable`);
+      return false;
+    }
+
+    dispatchTextInput(searchInput, targetText);
+    await sleep(350);
+
+    const results = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
+      .filter((el) => isVisible(el) && !String(el.className || '').includes('loading-results'));
+    const normalizedTarget = normalizeText(targetText);
+    const option = results.find((el) => normalizeText(el.textContent) === normalizedTarget)
+      || results.find((el) => normalizeText(el.textContent).includes(normalizedTarget));
+
+    if (!option) {
+      log(`⚠️ ${label} → aucune proposition BNP pour « ${targetText} »`);
+      document.body.click();
+      return false;
+    }
+
+    option.click();
+    await sleep(350);
+
+    const refreshedOption = hiddenSelect.options?.[hiddenSelect.selectedIndex];
+    const refreshedText = String(refreshedOption?.textContent || '').replace(/×/g, '').trim();
+    if (refreshedText && normalizeText(refreshedText) === normalizedTarget) {
+      log(`✅ ${label} → ${refreshedText}`);
+      return true;
+    }
+
+    const rendered = fieldSpec?.querySelector('.select2-selection__rendered');
+    const renderedText = String(rendered?.textContent || '').replace(/×/g, '').trim();
+    if (renderedText && normalizeText(renderedText) === normalizedTarget) {
+      log(`✅ ${label} → ${renderedText}`);
+      return true;
+    }
+
+    log(`⚠️ ${label} → sélection BNP non confirmée`);
+    return false;
+  }
+
   async function setFileInputFromStorage(inputEl, storagePath, filename, label) {
     if (!inputEl || !storagePath) return false;
     const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
@@ -290,15 +373,21 @@
       'débutant': '36'
     };
     const languages = Array.isArray(profile.languages) ? profile.languages : [];
+    const languageTargets = ['1466', '1468', '1470'];
     const levelTargets = ['1467', '1469', '1471'];
-    languages.slice(0, 3).forEach((lang, idx) => {
+    for (const [idx, lang] of languages.slice(0, 3).entries()) {
+      const languageName = mapBnpLanguageName(lang?.language || '');
+      const languageFieldName = languageTargets[idx];
+      if (languageName && languageFieldName) {
+        await setAutocompleteSelectValue(languageFieldName, languageName, `Langue ${idx + 1}`);
+      }
       const rawLevel = normalizeText(lang?.level || '');
       const value = langLevelMap[rawLevel];
-      const name = levelTargets[idx];
-      if (value && name) {
-        setSelectValue([`select[name="${name}"]`, `input[name="${name}"]`], value, `Niveau langue ${idx + 1}`);
+      const levelFieldName = levelTargets[idx];
+      if (value && levelFieldName) {
+        setSelectValue([`select[name="${levelFieldName}"]`, `input[name="${levelFieldName}"]`], value, `Niveau langue ${idx + 1}`);
       }
-    });
+    }
 
     setSelectValue(['select[name="1472"]', 'input[name="1472"]'], '8', 'Origine candidature');
     setSelectValue(['select[name="18289"]', 'input[name="18289"]'], '8', 'Source candidat');

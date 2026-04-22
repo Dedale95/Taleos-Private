@@ -118,12 +118,12 @@
       { key: 'studying', label: 'En cours d’études ?', selectors: ['select[name="1461-9-0"]', 'select[name="1461-9-sample"]', 'input[name="1461-9-0"]'], type: 'select_or_hidden', critical: true },
       { key: 'graduation_date', label: 'Date du diplôme', selectors: ['input[name="1461-8-0"]', 'input[name="1461-8-sample"]'], type: 'date', critical: true },
       { key: 'experience', label: 'Niveau d’expérience', selectors: ['select[name="1462"]', 'input[name="1462"]'], type: 'select_or_hidden', critical: true },
-      { key: 'language_1', label: 'Langue 1', selectors: ['select[name="1466"]', 'input[name="1466"]'], type: 'dynamic_optional' },
-      { key: 'language_1_level', label: 'Niveau langue 1', selectors: ['select[name="1467"]', 'input[name="1467"]'], type: 'dynamic_optional' },
-      { key: 'language_2', label: 'Langue 2', selectors: ['select[name="1468"]', 'input[name="1468"]'], type: 'dynamic_optional' },
-      { key: 'language_2_level', label: 'Niveau langue 2', selectors: ['select[name="1469"]', 'input[name="1469"]'], type: 'dynamic_optional' },
-      { key: 'language_3', label: 'Langue 3', selectors: ['select[name="1470"]', 'input[name="1470"]'], type: 'dynamic_optional' },
-      { key: 'language_3_level', label: 'Niveau langue 3', selectors: ['select[name="1471"]', 'input[name="1471"]'], type: 'dynamic_optional' },
+      { key: 'language_1', label: 'Langue 1', selectors: ['select[name="1466"]', 'input[name="1466"]'], type: 'dynamic_optional', criticalWhenPresent: true },
+      { key: 'language_1_level', label: 'Niveau langue 1', selectors: ['select[name="1467"]', 'input[name="1467"]'], type: 'dynamic_optional', criticalWhenPresent: true },
+      { key: 'language_2', label: 'Langue 2', selectors: ['select[name="1468"]', 'input[name="1468"]'], type: 'dynamic_optional', criticalWhenPresent: true },
+      { key: 'language_2_level', label: 'Niveau langue 2', selectors: ['select[name="1469"]', 'input[name="1469"]'], type: 'dynamic_optional', criticalWhenPresent: true },
+      { key: 'language_3', label: 'Langue 3', selectors: ['select[name="1470"]', 'input[name="1470"]'], type: 'dynamic_optional', criticalWhenPresent: true },
+      { key: 'language_3_level', label: 'Niveau langue 3', selectors: ['select[name="1471"]', 'input[name="1471"]'], type: 'dynamic_optional', criticalWhenPresent: true },
       { key: 'application_source', label: 'Origine de la candidature', selectors: ['select[name="1472"]', 'input[name="1472"]'], type: 'select_or_hidden', critical: true },
       { key: 'candidate_source', label: 'Source du candidat', selectors: ['select[name="18289"]', 'input[name="18289"]'], type: 'select_or_hidden', critical: true },
       { key: 'data_sharing_scope', label: 'Partage des données', selectors: ['input[name="4456"]'], type: 'radio_group', critical: true },
@@ -259,6 +259,38 @@
     return raw;
   }
 
+  function mapBnpLanguageName(language) {
+    const raw = normalizeText(language || '');
+    if (!raw) return '';
+    const directMap = {
+      'francais': 'Français',
+      'français': 'Français',
+      'anglais': 'Anglais',
+      'espagnol': 'Espagnol',
+      'allemand': 'Allemand',
+      'italien': 'Italien',
+      'portugais': 'Portugais',
+      'neerlandais': 'Néerlandais',
+      'néerlandais': 'Néerlandais',
+      'arabe': 'Arabe',
+      'chinois': 'Chinois (mandarin)',
+      'mandarin': 'Chinois (mandarin)',
+      'russe': 'Russe',
+      'japonais': 'Japonais'
+    };
+    return directMap[raw] || String(language).trim();
+  }
+
+  function mapBnpLanguageLevel(level) {
+    const raw = normalizeText(level || '');
+    if (!raw) return '';
+    if (raw.includes('langue maternelle') || raw.includes('bilingue') || raw.includes('courant')) return 'Courant';
+    if (raw.includes('avance') || raw.includes('avancé') || raw.includes('operationnel') || raw.includes('opérationnel')) return 'Avancé';
+    if (raw.includes('intermediaire') || raw.includes('intermédiaire')) return 'Intermédiaire';
+    if (raw.includes('debutant') || raw.includes('débutant')) return 'Débutant';
+    return '';
+  }
+
   function expectedValue(question, profile) {
     if (question.expectedValue !== undefined) return question.expectedValue;
     if (question.profileKey) return profile?.[question.profileKey] || '';
@@ -270,6 +302,12 @@
     if (question.key === 'experience') return mapExperience(profile);
     if (question.key === 'application_source' || question.key === 'candidate_source') return 'BNP Paribas website';
     if (question.key === 'data_sharing_scope') return mapBnpDataSharing(profile);
+    if (question.key === 'language_1') return mapBnpLanguageName(profile?.languages?.[0]?.language || '');
+    if (question.key === 'language_2') return mapBnpLanguageName(profile?.languages?.[1]?.language || '');
+    if (question.key === 'language_3') return mapBnpLanguageName(profile?.languages?.[2]?.language || '');
+    if (question.key === 'language_1_level') return mapBnpLanguageLevel(profile?.languages?.[0]?.level || '');
+    if (question.key === 'language_2_level') return mapBnpLanguageLevel(profile?.languages?.[1]?.level || '');
+    if (question.key === 'language_3_level') return mapBnpLanguageLevel(profile?.languages?.[2]?.level || '');
     return '';
   }
 
@@ -369,7 +407,7 @@
       const fileMissing = question.type === 'file' && !current;
       const checkboxMismatch = question.type === 'checkbox' && expected === true && current !== true;
       const status = missing ? 'missing' : empty ? 'empty' : fileMissing ? 'empty' : checkboxMismatch ? 'mismatch' : mismatch ? 'mismatch' : 'ok';
-      if (status !== 'ok' && question.critical) unresolvedQuestionCount += 1;
+      if (status !== 'ok' && (question.critical || (question.criticalWhenPresent && exists))) unresolvedQuestionCount += 1;
       report.push({
         key: question.key,
         label: question.label,
