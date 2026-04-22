@@ -329,9 +329,11 @@ def fix_location(loc):
             if rest and rest.lower() in ('tunisie', 'roumanie', 'romania'):
                 return normalize_country(rest)
         return loc
-    parts = loc.split(' - ', 1)
-    city = (parts[0] or '').strip()
-    country = (parts[1] or '').strip()
+    parts = [part.strip() for part in loc.split(' - ') if part and part.strip()]
+    if len(parts) < 2:
+        return loc
+    city = ' - '.join(parts[:-1]).strip()
+    country = parts[-1].strip()
     if not country:
         return loc
     # Cas comme \"- - France\" ou \"- France\" → on garde uniquement le pays

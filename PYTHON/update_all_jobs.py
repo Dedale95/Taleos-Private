@@ -317,9 +317,11 @@ def merge_from_databases():
                 return parts[1].strip()
         if ' - ' not in loc:
             return loc
-        parts = loc.split(' - ', 1)
-        city = (parts[0] or '').strip()
-        country = (parts[1] or '').strip()
+        parts = [part.strip() for part in loc.split(' - ') if part and part.strip()]
+        if len(parts) < 2:
+            return loc
+        city = ' - '.join(parts[:-1]).strip()
+        country = parts[-1].strip()
         if not city or country.lower() != 'france':
             return loc
         # Aligné front : "Ile-De France" / "Ile-de France" → libellé canonique (filtre Île-de-France)
