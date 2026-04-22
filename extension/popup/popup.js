@@ -28,6 +28,8 @@ const CA_BLUEPRINT_LAST_CHECK_KEY = 'taleos_ca_blueprint_last_check';
 const CA_BLUEPRINT_LOG_KEY = 'taleos_ca_blueprint_log';
 const SG_BLUEPRINT_LAST_CHECK_KEY = 'taleos_sg_blueprint_last_check';
 const SG_BLUEPRINT_LOG_KEY = 'taleos_sg_blueprint_log';
+const BNP_BLUEPRINT_LAST_CHECK_KEY = 'taleos_bnp_blueprint_last_check';
+const BNP_BLUEPRINT_LOG_KEY = 'taleos_bnp_blueprint_log';
 const DELOITTE_BLUEPRINT_LAST_CHECK_KEY = 'taleos_deloitte_blueprint_last_check';
 const DELOITTE_BLUEPRINT_LOG_KEY = 'taleos_deloitte_blueprint_log';
 
@@ -173,6 +175,11 @@ function toFrenchBlueprintKind(kind) {
   if (key === 'success_structure' || key === 'validate_success_structure') return 'Structure succès';
   if (key === 'offer_structure') return 'Structure offre';
   if (key === 'apply_choice') return 'Choix candidature';
+  if (key === 'public_offer') return 'Offre publique';
+  if (key === 'job_details') return 'Job details';
+  if (key === 'application_methods') return 'Connexion candidature';
+  if (key === 'review_submit') return 'Validation finale';
+  if (key === 'success') return 'Succès';
   if (key === 'login_structure') return 'Structure login';
   if (key === 'personal_details') return 'Donnees personnelles';
   if (key === 'experience') return 'Experience';
@@ -278,6 +285,35 @@ async function refreshSGBlueprintPanel() {
   }
 }
 
+async function refreshBNPBlueprintPanel() {
+  const statusEl = document.getElementById('bnp-blueprint-status');
+  if (!statusEl) return;
+  try {
+    const data = await chrome.storage.local.get([BNP_BLUEPRINT_LAST_CHECK_KEY]);
+    const lastCheck = data[BNP_BLUEPRINT_LAST_CHECK_KEY];
+    if (!lastCheck) {
+      statusEl.textContent = 'BNP Paribas : aucun diagnostic';
+      statusEl.className = '';
+      statusEl.classList.add('status-warn');
+    } else {
+      const label = toFrenchBlueprintKind(lastCheck.kind || 'validate_page');
+      const time = formatIsoDate(lastCheck.at);
+      const state = lastCheck.ok === true ? 'OK' : 'KO';
+      const suffix =
+        lastCheck.detected ? ` · ${lastCheck.detected}` :
+        lastCheck.pageKey ? ` · ${lastCheck.pageKey}` :
+        '';
+      statusEl.textContent = `BNP Paribas : ${label} ${state}${suffix}${time ? ` (${time})` : ''}`;
+      statusEl.className = '';
+      statusEl.classList.add(lastCheck.ok === true ? 'status-good' : 'status-bad');
+    }
+  } catch (e) {
+    statusEl.textContent = `BNP Paribas : erreur lecture (${(e?.message || 'unknown').slice(0, 40)})`;
+    statusEl.className = '';
+    statusEl.classList.add('status-bad');
+  }
+}
+
 async function refreshDeloitteBlueprintPanel() {
   const statusEl = document.getElementById('deloitte-blueprint-status');
   if (!statusEl) return;
@@ -350,6 +386,7 @@ async function init() {
   refreshPilotStatus();
   refreshCABlueprintPanel();
   refreshSGBlueprintPanel();
+  refreshBNPBlueprintPanel();
   refreshDeloitteBlueprintPanel();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.taleos_last_pilot) {
@@ -360,6 +397,9 @@ async function init() {
     }
     if (area === 'local' && (changes[SG_BLUEPRINT_LAST_CHECK_KEY] || changes[SG_BLUEPRINT_LOG_KEY])) {
       refreshSGBlueprintPanel();
+    }
+    if (area === 'local' && (changes[BNP_BLUEPRINT_LAST_CHECK_KEY] || changes[BNP_BLUEPRINT_LOG_KEY])) {
+      refreshBNPBlueprintPanel();
     }
     if (area === 'local' && (changes[DELOITTE_BLUEPRINT_LAST_CHECK_KEY] || changes[DELOITTE_BLUEPRINT_LOG_KEY])) {
       refreshDeloitteBlueprintPanel();

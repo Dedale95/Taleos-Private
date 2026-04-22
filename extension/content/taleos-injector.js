@@ -143,6 +143,7 @@
     if (url.includes('careers.societegenerale.com') || url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
     if (url.includes('deloitte.com') || (url.includes('myworkdayjobs.com') && url.toLowerCase().includes('deloitte'))) return 'deloitte';
     if (url.includes('recrutement.bpce.fr')) return 'bpce';
+    if (url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
     return 'credit_agricole'; // défaut
   }
 

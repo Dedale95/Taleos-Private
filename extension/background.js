@@ -41,7 +41,8 @@ const BANK_SCRIPT_MAP = {
   credit_agricole: 'scripts/credit_agricole.js',
   societe_generale: 'scripts/societe_generale.js',
   deloitte: 'content/deloitte-careers-filler.js',
-  bpce: 'content/bpce-careers-filler.js'
+  bpce: 'content/bpce-careers-filler.js',
+  bnp_paribas: 'content/bnp-careers-filler.js'
 };
 
 const PROJECT_ID = 'project-taleos';
@@ -60,6 +61,7 @@ const CA_BLUEPRINT_SCRIPT = 'scripts/credit_agricole_blueprint.js';
 const SG_BLUEPRINT_SCRIPT = 'scripts/societe_generale_blueprint.js';
 const BPCE_BLUEPRINT_SCRIPT = 'scripts/bpce_blueprint.js';
 const DELOITTE_BLUEPRINT_SCRIPT = 'scripts/deloitte_blueprint.js';
+const BNP_BLUEPRINT_SCRIPT = 'scripts/bnp_paribas_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -81,6 +83,9 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'deloitte') {
     return injectFilesWithBanner([DELOITTE_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'bnp_paribas') {
+    return injectFilesWithBanner([BNP_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
 }
 
@@ -91,6 +96,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'credit_agricole') keys.push('taleos_pending_offer', 'taleos_ca_apply_tab_id');
   if (bid === 'deloitte') keys.push('taleos_pending_deloitte', 'taleos_deloitte_did_login_click');
   if (bid === 'bpce') keys.push('taleos_pending_bpce', 'taleos_bpce_tab_id');
+  if (bid === 'bnp_paribas') keys.push('taleos_pending_bnp', 'taleos_bnp_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -129,6 +135,8 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_sg_tab_id',
     'taleos_pending_bpce',
     'taleos_bpce_tab_id',
+    'taleos_pending_bnp',
+    'taleos_bnp_tab_id',
     'taleos_pending_deloitte',
     'taleos_pending_offer',
     'taleos_ca_apply_tab_id'
@@ -161,6 +169,17 @@ async function resolveTabAndMetaForStuckReport() {
         bankId: 'bpce',
         jobId: s.taleos_pending_bpce.jobId || '',
         offerUrl: s.taleos_pending_bpce.offerUrl || ''
+      };
+    }
+  }
+  if (s.taleos_pending_bnp && s.taleos_bnp_tab_id) {
+    const tab = await chrome.tabs.get(s.taleos_bnp_tab_id).catch(() => null);
+    if (tab?.id) {
+      return {
+        tabId: tab.id,
+        bankId: 'bnp_paribas',
+        jobId: s.taleos_pending_bnp.jobId || '',
+        offerUrl: s.taleos_pending_bnp.offerUrl || ''
       };
     }
   }
@@ -273,13 +292,15 @@ async function handleApplyStuckAlarm() {
     'taleos_pending_sg',
     'taleos_pending_offer',
     'taleos_pending_deloitte',
-    'taleos_pending_bpce'
+    'taleos_pending_bpce',
+    'taleos_pending_bnp'
   ]);
   const hasPending =
     !!pending.taleos_pending_sg ||
     !!pending.taleos_pending_offer ||
     !!pending.taleos_pending_deloitte ||
-    !!pending.taleos_pending_bpce;
+    !!pending.taleos_pending_bpce ||
+    !!pending.taleos_pending_bnp;
   if (!hasPending) return;
 
   const { taleosUserId, taleosIdToken, taleos_stuck_report_sent } = await chrome.storage.local.get([
@@ -300,6 +321,7 @@ async function handleApplyStuckAlarm() {
     pending.taleos_pending_offer?.timestamp ||
     pending.taleos_pending_deloitte?.timestamp ||
     pending.taleos_pending_bpce?.timestamp ||
+    pending.taleos_pending_bnp?.timestamp ||
     '';
   const dedupKey = `${meta.jobId || ''}|${meta.offerUrl || ''}|${pendingTs}`;
   if (taleos_stuck_report_sent === dedupKey) return;
@@ -366,7 +388,7 @@ async function handleApplyStuckAlarm() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce'];
+  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp'];
   for (const k of keys) {
     const ch = changes[k];
     if (ch && (ch.newValue === undefined || ch.newValue === null)) {
@@ -463,9 +485,11 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     const state = await chrome.storage.local.get([
       'taleos_sg_tab_id',
       'taleos_bpce_tab_id',
+      'taleos_bnp_tab_id',
       'taleos_ca_apply_tab_id',
       'taleos_pending_sg',
       'taleos_pending_bpce',
+      'taleos_pending_bnp',
       'taleos_pending_deloitte',
       'taleos_pending_offer',
       'taleos_ca_candidature_pending',
@@ -480,6 +504,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       keysToRemove.add('taleos_pending_bpce');
       keysToRemove.add('taleos_bpce_tab_id');
       keysToRemove.add('taleos_bpce_pin_code');
+    }
+    if (state.taleos_bnp_tab_id === tabId || state.taleos_pending_bnp?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_bnp');
+      keysToRemove.add('taleos_bnp_tab_id');
     }
     if (state.taleos_ca_apply_tab_id === tabId || state.taleos_ca_candidature_pending?.tabId === tabId) {
       keysToRemove.add('taleos_pending_offer');
@@ -1576,6 +1604,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
   if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
+  if (bid === 'bnp_paribas' || url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp';
   return 'other';
 }
 
@@ -1873,6 +1902,35 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         timestamp: Date.now()
       },
       taleos_bpce_tab_id: tab.id
+    });
+    scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'bnp') {
+    chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach(ms => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    chrome.storage.local.set({
+      taleos_pending_bnp: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'BNP Paribas', __offerUrl: offerUrl },
+        offerUrl,
+        jobId,
+        jobTitle,
+        companyName: companyName || 'BNP Paribas',
+        tabId: tab.id,
+        timestamp: Date.now()
+      },
+      taleos_bnp_tab_id: tab.id
     });
     scheduleApplyStuckWatchdog();
   } else {
@@ -2244,6 +2302,7 @@ async function fetchProfile(uid, bankId, token) {
     bpce_application_source: (profile.bpce_application_source || '').trim(),
     linkedin_url: (profile.linkedin_url || '').trim(),
     bpce_job_alerts: !!profile.bpce_job_alerts,
+    group_data_sharing_scope: (profile.group_data_sharing_scope || profile.bnp_data_sharing_scope || '').trim(),
     sg_eu_work_authorization: profile.sg_eu_work_authorization || '',
     sg_notice_period: profile.sg_notice_period || ''
   };
