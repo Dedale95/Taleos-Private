@@ -248,6 +248,26 @@
     return String(value).trim();
   }
 
+  function getLookupScope(el, doc) {
+    return el?.closest?.('[data-automation-id*="school"], [data-automation-id*="education"], [data-fkit-id], section, form, div') || doc?.body || document.body;
+  }
+
+  function getSelectedLookupTexts(scope) {
+    const selectors = [
+      '[data-automation-id="selectedItem"]',
+      '[data-automation-id="selectedValue"]',
+      '[data-automation-id="token"]',
+      '[data-automation-id="pill"]',
+      '[data-automation-id="chips"] *',
+      '[data-automation-id="promptOption"][aria-selected="true"]',
+      '[role="option"][aria-selected="true"]'
+    ];
+    return Array.from((scope || document).querySelectorAll(selectors.join(', ')))
+      .filter(isVisible)
+      .map((node) => String(node.textContent || node.getAttribute('aria-label') || node.getAttribute('title') || '').trim())
+      .filter(Boolean);
+  }
+
   function normalizeDateString(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -333,8 +353,10 @@
       return normalizeText(el.textContent || '').includes('upload') ? 'zone_visible' : '';
     }
     if (question.key === 'establishment') {
-      const scope = el.closest?.('[data-automation-id*="school"], [data-automation-id*="education"], [data-fkit-id], section, form, div') || doc.body;
-      return String(el.value || scope?.textContent || '').trim();
+      const scope = getLookupScope(el, doc);
+      const selectedTexts = getSelectedLookupTexts(scope);
+      if (selectedTexts.length) return selectedTexts.join(' | ').trim();
+      return String(el.value || '').trim();
     }
     if (question.type === 'listbox') {
       return String(el.getAttribute('aria-label') || el.textContent || '').trim();

@@ -246,10 +246,9 @@
   function isEstablishmentAlreadySet(inputEl, expectedValue) {
     var target = normalizeLoose(expectedValue);
     if (!target) return false;
-    if (normalizeLoose(inputEl?.value || '').includes(target)) return true;
-    var scope = inputEl?.closest('[data-automation-id*="school"], [data-automation-id*="education"], [data-fkit-id], section, form, div');
-    var scopeText = normalizeLoose(scope?.textContent || '');
-    return scopeText.includes(target);
+    return isLookupSelectionConfirmed(inputEl, expectedValue, {
+      scope: getLookupScope(inputEl)
+    });
   }
 
   function getVisibleAttachmentRemoveButtons(scope, expectedName) {
@@ -340,6 +339,14 @@
     var nativeSet = nativeDesc && nativeDesc.set;
     el.focus();
     el.click();
+    try {
+      el.select();
+    } catch (_) {}
+    var resetTracker = el._valueTracker;
+    if (resetTracker) resetTracker.setValue(el.value || '');
+    if (nativeSet) nativeSet.call(el, '');
+    else el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
     var i = 0;
     function next() {
       if (i >= str.length) {
@@ -361,17 +368,62 @@
     setTimeout(next, 200);
   }
 
-  function clickVisibleOptionMatchingText(expectedText, options) {
-    var target = normalizeLoose(expectedText);
-    if (!target) return false;
+  function getLookupScope(inputEl) {
+    return inputEl?.closest('[data-automation-id*="school"], [data-automation-id*="education"], [data-fkit-id], section, form, div') || document.body;
+  }
+
+  function getVisibleLookupOptions(options) {
     var selectors = options?.selectors || [
       '[data-automation-id="promptOption"]',
       '[role="option"]',
       '[data-automation-id="menuItem"]'
     ];
-    var nodes = Array.from(document.querySelectorAll(selectors.join(', '))).filter(function(node) {
+    return Array.from(document.querySelectorAll(selectors.join(', '))).filter(function(node) {
       return node && node.offsetParent !== null;
     });
+  }
+
+  function getSelectedLookupTexts(scope) {
+    var selectors = [
+      '[data-automation-id="selectedItem"]',
+      '[data-automation-id="selectedValue"]',
+      '[data-automation-id="token"]',
+      '[data-automation-id="pill"]',
+      '[data-automation-id="chips"] *',
+      '[data-automation-id="promptOption"][aria-selected="true"]',
+      '[role="option"][aria-selected="true"]'
+    ];
+    return Array.from((scope || document).querySelectorAll(selectors.join(', ')))
+      .filter(function(node) { return node && node.offsetParent !== null; })
+      .map(function(node) {
+        return normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('title') || '');
+      })
+      .filter(Boolean);
+  }
+
+  function isLookupSelectionConfirmed(inputEl, expectedValue, options) {
+    var target = normalizeLoose(expectedValue);
+    if (!target) return false;
+    var scope = options?.scope || getLookupScope(inputEl);
+    var selectedTexts = getSelectedLookupTexts(scope);
+    if (selectedTexts.some(function(text) {
+      return text === target || text.includes(target) || target.includes(text);
+    })) {
+      return true;
+    }
+    var inputValue = normalizeLoose(inputEl?.value || '');
+    var visibleOptions = getVisibleLookupOptions(options);
+    if (inputValue && (inputValue === target || inputValue.includes(target)) && visibleOptions.length === 0) {
+      var scopeText = normalizeLoose(scope?.textContent || '');
+      if (scopeText.includes(target)) return true;
+    }
+    return false;
+  }
+
+  function clickVisibleOptionMatchingText(expectedText, options) {
+    var target = normalizeLoose(expectedText);
+    if (!target) return false;
+    var nodes = getVisibleLookupOptions(options);
 
     var exact = nodes.find(function(node) {
       var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-automation-label') || '');
@@ -396,18 +448,40 @@
   function selectWorkdaySearchOption(inputEl, expectedText, label, options) {
     if (!inputEl || !expectedText) return;
     var waitMs = options?.waitMs || 1200;
-    setTimeout(function() {
-      if (clickVisibleOptionMatchingText(expectedText, options)) {
-        if (options?.onSelected) options.onSelected();
-        log('   ✅ ' + label + ' → ' + expectedText + ' (suggestion sélectionnée)', 5);
-        return;
+    var scope = options?.scope || getLookupScope(inputEl);
+    var attempts = 0;
+    function verifyAndFinish(message) {
+      if (!isLookupSelectionConfirmed(inputEl, expectedText, { scope: scope, selectors: options?.selectors })) {
+        return false;
       }
+      if (options?.onSelected) options.onSelected();
+      log('   ✅ ' + label + ' → ' + expectedText + ' (' + message + ')', 5);
+      return true;
+    }
+    setTimeout(function() {
       pressEnterSequence(inputEl);
-      setTimeout(function() {
-        pressEnterSequence(inputEl);
-        if (options?.onSelected) options.onSelected();
-        log('   ✅ ' + label + ' → ' + expectedText + ' (fallback Enter)', 5);
-      }, 400);
+      setTimeout(function retry() {
+        attempts += 1;
+        if (clickVisibleOptionMatchingText(expectedText, options)) {
+          setTimeout(function() {
+            if (!verifyAndFinish('suggestion sélectionnée')) {
+              log('   ⏳ ' + label + ' → suggestion cliquée mais sélection non confirmée, nouvelle tentative…', 5);
+              if (attempts < 5) setTimeout(retry, 600);
+              else log('   ❌ ' + label + ' → impossible de confirmer la sélection Workday', 5);
+            }
+          }, 700);
+          return;
+        }
+        if (verifyAndFinish('valeur déjà confirmée')) return;
+        if (attempts === 1 || attempts === 3) {
+          pressEnterSequence(inputEl);
+        }
+        if (attempts < 5) {
+          setTimeout(retry, 600);
+          return;
+        }
+        log('   ❌ ' + label + ' → aucune suggestion Workday confirmée après frappe + Enter', 5);
+      }, 500);
     }, waitMs);
   }
 
@@ -851,18 +925,20 @@
       document.querySelector('input[id*="school"][placeholder="Rechercher"]') ||
       findInputByLabel(['établissement ou université', 'institution']);
     if (estabInput && estabInput.offsetParent !== null && establishmentVal) {
-      if (step2LastEstablishmentApplied && normalizeLoose(step2LastEstablishmentApplied) === normalizeLoose(establishmentVal)) {
+      if (step2LastEstablishmentApplied && normalizeLoose(step2LastEstablishmentApplied) === normalizeLoose(establishmentVal) && isEstablishmentAlreadySet(estabInput, establishmentVal)) {
         log('   — Établissement → déjà traité pendant cette session', 5);
       } else if (isEstablishmentAlreadySet(estabInput, establishmentVal)) {
         log('   — Établissement → déjà OK', 5);
         step2LastEstablishmentApplied = establishmentVal;
       } else {
         scrollIntoViewIfNeeded(estabInput);
+        step2LastEstablishmentApplied = '';
         log('   ⌨️  Établissement → frappe "' + establishmentVal + '"…', 5);
         simulateTyping(estabInput, establishmentVal, function() {
-          log('   ⌨️  Établissement → frappe terminée, attente des propositions Workday…', 5);
+          log('   ⌨️  Établissement → frappe terminée, Enter pour charger les propositions Workday…', 5);
           selectWorkdaySearchOption(estabInput, establishmentVal, 'Établissement', {
             waitMs: 1500,
+            scope: getLookupScope(estabInput),
             onSelected: function() {
               step2LastEstablishmentApplied = establishmentVal;
             }
