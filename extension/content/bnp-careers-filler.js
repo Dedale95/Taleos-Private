@@ -441,8 +441,18 @@
       log('❌ Lien BNP vers la candidature introuvable');
       return;
     }
-    log('🔗 Offre publique BNP → clic sur Postuler');
-    link.click();
+    const href = String(link.href || link.getAttribute('href') || '').trim();
+    if (!href) {
+      log('❌ URL de candidature BNP introuvable sur l’offre publique');
+      return;
+    }
+    log('🔗 Offre publique BNP → navigation vers Postuler dans le même onglet');
+    try {
+      if (link.target) link.target = '_self';
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+    } catch (_) {}
+    globalThis.location.assign(href);
   }
 
   async function handleJobDetails() {
