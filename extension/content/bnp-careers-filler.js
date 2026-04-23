@@ -236,6 +236,23 @@
     return directMap[raw] || String(language).trim();
   }
 
+  function getBnpAdditionalLanguages(profile) {
+    const preferred = mapBnpLanguageName(profile?.preferred_language || 'Français');
+    const seen = new Set();
+    const base = Array.isArray(profile?.languages) ? profile.languages : [];
+    const mapped = [];
+    for (const lang of base) {
+      const name = mapBnpLanguageName(lang?.language || lang?.name || '');
+      if (!name) continue;
+      if (normalizeText(name) === normalizeText(preferred)) continue;
+      const key = normalizeText(name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      mapped.push({ ...lang, __mappedName: name });
+    }
+    return mapped;
+  }
+
   function findVisibleDropdownOptionByText(targetText, anchorEl) {
     const normalizedTarget = normalizeText(targetText);
     const anchorRect = anchorEl?.getBoundingClientRect?.() || null;
@@ -501,11 +518,11 @@
       'debutant': '36',
       'débutant': '36'
     };
-    const languages = Array.isArray(profile.languages) ? profile.languages : [];
+    const languages = getBnpAdditionalLanguages(profile);
     const languageTargets = ['1466', '1468', '1470'];
     const levelTargets = ['1467', '1469', '1471'];
     for (const [idx, lang] of languages.slice(0, 3).entries()) {
-      const languageName = mapBnpLanguageName(lang?.language || lang?.name || '');
+      const languageName = lang?.__mappedName || mapBnpLanguageName(lang?.language || lang?.name || '');
       const languageFieldName = languageTargets[idx];
       if (languageName && languageFieldName) {
         await setAutocompleteSelectValue(languageFieldName, languageName, `Langue ${idx + 1}`);
