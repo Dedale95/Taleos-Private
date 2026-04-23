@@ -222,6 +222,19 @@
       return false;
     }
 
+    const normalizedTarget = normalizeText(targetText);
+    const hiddenOption = Array.from(hiddenSelect.options || []).find((option) => {
+      const text = String(option.textContent || '').replace(/×/g, '').trim();
+      return normalizeText(text) === normalizedTarget || normalizeText(text).includes(normalizedTarget);
+    });
+    if (hiddenOption) {
+      hiddenSelect.value = hiddenOption.value;
+      hiddenSelect.dispatchEvent(new Event('input', { bubbles: true }));
+      hiddenSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      log(`✅ ${label} → ${String(hiddenOption.textContent || '').trim()}`);
+      return true;
+    }
+
     const fieldSpec = hiddenSelect.closest('.fieldSpec');
     const selection = fieldSpec?.querySelector('.select2-selection');
     if (!selection) return false;
@@ -241,7 +254,6 @@
 
     const results = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
       .filter((el) => isVisible(el) && !String(el.className || '').includes('loading-results'));
-    const normalizedTarget = normalizeText(targetText);
     const option = results.find((el) => normalizeText(el.textContent) === normalizedTarget)
       || results.find((el) => normalizeText(el.textContent).includes(normalizedTarget));
 
@@ -282,7 +294,7 @@
     const bin = atob(r.base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const effectiveFilename = String(r.filename || filename || 'document.pdf').trim();
+    const effectiveFilename = String(filename || r.filename || 'document.pdf').trim();
     const file = new File([bytes], effectiveFilename, { type: r.type || 'application/pdf' });
     const dt = new DataTransfer();
     dt.items.add(file);

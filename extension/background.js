@@ -2658,6 +2658,13 @@ function extractTimestampFromStorageName(name) {
   return match ? Number(match[1]) : 0;
 }
 
+function isGeneratedProfileAssetFilename(name, kind) {
+  const raw = String(name || '').trim();
+  if (!raw) return false;
+  const escapedKind = kind === 'letter' ? 'letter' : 'cv';
+  return new RegExp(`^${escapedKind}_[A-Za-z0-9]+_\\d{10,}\\.[a-z0-9]+$`, 'i').test(raw);
+}
+
 async function resolveLatestProfileAsset(uid, kind, currentPath, currentFilename) {
   if (!uid) {
     return { storagePath: currentPath || null, filename: currentFilename || null };
@@ -2684,7 +2691,7 @@ async function resolveLatestProfileAsset(uid, kind, currentPath, currentFilename
     || meta?.metadata?.filename
     || null;
 
-  if (metaFilename) {
+  if (metaFilename && (!filename || isGeneratedProfileAssetFilename(filename, kind))) {
     filename = metaFilename;
   } else if (!filename && chosenPath) {
     filename = chosenPath.split('/').pop() || null;
