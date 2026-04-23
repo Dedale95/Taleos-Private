@@ -339,6 +339,38 @@
     await sleep(250);
   }
 
+  function getVisibleSelect2Options() {
+    return Array.from(document.querySelectorAll(
+      '.select2-container--open .select2-results__option, .select2-results__option, .select2-results li, [role="option"], [role="treeitem"]'
+    ))
+      .filter((el) => {
+        if (!isVisible(el)) return false;
+        const txt = normalizeText(el.textContent || '');
+        return txt && !txt.includes('selectionner une option') && !txt.includes('sélectionner une option');
+      });
+  }
+
+  async function waitForSelect2TargetOption(targetText, timeoutMs = 3500) {
+    const normalizedTarget = normalizeText(targetText);
+    const started = Date.now();
+    let lastOptions = [];
+    while (Date.now() - started < timeoutMs) {
+      const options = getVisibleSelect2Options();
+      lastOptions = options.map((el) => String(el.textContent || '').trim()).filter(Boolean);
+      const option = options.find((el) => normalizeText(el.textContent || '') === normalizedTarget)
+        || options.find((el) => normalizeText(el.textContent || '').includes(normalizedTarget));
+      if (option) {
+        return { option, lastOptions };
+      }
+      const loading = lastOptions.some((txt) => {
+        const n = normalizeText(txt);
+        return n.includes('recherche en cours') || n.includes('searching') || n.includes('loading more results');
+      });
+      await sleep(loading ? 300 : 180);
+    }
+    return { option: null, lastOptions };
+  }
+
   async function setSelect2Value(name, targetText, label) {
     const selection = getSelect2SelectionElement(name);
     const fieldSpec = document.getElementById(`fieldSpecContainer${name}`);
@@ -367,13 +399,8 @@
       await sleep(250);
     }
 
-    const options = Array.from(document.querySelectorAll(
-      '.select2-container--open .select2-results__option, .select2-results__option, .select2-results li, [role="option"], [role="treeitem"]'
-    ))
-      .filter((el) => isVisible(el) && !normalizeText(el.textContent || '').includes('selectionner une option') && !normalizeText(el.textContent || '').includes('sélectionner une option'));
-    log(`🔎 ${label} options détectées → ${options.length}`);
-    const option = options.find((el) => normalizeText(el.textContent || '') === normalizedTarget)
-      || options.find((el) => normalizeText(el.textContent || '').includes(normalizedTarget));
+    const { option, lastOptions } = await waitForSelect2TargetOption(targetText);
+    log(`🔎 ${label} options détectées → ${lastOptions.length}${lastOptions.length ? ` [${lastOptions.slice(0, 4).join(' | ')}]` : ''}`);
     if (!option) {
       if (searchInput) {
         searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
