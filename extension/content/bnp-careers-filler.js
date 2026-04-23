@@ -208,24 +208,50 @@
     return true;
   }
 
-  function findFieldContainerByLabel(labelText) {
+  function findLabelNode(labelText) {
     const normalizedLabel = normalizeText(labelText);
     if (!normalizedLabel) return null;
-    const labelNode = Array.from(document.querySelectorAll('label, legend, h1, h2, h3, h4, h5, strong, span, div, p'))
+    return Array.from(document.querySelectorAll('label, legend, h1, h2, h3, h4, h5, strong, span, div, p'))
       .find((el) => isVisible(el) && normalizeText(el.textContent || '') === normalizedLabel);
+  }
+
+  function findFieldContainerByLabel(labelText) {
+    const labelNode = findLabelNode(labelText);
     if (!labelNode) return null;
-    return labelNode.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12, .row, div') || labelNode.parentElement;
+    return labelNode.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12, .row') || labelNode.parentElement;
+  }
+
+  function findVisibleSelectNearLabel(labelText) {
+    const labelNode = findLabelNode(labelText);
+    if (!labelNode) return null;
+    const labelRect = labelNode.getBoundingClientRect?.();
+    if (!labelRect) return null;
+    const candidates = Array.from(document.querySelectorAll('select'))
+      .filter((el) => isVisible(el))
+      .map((el) => ({ el, rect: el.getBoundingClientRect?.() }))
+      .filter(({ rect }) => rect && rect.width > 80 && rect.height > 20)
+      .filter(({ rect }) =>
+        rect.top >= labelRect.bottom - 20 &&
+        rect.top <= labelRect.bottom + 260 &&
+        Math.abs(rect.left - labelRect.left) <= 180
+      )
+      .sort((a, b) => {
+        const da = Math.abs(a.rect.top - labelRect.bottom) + Math.abs(a.rect.left - labelRect.left);
+        const db = Math.abs(b.rect.top - labelRect.bottom) + Math.abs(b.rect.left - labelRect.left);
+        return da - db;
+      });
+    return candidates[0]?.el || null;
   }
 
   function findNativeSelectByNameOrLabel(name, labelText) {
-    const direct = qs([`select[name="${name}"]`], true) || qs([`select[name="${name}"]`]);
+    const direct = qs([`select[name="${name}"]`], true);
     if (direct) return direct;
+    const nearLabel = findVisibleSelectNearLabel(labelText);
+    if (nearLabel) return nearLabel;
     const fieldContainer = findFieldContainerByLabel(labelText);
     if (!fieldContainer) return null;
-    const nested = fieldContainer.querySelector('select');
-    if (nested && isVisible(nested)) return nested;
-    const siblingSelect = fieldContainer.parentElement?.querySelector?.('select');
-    return siblingSelect && isVisible(siblingSelect) ? siblingSelect : null;
+    const nested = Array.from(fieldContainer.querySelectorAll('select')).find((el) => isVisible(el));
+    return nested || null;
   }
 
   function mapBnpLanguageName(language) {
@@ -314,8 +340,12 @@
       hiddenSelect.value = hiddenOption.value;
       hiddenSelect.dispatchEvent(new Event('input', { bubbles: true }));
       hiddenSelect.dispatchEvent(new Event('change', { bubbles: true }));
-      log(`✅ ${label} → ${String(hiddenOption.textContent || '').trim()}`);
-      return true;
+      const visibleSelectAfterHidden = findVisibleSelectNearLabel(label);
+      if (visibleSelectAfterHidden) {
+        const mirrored = setSelectElementValue(visibleSelectAfterHidden, targetText, label);
+        const visibleText = String(visibleSelectAfterHidden.options?.[visibleSelectAfterHidden.selectedIndex]?.textContent || '').trim();
+        if (mirrored || normalizeText(visibleText) === normalizedTarget) return mirrored || true;
+      }
     }
 
     const fieldSpec = hiddenSelect.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12');
