@@ -10,6 +10,7 @@ const APPLY_WATCHDOG_PERIOD_MINUTES = 1;
 const EXTENSION_APPLICATION_RUNS_COLLECTION = 'extension_application_runs';
 const ACTIVE_APPLY_RUNS_STORAGE_KEY = 'taleos_apply_runs_by_tab';
 const STUCK_REPORT_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/report-stuck-automation';
+const SAVE_EXTENSION_RUN_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/saveExtensionApplicationRun';
 
 chrome.alarms.create('taleos-keepalive', { periodInMinutes: 4 });
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -218,14 +219,13 @@ function buildFirestoreFieldsFromObject(obj) {
 async function persistExtensionApplicationRun(run) {
   const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
   if (!taleosIdToken || !run?.runId) return false;
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${EXTENSION_APPLICATION_RUNS_COLLECTION}/${encodeURIComponent(run.runId)}`;
-  const res = await fetch(url, {
-    method: 'PATCH',
+  const res = await fetch(SAVE_EXTENSION_RUN_CF_URL, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${taleosIdToken}`
     },
-    body: JSON.stringify({ fields: buildFirestoreFieldsFromObject(run) })
+    body: JSON.stringify(run)
   });
   if (!res.ok) {
     console.error('[Taleos] Apply run save:', await res.text());

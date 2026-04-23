@@ -20,6 +20,19 @@ setGlobalOptions({ region: "europe-west1", maxInstances: 100 });
 const OUTLOOK_CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || "";
 const OUTLOOK_CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || "";
 const OUTLOOK_TOKEN_ENC_KEY = process.env.OUTLOOK_TOKEN_ENC_KEY || "";
+const EXTENSION_RUNS_ADMIN_EMAILS = new Set([
+  "thibault.giraudet@outlook.com",
+  "thibault.giraudet94@gmail.com",
+]);
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "3600",
+  };
+}
 
 function b64urlToBuffer(s) {
   const pad = 4 - (s.length % 4 || 4);
@@ -71,6 +84,10 @@ async function verifyBearerFirebaseUser(req) {
   } catch {
     throw new HttpsError("permission-denied", "Token Firebase invalide.");
   }
+}
+
+function jsonResponse(res, status, payload) {
+  return res.status(status).set(corsHeaders()).json(payload);
 }
 
 async function saveOutlookSecureDoc(uid, data) {
@@ -230,5 +247,55 @@ exports.outlookUnlinkSecure = onRequest(async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message || "Erreur outlookUnlinkSecure" });
+  }
+});
+
+exports.saveExtensionApplicationRun = onRequest(async (req, res) => {
+  try {
+    if (req.method === "OPTIONS") return res.status(204).set(corsHeaders()).send("");
+    if (req.method !== "POST") return jsonResponse(res, 405, { ok: false, error: "Method Not Allowed" });
+    const decoded = await verifyBearerFirebaseUser(req);
+    const run = req.body && typeof req.body === "object" ? req.body : {};
+    const runId = String(run.runId || "").trim();
+    if (!runId) return jsonResponse(res, 400, { ok: false, error: "runId requis" });
+
+    const admin = require("firebase-admin");
+    const db = admin.firestore();
+    const payload = {
+      ...run,
+      userId: String(run.userId || decoded.uid || "").trim(),
+      userEmail: String(run.userEmail || decoded.email || "").trim().toLowerCase(),
+      updatedAt: Date.now(),
+    };
+    await db.collection("extension_application_runs").doc(runId).set(payload, { merge: true });
+    return jsonResponse(res, 200, { ok: true, runId });
+  } catch (e) {
+    const code = e?.code === "permission-denied" || e?.code === "unauthenticated" ? 401 : 500;
+    return jsonResponse(res, code, { ok: false, error: e.message || "Erreur saveExtensionApplicationRun" });
+  }
+});
+
+exports.listExtensionApplicationRuns = onRequest(async (req, res) => {
+  try {
+    if (req.method === "OPTIONS") return res.status(204).set(corsHeaders()).send("");
+    if (req.method !== "GET" && req.method !== "POST") return jsonResponse(res, 405, { ok: false, error: "Method Not Allowed" });
+    const decoded = await verifyBearerFirebaseUser(req);
+    const email = String(decoded.email || "").trim().toLowerCase();
+    if (!EXTENSION_RUNS_ADMIN_EMAILS.has(email)) {
+      return jsonResponse(res, 403, { ok: false, error: "Accès non autorisé" });
+    }
+
+    const admin = require("firebase-admin");
+    const db = admin.firestore();
+    const snap = await db.collection("extension_application_runs")
+      .orderBy("startedAt", "desc")
+      .limit(200)
+      .get();
+
+    const runs = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return jsonResponse(res, 200, { ok: true, runs });
+  } catch (e) {
+    const code = e?.code === "permission-denied" || e?.code === "unauthenticated" ? 401 : 500;
+    return jsonResponse(res, code, { ok: false, error: e.message || "Erreur listExtensionApplicationRuns" });
   }
 });
