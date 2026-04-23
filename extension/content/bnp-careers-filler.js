@@ -5,7 +5,7 @@
   window.__taleosBnpFillerLoaded = true;
 
   const MAX_PENDING_AGE = 15 * 60 * 1000;
-  const REVIEW_SUBMIT_DELAY_MS = 30 * 1000;
+  const MANUAL_REVIEW_DELAY_MS = 30 * 1000;
   const blueprintApi = globalThis.__TALEOS_BNP_BLUEPRINT__ || null;
   let currentTabIdPromise = null;
 
@@ -487,8 +487,6 @@
       log('❌ Bouton Envoyer ma candidature introuvable');
       return;
     }
-    log('⏳ BNP → pause de 30 secondes avant soumission pour vérification manuelle');
-    await sleep(REVIEW_SUBMIT_DELAY_MS);
     log('📨 BNP → clic sur Envoyer ma candidature');
     next.click();
     await sleep(1500);
@@ -527,6 +525,8 @@
       await fillApplicationForm(profile);
       const next = qs(['button[name="next"]'], true) || qs(['button[name="next"]']);
       if (next) {
+        log('⏳ BNP → pause de 30 secondes sur Informations personnelles pour vérification manuelle');
+        await sleep(MANUAL_REVIEW_DELAY_MS);
         log('➡️ BNP → clic Continuer');
         next.click();
       }
