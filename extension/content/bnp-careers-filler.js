@@ -163,6 +163,11 @@
   function setSelectValue(selectors, valueOrText, label) {
     const el = qs(selectors, true) || qs(selectors, false);
     if (!el || valueOrText == null || valueOrText === '') return false;
+    return setSelectElementValue(el, valueOrText, label);
+  }
+
+  function setSelectElementValue(el, valueOrText, label) {
+    if (!el || valueOrText == null || valueOrText === '') return false;
     const target = String(valueOrText).trim();
     if (el.tagName === 'SELECT') {
       const options = Array.from(el.options || []);
@@ -187,6 +192,26 @@
     dispatchTextInput(el, target);
     log(`✅ ${label} → ${target}`);
     return true;
+  }
+
+  function findFieldContainerByLabel(labelText) {
+    const normalizedLabel = normalizeText(labelText);
+    if (!normalizedLabel) return null;
+    const labelNode = Array.from(document.querySelectorAll('label, legend, h1, h2, h3, h4, h5, strong, span, div, p'))
+      .find((el) => isVisible(el) && normalizeText(el.textContent || '') === normalizedLabel);
+    if (!labelNode) return null;
+    return labelNode.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12, .row, div') || labelNode.parentElement;
+  }
+
+  function findNativeSelectByNameOrLabel(name, labelText) {
+    const direct = qs([`select[name="${name}"]`], true) || qs([`select[name="${name}"]`]);
+    if (direct) return direct;
+    const fieldContainer = findFieldContainerByLabel(labelText);
+    if (!fieldContainer) return null;
+    const nested = fieldContainer.querySelector('select');
+    if (nested && isVisible(nested)) return nested;
+    const siblingSelect = fieldContainer.parentElement?.querySelector?.('select');
+    return siblingSelect && isVisible(siblingSelect) ? siblingSelect : null;
   }
 
   function mapBnpLanguageName(language) {
@@ -233,8 +258,16 @@
   }
 
   async function setAutocompleteSelectValue(name, targetText, label) {
+    if (!targetText) return false;
+    const nativeSelect = findNativeSelectByNameOrLabel(name, label);
+    if (nativeSelect) {
+      const directResult = setSelectElementValue(nativeSelect, targetText, label);
+      const selectedText = String(nativeSelect.options?.[nativeSelect.selectedIndex]?.textContent || '').replace(/×/g, '').trim();
+      if (directResult || normalizeText(selectedText) === normalizeText(targetText)) return directResult || true;
+    }
+
     const hiddenSelect = qs([`select[name="${name}"]`], false);
-    if (!hiddenSelect || !targetText) return false;
+    if (!hiddenSelect) return false;
 
     const selectedOption = hiddenSelect.options?.[hiddenSelect.selectedIndex];
     const selectedText = String(selectedOption?.textContent || '').replace(/×/g, '').trim();
@@ -256,7 +289,7 @@
       return true;
     }
 
-    const fieldSpec = hiddenSelect.closest('.fieldSpec');
+    const fieldSpec = hiddenSelect.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12');
     if (!fieldSpec) return false;
 
     const selection = fieldSpec.querySelector(
@@ -302,6 +335,12 @@
     const robustVisibleOption = option || findVisibleDropdownOptionByText(targetText, fieldSpec);
 
     if (!robustVisibleOption) {
+      const nearbyNativeSelect = fieldSpec.querySelector('select');
+      if (nearbyNativeSelect) {
+        const directFallback = setSelectElementValue(nearbyNativeSelect, targetText, label);
+        const fallbackSelectedText = String(nearbyNativeSelect.options?.[nearbyNativeSelect.selectedIndex]?.textContent || '').replace(/×/g, '').trim();
+        if (directFallback || normalizeText(fallbackSelectedText) === normalizedTarget) return directFallback || true;
+      }
       if (searchInput) {
         searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
         searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
@@ -328,6 +367,15 @@
     if (refreshedText && normalizeText(refreshedText) === normalizedTarget) {
       log(`✅ ${label} → ${refreshedText}`);
       return true;
+    }
+
+    const nearbyNativeSelect = fieldSpec.querySelector('select');
+    if (nearbyNativeSelect) {
+      const nativeSelectedText = String(nearbyNativeSelect.options?.[nearbyNativeSelect.selectedIndex]?.textContent || '').replace(/×/g, '').trim();
+      if (nativeSelectedText && normalizeText(nativeSelectedText) === normalizedTarget) {
+        log(`✅ ${label} → ${nativeSelectedText}`);
+        return true;
+      }
     }
 
     const rendered = fieldSpec?.querySelector('.select2-selection__rendered, .chosen-single span, [role="combobox"], input[type="text"]');

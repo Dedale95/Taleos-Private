@@ -71,6 +71,7 @@
   } else {
     scheduleSync();
   }
+  setTimeout(resumePendingApplyAfterReload, 1200);
   // Le DOM Connexions peut être re-rendu dynamiquement.
   const removeOutlookObserver = new MutationObserver(function () {
     removeOutlookConnectionsBlock();
@@ -82,6 +83,7 @@
     if (ev.persisted) {
       scheduleSync();
     }
+    setTimeout(resumePendingApplyAfterReload, 800);
   });
 
   let lastHealthCheck = 0;
@@ -97,6 +99,69 @@
     const msg = (err?.message || String(err)).toLowerCase();
     return /receiving end does not exist/i.test(msg);
   }
+  const PENDING_APPLY_INTENT_KEY = 'taleos_pending_apply_intent_v1';
+
+  function savePendingApplyIntent(intent) {
+    try {
+      sessionStorage.setItem(PENDING_APPLY_INTENT_KEY, JSON.stringify({
+        jobId: String(intent?.jobId || '').trim(),
+        jobTitle: String(intent?.jobTitle || '').trim(),
+        bankId: String(intent?.bankId || '').trim(),
+        jobUrl: String(intent?.jobUrl || '').trim(),
+        ts: Date.now(),
+        attempts: Number(intent?.attempts || 0)
+      }));
+    } catch (_) { }
+  }
+
+  function loadPendingApplyIntent() {
+    try {
+      const raw = sessionStorage.getItem(PENDING_APPLY_INTENT_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.jobId) return null;
+      if (Date.now() - Number(parsed.ts || 0) > 2 * 60 * 1000) {
+        sessionStorage.removeItem(PENDING_APPLY_INTENT_KEY);
+        return null;
+      }
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function clearPendingApplyIntent() {
+    try { sessionStorage.removeItem(PENDING_APPLY_INTENT_KEY); } catch (_) { }
+  }
+
+  function findApplyButtonForJobId(jobId) {
+    const normalized = String(jobId || '').trim();
+    if (!normalized) return null;
+    const direct = Array.from(document.querySelectorAll('.job-apply-btn, button[onclick*="applyToJob"]'))
+      .find((el) => String(el.getAttribute('onclick') || '').includes(normalized));
+    if (direct) return direct;
+    const cards = Array.from(document.querySelectorAll('.job-card'));
+    for (const card of cards) {
+      const cardJobId = String(card.querySelector('.job-id')?.textContent || '').trim();
+      if (cardJobId === normalized) {
+        return card.querySelector('.job-apply-btn, button[onclick*="applyToJob"]');
+      }
+    }
+    return null;
+  }
+
+  function reloadPageAndResumeApply(intent) {
+    const current = loadPendingApplyIntent();
+    const attempts = Number(current?.attempts || intent?.attempts || 0);
+    if (attempts >= 2) {
+      clearPendingApplyIntent();
+      showReloadToast();
+      return;
+    }
+    savePendingApplyIntent({ ...intent, attempts: attempts + 1 });
+    showReloadToast();
+  }
+
   function showReloadToast() {
     const toast = document.createElement('div');
     toast.textContent = 'Extension déconnectée. Rechargement de la page...';
@@ -107,6 +172,22 @@
     });
     document.body.appendChild(toast);
     setTimeout(function () { window.location.reload(); }, 2000);
+  }
+  async function resumePendingApplyAfterReload() {
+    const intent = loadPendingApplyIntent();
+    if (!intent) return;
+    if (!isExtensionValid()) return;
+    try {
+      await chrome.runtime.sendMessage({ action: 'ping' });
+    } catch (_) {
+      return;
+    }
+    const btn = findApplyButtonForJobId(intent.jobId);
+    if (!btn) return;
+    clearPendingApplyIntent();
+    setTimeout(function () {
+      try { btn.click(); } catch (_) { }
+    }, 500);
   }
   async function healthCheck() {
     if (Date.now() - lastHealthCheck < HEALTH_CHECK_INTERVAL) return;
@@ -338,7 +419,7 @@
     }
 
     if (!isExtensionValid()) {
-      showReloadToast();
+      reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
       return;
     }
 
@@ -359,7 +440,7 @@
     } catch (e) {
       console.warn('[Taleos] Ping extension en échec ou timeout:', e?.message || e);
       if (isContextInvalidated(e) || isReceivingEndMissing(e)) {
-        showReloadToast();
+        reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
         return;
       }
       // Sinon on tente quand même la suite.
@@ -380,7 +461,7 @@
       delete btn.dataset.taleosProcessing;
       btn.removeAttribute('data-taleos-processing');
       if (isContextInvalidated(err) || isReceivingEndMissing(err)) {
-        showReloadToast();
+        reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
         return;
       }
       showProfileIncompletePopup([], bankId);
@@ -450,17 +531,9 @@
     } catch (err) {
       const msg = (err?.message || String(err)).toLowerCase();
       const contextInvalidated = isContextInvalidated(err);
-      if (contextInvalidated) {
+      if (contextInvalidated || isReceivingEndMissing(err)) {
         clearProcessing(jobId, true);
-        const toast = document.createElement('div');
-        toast.textContent = 'Extension déconnectée. Rechargement de la page...';
-        Object.assign(toast.style, {
-          position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 2147483647,
-          background: '#dc2626', color: '#fff', padding: '12px 24px', borderRadius: '8px', fontSize: '14px',
-          fontFamily: 'sans-serif', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-        });
-        document.body.appendChild(toast);
-        setTimeout(function () { window.location.reload(); }, 2000);
+        reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
         return;
       }
       console.warn('[Taleos] Candidature — timeout ou erreur:', err?.message || err);
