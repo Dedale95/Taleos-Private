@@ -302,9 +302,9 @@
     if (question.key === 'experience') return mapExperience(profile);
     if (question.key === 'application_source' || question.key === 'candidate_source') return 'BNP Paribas website';
     if (question.key === 'data_sharing_scope') return mapBnpDataSharing(profile);
-    if (question.key === 'language_1') return mapBnpLanguageName(profile?.languages?.[0]?.language || '');
-    if (question.key === 'language_2') return mapBnpLanguageName(profile?.languages?.[1]?.language || '');
-    if (question.key === 'language_3') return mapBnpLanguageName(profile?.languages?.[2]?.language || '');
+    if (question.key === 'language_1') return mapBnpLanguageName(profile?.languages?.[0]?.language || profile?.languages?.[0]?.name || '');
+    if (question.key === 'language_2') return mapBnpLanguageName(profile?.languages?.[1]?.language || profile?.languages?.[1]?.name || '');
+    if (question.key === 'language_3') return mapBnpLanguageName(profile?.languages?.[2]?.language || profile?.languages?.[2]?.name || '');
     if (question.key === 'language_1_level') return mapBnpLanguageLevel(profile?.languages?.[0]?.level || '');
     if (question.key === 'language_2_level') return mapBnpLanguageLevel(profile?.languages?.[1]?.level || '');
     if (question.key === 'language_3_level') return mapBnpLanguageLevel(profile?.languages?.[2]?.level || '');

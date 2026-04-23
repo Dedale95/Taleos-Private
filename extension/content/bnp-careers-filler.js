@@ -390,7 +390,7 @@
     const languageTargets = ['1466', '1468', '1470'];
     const levelTargets = ['1467', '1469', '1471'];
     for (const [idx, lang] of languages.slice(0, 3).entries()) {
-      const languageName = mapBnpLanguageName(lang?.language || '');
+      const languageName = mapBnpLanguageName(lang?.language || lang?.name || '');
       const languageFieldName = languageTargets[idx];
       if (languageName && languageFieldName) {
         await setAutocompleteSelectValue(languageFieldName, languageName, `Langue ${idx + 1}`);
