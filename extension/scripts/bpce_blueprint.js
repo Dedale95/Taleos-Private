@@ -407,7 +407,8 @@
       hasEmailInput: !!queryVisible(doc, '#primary-email-0'),
       hasConsentCheckbox: !!queryVisible(doc, '.apply-flow-input-checkbox__button'),
       hasNextButton: !!queryVisible(doc, 'button[title="Suivant"]'),
-      hasPinInput: !!queryVisible(doc, '#pin-code-1')
+      hasPinInput: !!queryVisible(doc, '#pin-code-1'),
+      oracleFamily: detectOracleFamily(doc)
     };
   }
 
@@ -449,6 +450,7 @@
     return {
       kind: 'oracle_form_structure',
       ok: matchedCritical.length >= 1 && matchedHelpful.length >= 1,
+      oracleFamily: detectOracleFamily(doc),
       matchedCritical,
       missingCritical: criticalSelectors.filter((selector) => !matchedCritical.includes(selector)),
       matchedHelpful,
@@ -459,6 +461,37 @@
   function hasVisibleText(doc, rawText) {
     const text = getPageText(doc);
     return text.includes(normalizeText(rawText));
+  }
+
+  function detectOracleFamily(doc = document) {
+    const text = getPageText(doc);
+    if (text.includes('site carrieres natixis') || text.includes('bonjour, bienvenue sur notre site carrieres natixis')) {
+      return 'oracle_natixis_family';
+    }
+    return 'oracle_shared';
+  }
+
+  function detectLumesseSubtype(doc = document) {
+    const hasEducationTrack =
+      hasVisibleText(doc, 'etablissement d enseignement') ||
+      hasVisibleText(doc, 'niveau a l issue de votre alternance') ||
+      hasVisibleText(doc, 'niveau à l issue de votre alternance') ||
+      hasVisibleText(doc, 'duree du contrat d alternance') ||
+      hasVisibleText(doc, 'durée du contrat d alternance') ||
+      hasVisibleText(doc, 'rythme d alternance') ||
+      hasVisibleText(doc, 'rythme d alternance') ||
+      (hasVisibleText(doc, 'langue') && hasVisibleText(doc, 'niveaux de competence'));
+
+    if (hasEducationTrack) return 'lumesse_extended_education';
+
+    const hasQuestionnaire =
+      hasVisibleText(doc, 'sur quel site avez-vous consulte') ||
+      hasVisibleText(doc, 'sur quel site avez-vous consulté') ||
+      hasVisibleText(doc, 'autorisation de travailler en france') ||
+      hasVisibleText(doc, 'situation de handicap');
+
+    if (hasQuestionnaire) return 'lumesse_core_plus_questionnaire';
+    return 'lumesse_core';
   }
 
   function getOracleQuestionAudit(doc = document) {
@@ -571,6 +604,7 @@
     return {
       kind: 'lumesse_structure',
       ok: matched.length >= 4 && matchedHelpful.length >= 3,
+      lumesseSubtype: detectLumesseSubtype(doc),
       matched,
       missing: criticalSelectors.filter((selector) => !matched.includes(selector)),
       matchedHelpful,
@@ -579,6 +613,7 @@
   }
 
   function getLumesseQuestionAudit(doc = document) {
+    const subtype = detectLumesseSubtype(doc);
     const groups = {
       sections: [
         ['Informations Personnelles', () => hasVisibleText(doc, 'informations personnelles')],
@@ -610,6 +645,13 @@
       privacy: [
         ['Préférence email', () => !!queryVisible(doc, '#communication-preferences-channel-4\\:EMAIL') || !!doc.querySelector('#communication-preferences-channel-4\\:EMAIL')],
         ['Accord DPS', () => Array.from(doc.querySelectorAll('select[name="dps"]')).length >= 1]
+      ],
+      extendedEducation: [
+        ['Établissement alternance', () => hasVisibleText(doc, 'etablissement d enseignement') || hasVisibleText(doc, 'établissement d’enseignement')],
+        ['Niveau fin alternance', () => hasVisibleText(doc, 'niveau a l issue de votre alternance') || hasVisibleText(doc, 'niveau à l’issue de votre alternance')],
+        ['Durée alternance', () => hasVisibleText(doc, 'duree du contrat d alternance') || hasVisibleText(doc, 'durée du contrat d’alternance')],
+        ['Rythme alternance', () => hasVisibleText(doc, 'rythme d alternance') || hasVisibleText(doc, 'rythme d’alternance')],
+        ['Bloc langues', () => hasVisibleText(doc, 'langue') && hasVisibleText(doc, 'niveaux de competence')]
       ]
     };
 
@@ -628,6 +670,9 @@
         fields
       };
     }
+    result.meta = {
+      lumesseSubtype: subtype
+    };
     return result;
   }
 
@@ -713,6 +758,8 @@
     getSuccessStructureReport,
     getPageStructureReport,
     normalizeApplyUrl,
-    inferOfferVariant
+    inferOfferVariant,
+    detectOracleFamily,
+    detectLumesseSubtype
   };
 })();

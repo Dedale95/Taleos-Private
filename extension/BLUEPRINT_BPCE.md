@@ -12,6 +12,33 @@ Ce blueprint couvre les variantes BPCE actuellement reconnues par l'extension :
 - `success` : confirmation finale
 - `unavailable` : offre indisponible
 
+## Conclusion actuelle par entité
+
+Après inspection DOM/API sur des offres live, le bon découpage n'est pas `1 entité = 1 blueprint` mais :
+
+- `oracle_natixis_family` partagé :
+  - `Natixis`
+  - `AEW`
+  - `Mirova`
+  - `Ostrum`
+- `lumesse_shared` partagé :
+  - `BPCE SA`
+  - `BPCE Assurances IARD`
+  - `BPCE Lease`
+  - `Caisse d'Épargne`
+  - `Banque Populaire`
+  - `Crédit Coopératif`
+  - `Oney`
+  - `Banque Palatine`
+  - `Crédit Foncier`
+  - `Casden`
+
+Donc, à ce stade :
+
+- pas besoin d'un blueprint Oracle séparé pour `AEW`, `Mirova` ou `Ostrum`
+- pas besoin d'un blueprint Lumesse séparé pour chaque banque régionale
+- en revanche il faut distinguer des sous-types de questionnaire `Lumesse`
+
 ## Variante Natixis inspectée
 
 Offre réelle inspectée :
@@ -82,6 +109,28 @@ Questions / zones confirmées sur cette étape :
 
 Le blueprint embarque maintenant un audit `questionAudit` pour cette étape Oracle Natixis et le content script logge aussi `Questions oracle formulaire` dans le stockage local.
 
+## Oracle partagé : Natixis / AEW / Mirova / Ostrum
+
+Inspection live confirmée sur :
+
+- `Natixis`
+- `AEW`
+- `Mirova`
+- `Ostrum`
+
+Constat :
+
+- même domaine Oracle `ekez.fa.em2.oraclecloud.com`
+- même écran email
+- même wording `Bonjour, bienvenue sur notre site Carrières Natixis`
+- même consentement email / PIN
+
+Conclusion :
+
+- ces entités réutilisent aujourd'hui un même socle Oracle `Natixis-family`
+- le blueprint expose donc désormais `oracleFamily = oracle_natixis_family`
+- les futures différences devront être cherchées plutôt dans les questions du formulaire Oracle que dans la page email/PIN
+
 ## Variante BPCE Lease / Lumesse inspectée
 
 Offre réelle inspectée :
@@ -131,6 +180,63 @@ Le blueprint :
 - force explicitement les sélections `select[name="dps"]` pour la `Gestion des données personnelles`
 - tente ensuite la soumission automatique et attend la confirmation pour notifier Taleos
 
+## Lumesse partagé : entités comparées
+
+Inspection DOM live confirmée sur :
+
+- `BPCE SA`
+- `BPCE Assurances IARD`
+- `Caisse d'Épargne`
+- `Banque Populaire`
+- `Crédit Coopératif`
+- `Oney`
+- `Banque Palatine`
+- `Crédit Foncier`
+- `Casden`
+
+Constat :
+
+- même moteur `emea3.recruitmentplatform.com`
+- même bloc coeur :
+  - `Informations Personnelles`
+  - `CV`
+  - `Préférences de communication`
+  - `Gestion des données personnelles`
+- mêmes champs structurants :
+  - `Comment souhaitez-vous postuler ?`
+  - `Civilité`
+  - `Nom`
+  - `Prénom`
+  - `Adresse e-mail`
+  - `Téléphone`
+  - `Code Pays`
+  - `LinkedIn`
+  - `dps`
+
+Les différences observées sont surtout des micro-variantes de questionnaire :
+
+- `lumesse_core`
+  - seulement les champs coeur + CV
+- `lumesse_core_plus_questionnaire`
+  - ajoute par exemple :
+    - `Avez-vous l’autorisation de travailler en France ?`
+    - `Source candidature`
+    - parfois `handicap`
+    - parfois `motivation`
+- `lumesse_extended_education`
+  - ajoute des questions de type alternance / campus :
+    - `établissement d’enseignement`
+    - `niveau à l’issue de votre alternance`
+    - `durée du contrat`
+    - `rythme d’alternance`
+    - bloc `Langue / niveaux de compétence`
+
+Important :
+
+- cette variante riche n'est pas strictement liée à une entité
+- elle semble surtout dépendre du type d'offre / du questionnaire métier
+- donc on garde un blueprint Lumesse partagé avec détection de sous-type, au lieu d'un blueprint par marque
+
 ## Robustesse page offre BPCE
 
 Certaines pages `recrutement.bpce.fr/job/...` chargent d'abord un shell React vide avant l'hydratation, ce qui peut masquer temporairement :
@@ -151,6 +257,11 @@ Ce fallback permet de récupérer :
 - le vrai lien de candidature `postulate.link.url`
 
 Donc une page shell BPCE encore non hydratée n'est plus rejetée si l'API confirme l'offre et son lien de candidature.
+
+Le runtime `bpce_blueprint.js` remonte maintenant aussi :
+
+- `oracleFamily`
+- `lumesseSubtype`
 
 ## Logs stockage local
 
