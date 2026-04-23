@@ -288,6 +288,62 @@
     ].filter(Boolean).join(' ');
   }
 
+  function getSelect2SelectionElement(name) {
+    const rendered = document.getElementById(`select2-${name}-container`);
+    return rendered?.closest('.select2-selection') || document.querySelector(`.select2Container${name}`);
+  }
+
+  function getSelect2RenderedText(name) {
+    const rendered = document.getElementById(`select2-${name}-container`);
+    if (!rendered) return '';
+    return String(rendered.textContent || '').replace(/×/g, '').trim();
+  }
+
+  async function setSelect2Value(name, targetText, label) {
+    const selection = getSelect2SelectionElement(name);
+    if (!selection || !targetText) return false;
+    const normalizedTarget = normalizeText(targetText);
+    const renderedBefore = getSelect2RenderedText(name);
+    if (renderedBefore && normalizeText(renderedBefore) === normalizedTarget) {
+      log(`— ${label} déjà OK`);
+      return false;
+    }
+
+    selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    try { selection.click(); } catch (_) {}
+    await sleep(250);
+
+    const searchInput = document.querySelector('.select2-container--open .select2-search__field');
+    if (searchInput) {
+      dispatchTextInput(searchInput, targetText);
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', code: 'End', bubbles: true }));
+      searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', code: 'End', bubbles: true }));
+      await sleep(350);
+    }
+
+    const options = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
+      .filter((el) => isVisible(el));
+    const option = options.find((el) => normalizeText(el.textContent || '') === normalizedTarget)
+      || options.find((el) => normalizeText(el.textContent || '').includes(normalizedTarget));
+    if (!option) {
+      log(`⚠️ ${label} → option select2 introuvable pour « ${targetText} »`);
+      try { document.body.click(); } catch (_) {}
+      return false;
+    }
+
+    option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    try { option.click(); } catch (_) {}
+    await sleep(300);
+
+    const renderedAfter = getSelect2RenderedText(name);
+    if (renderedAfter && normalizeText(renderedAfter) === normalizedTarget) {
+      log(`✅ ${label} → ${renderedAfter}`);
+      return true;
+    }
+    log(`⚠️ ${label} → select2 non confirmé (${renderedAfter || 'vide'})`);
+    return false;
+  }
+
   function findNativeSelectByNameOrLabel(name, labelText) {
     const direct = qs([`select[name="${name}"]`], true);
     if (direct) return direct;
@@ -359,6 +415,12 @@
 
   async function setAutocompleteSelectValue(name, targetText, label) {
     if (!targetText) return false;
+    const hiddenSelect = qs([`select[name="${name}"]`], false);
+    if (hiddenSelect?.classList?.contains('select2-hidden-accessible')) {
+      log(`🔎 ${label} widget select2 → ${describeElement(hiddenSelect)}`);
+      return await setSelect2Value(name, targetText, label);
+    }
+
     const nativeSelect = findNativeSelectByNameOrLabel(name, label);
     log(`🔎 ${label} cible visible → ${describeElement(nativeSelect)}`);
     if (nativeSelect) {
@@ -366,8 +428,6 @@
       const selectedText = String(nativeSelect.options?.[nativeSelect.selectedIndex]?.textContent || '').replace(/×/g, '').trim();
       if (directResult || normalizeText(selectedText) === normalizeText(targetText)) return directResult || true;
     }
-
-    const hiddenSelect = qs([`select[name="${name}"]`], false);
     if (!hiddenSelect) return false;
 
     const selectedOption = hiddenSelect.options?.[hiddenSelect.selectedIndex];
