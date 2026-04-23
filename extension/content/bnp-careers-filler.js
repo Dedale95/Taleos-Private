@@ -250,15 +250,13 @@
     return directMap[raw] || String(language).trim();
   }
 
-  function getBnpAdditionalLanguages(profile) {
-    const preferred = mapBnpLanguageName(profile?.preferred_language || 'Français');
+  function getBnpOrderedLanguages(profile) {
     const seen = new Set();
     const base = Array.isArray(profile?.languages) ? profile.languages : [];
     const mapped = [];
     for (const lang of base) {
       const name = mapBnpLanguageName(lang?.language || lang?.name || '');
       if (!name) continue;
-      if (normalizeText(name) === normalizeText(preferred)) continue;
       const key = normalizeText(name);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -532,7 +530,8 @@
       'debutant': '36',
       'débutant': '36'
     };
-    const languages = getBnpAdditionalLanguages(profile);
+    const languages = getBnpOrderedLanguages(profile);
+    log(`🗣️ BNP langues ciblées → ${languages.slice(0, 3).map((lang) => `${lang.__mappedName || ''} (${lang.level || ''})`).join(' | ') || 'aucune'}`);
     const languageTargets = ['1466', '1468', '1470'];
     const levelTargets = ['1467', '1469', '1471'];
     for (const [idx, lang] of languages.slice(0, 3).entries()) {

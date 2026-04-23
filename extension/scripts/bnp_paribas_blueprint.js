@@ -281,15 +281,13 @@
     return directMap[raw] || String(language).trim();
   }
 
-  function getBnpAdditionalLanguages(profile) {
-    const preferred = mapBnpLanguageName(profile?.preferred_language || 'Français');
+  function getBnpOrderedLanguages(profile) {
     const seen = new Set();
     const base = Array.isArray(profile?.languages) ? profile.languages : [];
     const mapped = [];
     for (const lang of base) {
       const name = mapBnpLanguageName(lang?.language || lang?.name || '');
       if (!name) continue;
-      if (normalizeText(name) === normalizeText(preferred)) continue;
       const key = normalizeText(name);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -309,7 +307,7 @@
   }
 
   function expectedValue(question, profile) {
-    const additionalLanguages = getBnpAdditionalLanguages(profile);
+    const orderedLanguages = getBnpOrderedLanguages(profile);
     if (question.expectedValue !== undefined) return question.expectedValue;
     if (question.profileKey) return profile?.[question.profileKey] || '';
     if (question.key === 'gender') return mapGender(profile);
@@ -320,12 +318,12 @@
     if (question.key === 'experience') return mapExperience(profile);
     if (question.key === 'application_source' || question.key === 'candidate_source') return 'BNP Paribas website';
     if (question.key === 'data_sharing_scope') return mapBnpDataSharing(profile);
-    if (question.key === 'language_1') return additionalLanguages[0]?.__mappedName || '';
-    if (question.key === 'language_2') return additionalLanguages[1]?.__mappedName || '';
-    if (question.key === 'language_3') return additionalLanguages[2]?.__mappedName || '';
-    if (question.key === 'language_1_level') return mapBnpLanguageLevel(additionalLanguages[0]?.level || '');
-    if (question.key === 'language_2_level') return mapBnpLanguageLevel(additionalLanguages[1]?.level || '');
-    if (question.key === 'language_3_level') return mapBnpLanguageLevel(additionalLanguages[2]?.level || '');
+    if (question.key === 'language_1') return orderedLanguages[0]?.__mappedName || '';
+    if (question.key === 'language_2') return orderedLanguages[1]?.__mappedName || '';
+    if (question.key === 'language_3') return orderedLanguages[2]?.__mappedName || '';
+    if (question.key === 'language_1_level') return mapBnpLanguageLevel(orderedLanguages[0]?.level || '');
+    if (question.key === 'language_2_level') return mapBnpLanguageLevel(orderedLanguages[1]?.level || '');
+    if (question.key === 'language_3_level') return mapBnpLanguageLevel(orderedLanguages[2]?.level || '');
     return '';
   }
 
