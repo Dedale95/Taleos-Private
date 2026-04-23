@@ -382,7 +382,6 @@
       return false;
     }
 
-    log(`🔎 ${label} select2 strict → fieldSpecContainer${name}`);
     selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     try { selection.click(); } catch (_) {}
     selection.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
@@ -399,8 +398,7 @@
       await sleep(250);
     }
 
-    const { option, lastOptions } = await waitForSelect2TargetOption(targetText);
-    log(`🔎 ${label} options détectées → ${lastOptions.length}${lastOptions.length ? ` [${lastOptions.slice(0, 4).join(' | ')}]` : ''}`);
+    const { option } = await waitForSelect2TargetOption(targetText);
     if (!option) {
       if (searchInput) {
         searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
@@ -524,12 +522,10 @@
     }
     const hiddenSelect = qs([`select[name="${name}"]`], false);
     if (hiddenSelect?.classList?.contains('select2-hidden-accessible')) {
-      log(`🔎 ${label} widget select2 → ${describeElement(hiddenSelect)}`);
       return await setSelect2Value(name, targetText, label);
     }
 
     const nativeSelect = findNativeSelectByNameOrLabel(name, label);
-    log(`🔎 ${label} cible visible → ${describeElement(nativeSelect)}`);
     if (nativeSelect) {
       const directResult = setSelectElementValue(nativeSelect, targetText, label);
       const selectedText = String(nativeSelect.options?.[nativeSelect.selectedIndex]?.textContent || '').replace(/×/g, '').trim();
@@ -782,7 +778,6 @@
       'débutant': '36'
     };
     const languages = getBnpOrderedLanguages(profile);
-    log(`🗣️ BNP langues ciblées → ${languages.slice(0, 3).map((lang) => `${lang.__mappedName || ''} (${lang.level || ''})`).join(' | ') || 'aucune'}`);
     const languageTargets = ['1466', '1468', '1470'];
     const levelTargets = ['1467', '1469', '1471'];
     for (const [idx, lang] of languages.slice(0, 3).entries()) {
