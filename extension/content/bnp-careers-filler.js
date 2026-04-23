@@ -218,7 +218,7 @@
   function findFieldContainerByLabel(labelText) {
     const labelNode = findLabelNode(labelText);
     if (!labelNode) return null;
-    return labelNode.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12, .row') || labelNode.parentElement;
+    return labelNode.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12') || labelNode.parentElement;
   }
 
   function findVisibleSelectNearLabel(labelText) {
@@ -231,9 +231,9 @@
       .map((el) => ({ el, rect: el.getBoundingClientRect?.() }))
       .filter(({ rect }) => rect && rect.width > 80 && rect.height > 20)
       .filter(({ rect }) =>
-        rect.top >= labelRect.bottom - 20 &&
-        rect.top <= labelRect.bottom + 260 &&
-        Math.abs(rect.left - labelRect.left) <= 180
+        rect.top >= labelRect.bottom - 12 &&
+        rect.top <= labelRect.bottom + 180 &&
+        Math.abs(rect.left - labelRect.left) <= 80
       )
       .sort((a, b) => {
         const da = Math.abs(a.rect.top - labelRect.bottom) + Math.abs(a.rect.left - labelRect.left);
@@ -241,6 +241,51 @@
         return da - db;
       });
     return candidates[0]?.el || null;
+  }
+
+  function findRenderedLanguageValueNearLabel(labelText) {
+    const labelNode = findLabelNode(labelText);
+    if (!labelNode) return '';
+    const labelRect = labelNode.getBoundingClientRect?.();
+    if (!labelRect) return '';
+    const candidates = [
+      '.select2-selection__rendered',
+      '.chosen-single span',
+      '.chosen-container .chosen-single',
+      '[role="combobox"]',
+      'input[type="text"]'
+    ];
+    for (const selector of candidates) {
+      const el = Array.from(document.querySelectorAll(selector))
+        .filter((node) => isVisible(node))
+        .map((node) => ({ node, rect: node.getBoundingClientRect?.() }))
+        .filter(({ rect }) =>
+          rect &&
+          rect.top >= labelRect.bottom - 12 &&
+          rect.top <= labelRect.bottom + 180 &&
+          Math.abs(rect.left - labelRect.left) <= 120
+        )
+        .sort((a, b) => {
+          const da = Math.abs(a.rect.top - labelRect.bottom) + Math.abs(a.rect.left - labelRect.left);
+          const db = Math.abs(b.rect.top - labelRect.bottom) + Math.abs(b.rect.left - labelRect.left);
+          return da - db;
+        })[0]?.node;
+      if (!el) continue;
+      const text = String(el.textContent || el.value || '').replace(/×/g, '').trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function describeElement(el) {
+    if (!el) return 'none';
+    const rect = el.getBoundingClientRect?.();
+    return [
+      el.tagName?.toLowerCase?.() || 'unknown',
+      el.getAttribute?.('name') ? `name=${el.getAttribute('name')}` : '',
+      el.id ? `id=${el.id}` : '',
+      rect ? `top=${Math.round(rect.top)} left=${Math.round(rect.left)}` : ''
+    ].filter(Boolean).join(' ');
   }
 
   function findNativeSelectByNameOrLabel(name, labelText) {
@@ -315,6 +360,7 @@
   async function setAutocompleteSelectValue(name, targetText, label) {
     if (!targetText) return false;
     const nativeSelect = findNativeSelectByNameOrLabel(name, label);
+    log(`🔎 ${label} cible visible → ${describeElement(nativeSelect)}`);
     if (nativeSelect) {
       const directResult = setSelectElementValue(nativeSelect, targetText, label);
       const selectedText = String(nativeSelect.options?.[nativeSelect.selectedIndex]?.textContent || '').replace(/×/g, '').trim();
@@ -340,15 +386,23 @@
       hiddenSelect.value = hiddenOption.value;
       hiddenSelect.dispatchEvent(new Event('input', { bubbles: true }));
       hiddenSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      hiddenSelect.dispatchEvent(new Event('chosen:updated', { bubbles: true }));
+      hiddenSelect.dispatchEvent(new Event('change.select2', { bubbles: true }));
+      await sleep(150);
       const visibleSelectAfterHidden = findVisibleSelectNearLabel(label);
       if (visibleSelectAfterHidden) {
         const mirrored = setSelectElementValue(visibleSelectAfterHidden, targetText, label);
         const visibleText = String(visibleSelectAfterHidden.options?.[visibleSelectAfterHidden.selectedIndex]?.textContent || '').trim();
         if (mirrored || normalizeText(visibleText) === normalizedTarget) return mirrored || true;
       }
+      const renderedTextAfterHidden = findRenderedLanguageValueNearLabel(label);
+      if (renderedTextAfterHidden && normalizeText(renderedTextAfterHidden) === normalizedTarget) {
+        log(`✅ ${label} → ${renderedTextAfterHidden}`);
+        return true;
+      }
     }
 
-    const fieldSpec = hiddenSelect.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12');
+    const fieldSpec = findFieldContainerByLabel(label) || hiddenSelect.closest('.fieldSpec, .form-group, .field, .question, .col-md-6, .col-md-12');
     if (!fieldSpec) return false;
 
     const selection = fieldSpec.querySelector(
