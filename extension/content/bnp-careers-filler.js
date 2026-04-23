@@ -353,18 +353,48 @@
     log(`🔎 ${label} select2 strict → fieldSpecContainer${name}`);
     selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     try { selection.click(); } catch (_) {}
+    selection.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+    selection.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
     await sleep(250);
 
-    const searchInput = document.querySelector('.select2-container--open .select2-search__field');
+    const searchInput = document.querySelector('.select2-container--open .select2-search__field')
+      || document.querySelector('.select2-search__field');
     if (searchInput) {
       await typeIntoSelect2Search(searchInput, targetText);
+    } else {
+      selection.dispatchEvent(new KeyboardEvent('keydown', { key: targetText[0] || 'A', bubbles: true }));
+      selection.dispatchEvent(new KeyboardEvent('keyup', { key: targetText[0] || 'A', bubbles: true }));
+      await sleep(250);
     }
 
-    const options = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
+    const options = Array.from(document.querySelectorAll(
+      '.select2-container--open .select2-results__option, .select2-results__option, .select2-results li, [role="option"], [role="treeitem"]'
+    ))
       .filter((el) => isVisible(el) && !normalizeText(el.textContent || '').includes('selectionner une option') && !normalizeText(el.textContent || '').includes('sélectionner une option'));
+    log(`🔎 ${label} options détectées → ${options.length}`);
     const option = options.find((el) => normalizeText(el.textContent || '') === normalizedTarget)
       || options.find((el) => normalizeText(el.textContent || '').includes(normalizedTarget));
     if (!option) {
+      if (searchInput) {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+        await sleep(120);
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+        await sleep(400);
+        const afterKeyboardState = getSelect2State(name);
+        if (
+          afterKeyboardState.renderedText &&
+          normalizeText(afterKeyboardState.renderedText) === normalizedTarget &&
+          (
+            !afterKeyboardState.hiddenSelectedText ||
+            normalizeText(afterKeyboardState.hiddenSelectedText) === normalizedTarget
+          )
+        ) {
+          log(`✅ ${label} → ${afterKeyboardState.renderedText}`);
+          return true;
+        }
+      }
       log(`⚠️ ${label} → option select2 introuvable pour « ${targetText} »`);
       try { document.body.click(); } catch (_) {}
       return false;
