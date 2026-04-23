@@ -158,6 +158,15 @@ function buildApplyRunId(bankId, jobId) {
   return `${bank}_${job}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeRunLogEntry(entry) {
+  const ts = entry?.ts || nowIso();
+  const source = sanitizeRunText(entry?.source || 'extension', 80);
+  const level = sanitizeRunText(entry?.level || 'info', 20).toLowerCase();
+  const message = sanitizeRunText(entry?.message || '', 500);
+  if (!message) return null;
+  return { ts, source, level, message };
+}
+
 async function getActiveApplyRuns() {
   try {
     const out = await chrome.storage.local.get([ACTIVE_APPLY_RUNS_STORAGE_KEY]);
@@ -341,6 +350,29 @@ async function markTimedOutApplyRun(tabId, details = {}) {
   await persistExtensionApplicationRun(run);
   activeRuns[tabKey] = run;
   await setActiveApplyRuns(activeRuns);
+  return run;
+}
+
+async function appendApplyRunLogForTab(tabId, entry) {
+  const tabKey = String(tabId || '');
+  if (!tabKey) return null;
+  const activeRuns = await getActiveApplyRuns();
+  const run = activeRuns[tabKey];
+  if (!run) return null;
+  const normalized = normalizeRunLogEntry(entry);
+  if (!normalized) return run;
+  const existing = Array.isArray(run.recentLogs) ? run.recentLogs : [];
+  run.recentLogs = [...existing, normalized].slice(-25);
+  run.lastLogAt = normalized.ts;
+  run.lastLogMessage = normalized.message;
+  activeRuns[tabKey] = run;
+  await setActiveApplyRuns(activeRuns);
+  await persistExtensionApplicationRun({
+    runId: run.runId,
+    recentLogs: run.recentLogs,
+    lastLogAt: run.lastLogAt,
+    lastLogMessage: run.lastLogMessage
+  });
   return run;
 }
 
@@ -1363,6 +1395,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else {
         notifyTaleosCandidatureFailure(msg).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
       }
+    })();
+    return true;
+  }
+  if (msg.action === 'extension_run_log') {
+    (async () => {
+      const tabId = msg.tabId || sender.tab?.id;
+      await appendApplyRunLogForTab(tabId, {
+        ts: msg.ts || nowIso(),
+        source: msg.source || sender.tab?.url || 'extension',
+        level: msg.level || 'info',
+        message: msg.message || ''
+      }).catch(() => null);
+      sendResponse({ ok: true });
     })();
     return true;
   }

@@ -11,6 +11,18 @@
   let currentTabIdPromise = null;
   try { chrome.storage.local.set({ taleos_bpce_script_ping: { script: 'bpce-careers-filler.js', url: location.href, at: new Date().toISOString() } }); } catch (_) {}
 
+  function reportRunLog(message) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'bpce-careers-filler',
+        level: 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   async function getCurrentTabId() {
     if (!currentTabIdPromise) {
       currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
@@ -23,7 +35,9 @@
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {
     const prefix = stepNum != null ? STEP(stepNum, '') : '';
-    console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BPCE] ${prefix}${msg}`);
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BPCE] ${prefix}${msg}`;
+    console.log(line);
+    reportRunLog(line);
   }
   const bpceBlueprint = globalThis.__TALEOS_BPCE_BLUEPRINT__ || null;
 

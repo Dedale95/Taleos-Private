@@ -23,10 +23,24 @@
   const SITE_DELOITTE_CAREERS = 'Site Deloitte Careers';
   let currentTabIdPromise = null;
 
+  function reportRunLog(message) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'deloitte-careers-filler',
+        level: 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {
     const prefix = stepNum != null ? STEP(stepNum, '') : '';
-    console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Deloitte] ${prefix}${msg}`);
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Deloitte] ${prefix}${msg}`;
+    console.log(line);
+    reportRunLog(line);
   }
 
   const blueprintApi = globalThis.__TALEOS_DELOITTE_BLUEPRINT__ || null;

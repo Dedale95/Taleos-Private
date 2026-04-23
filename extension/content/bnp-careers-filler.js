@@ -9,8 +9,22 @@
   const blueprintApi = globalThis.__TALEOS_BNP_BLUEPRINT__ || null;
   let currentTabIdPromise = null;
 
+  function reportRunLog(message) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'bnp-careers-filler',
+        level: 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function log(msg) {
-    console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BNP] ${msg}`);
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BNP] ${msg}`;
+    console.log(line);
+    reportRunLog(line);
   }
 
   async function getCurrentTabId() {

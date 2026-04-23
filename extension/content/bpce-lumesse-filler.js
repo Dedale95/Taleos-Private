@@ -20,6 +20,18 @@
   let lastPingPhase = "";
   let currentTabIdPromise = null;
 
+  function reportRunLog(message) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'bpce-lumesse-filler',
+        level: 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   async function getCurrentTabId() {
     if (!currentTabIdPromise) {
       currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
@@ -110,7 +122,9 @@
   // 2) Utilitaires DOM
   // =========================
   function log(msg) {
-    console.log(`[BPCE Lumesse] ${msg}`);
+    const line = `[BPCE Lumesse] ${msg}`;
+    console.log(line);
+    reportRunLog(line);
   }
 
   setPing("loaded", isTop ? "frame principale" : "iframe");

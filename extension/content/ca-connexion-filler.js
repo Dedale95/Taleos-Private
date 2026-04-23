@@ -153,8 +153,22 @@
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const MAX_PENDING_AGE = 2 * 60 * 1000;
 
+  function reportRunLog(message) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'ca-connexion-filler',
+        level: 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function log(msg) {
-    console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos CA Connexion] ${msg}`);
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos CA Connexion] ${msg}`;
+    console.log(line);
+    reportRunLog(line);
   }
 
   async function snapshot(tag, extra = {}) {
