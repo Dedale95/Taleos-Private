@@ -345,6 +345,15 @@
       return String(el.value || '').trim();
     }
     if (question.type === 'dynamic_optional') {
+      const directSelect = queryAny(doc, question.selectors);
+      const selectName = directSelect?.getAttribute?.('name') || '';
+      if (selectName && /^14(66|68|70)$/.test(selectName)) {
+        const rendered = doc.getElementById(`select2-${selectName}-container`);
+        const renderedText = String(rendered?.textContent || '').replace(/×/g, '').trim();
+        if (renderedText && normalizeText(renderedText) !== normalizeText('Sélectionner une option')) {
+          return renderedText;
+        }
+      }
       if (el.tagName === 'SELECT') {
         const option = el.options?.[el.selectedIndex];
         const optionText = String(option?.textContent || '').replace(/×/g, '').trim();

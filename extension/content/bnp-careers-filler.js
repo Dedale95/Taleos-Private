@@ -289,8 +289,10 @@
   }
 
   function getSelect2SelectionElement(name) {
-    const rendered = document.getElementById(`select2-${name}-container`);
-    return rendered?.closest('.select2-selection') || document.querySelector(`.select2Container${name}`);
+    const fieldSpec = document.getElementById(`fieldSpecContainer${name}`);
+    return fieldSpec?.querySelector('.select2-selection')
+      || document.getElementById(`select2-${name}-container`)?.closest('.select2-selection')
+      || document.querySelector(`.select2Container${name}`);
   }
 
   function getSelect2RenderedText(name) {
@@ -299,30 +301,67 @@
     return String(rendered.textContent || '').replace(/×/g, '').trim();
   }
 
+  function getSelect2State(name) {
+    const hiddenSelect = document.querySelector(`select[name="${name}"]`);
+    const selectedOption = hiddenSelect?.options?.[hiddenSelect.selectedIndex];
+    return {
+      renderedText: getSelect2RenderedText(name),
+      hiddenValue: String(hiddenSelect?.value || '').trim(),
+      hiddenSelectedText: String(selectedOption?.textContent || '').replace(/×/g, '').trim()
+    };
+  }
+
+  function clearInputValue(el) {
+    if (!el) return;
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc?.set) desc.set.call(el, '');
+    else el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  async function typeIntoSelect2Search(el, value) {
+    if (!el) return;
+    clearInputValue(el);
+    el.focus();
+    for (const ch of String(value || '')) {
+      const next = String(el.value || '') + ch;
+      const proto = HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc?.set) desc.set.call(el, next);
+      else el.value = next;
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+      await sleep(30);
+    }
+    await sleep(250);
+  }
+
   async function setSelect2Value(name, targetText, label) {
     const selection = getSelect2SelectionElement(name);
-    if (!selection || !targetText) return false;
+    const fieldSpec = document.getElementById(`fieldSpecContainer${name}`);
+    if (!selection || !targetText || !fieldSpec) return false;
     const normalizedTarget = normalizeText(targetText);
-    const renderedBefore = getSelect2RenderedText(name);
-    if (renderedBefore && normalizeText(renderedBefore) === normalizedTarget) {
+    const beforeState = getSelect2State(name);
+    if (beforeState.renderedText && normalizeText(beforeState.renderedText) === normalizedTarget) {
       log(`— ${label} déjà OK`);
       return false;
     }
 
+    log(`🔎 ${label} select2 strict → fieldSpecContainer${name}`);
     selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     try { selection.click(); } catch (_) {}
     await sleep(250);
 
     const searchInput = document.querySelector('.select2-container--open .select2-search__field');
     if (searchInput) {
-      dispatchTextInput(searchInput, targetText);
-      searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', code: 'End', bubbles: true }));
-      searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', code: 'End', bubbles: true }));
-      await sleep(350);
+      await typeIntoSelect2Search(searchInput, targetText);
     }
 
     const options = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
-      .filter((el) => isVisible(el));
+      .filter((el) => isVisible(el) && !normalizeText(el.textContent || '').includes('selectionner une option') && !normalizeText(el.textContent || '').includes('sélectionner une option'));
     const option = options.find((el) => normalizeText(el.textContent || '') === normalizedTarget)
       || options.find((el) => normalizeText(el.textContent || '').includes(normalizedTarget));
     if (!option) {
@@ -332,15 +371,23 @@
     }
 
     option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     try { option.click(); } catch (_) {}
-    await sleep(300);
+    await sleep(450);
 
-    const renderedAfter = getSelect2RenderedText(name);
-    if (renderedAfter && normalizeText(renderedAfter) === normalizedTarget) {
-      log(`✅ ${label} → ${renderedAfter}`);
+    const afterState = getSelect2State(name);
+    if (
+      afterState.renderedText &&
+      normalizeText(afterState.renderedText) === normalizedTarget &&
+      (
+        !afterState.hiddenSelectedText ||
+        normalizeText(afterState.hiddenSelectedText) === normalizedTarget
+      )
+    ) {
+      log(`✅ ${label} → ${afterState.renderedText}`);
       return true;
     }
-    log(`⚠️ ${label} → select2 non confirmé (${renderedAfter || 'vide'})`);
+    log(`⚠️ ${label} → select2 non confirmé (rendered=${afterState.renderedText || 'vide'} / hidden=${afterState.hiddenSelectedText || afterState.hiddenValue || 'vide'})`);
     return false;
   }
 
@@ -415,6 +462,9 @@
 
   async function setAutocompleteSelectValue(name, targetText, label) {
     if (!targetText) return false;
+    if (['1466', '1468', '1470'].includes(String(name))) {
+      return await setSelect2Value(name, targetText, label);
+    }
     const hiddenSelect = qs([`select[name="${name}"]`], false);
     if (hiddenSelect?.classList?.contains('select2-hidden-accessible')) {
       log(`🔎 ${label} widget select2 → ${describeElement(hiddenSelect)}`);

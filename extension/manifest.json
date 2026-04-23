@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.84",
-  "version_name": "1.1.84-bnp-select2-language-fix",
+  "version": "1.1.85",
+  "version_name": "1.1.85-bnp-language-select2-strict",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
