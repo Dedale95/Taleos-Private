@@ -291,6 +291,11 @@ async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
     run.lastSignal = 'failed';
     if (details.failureType) run.lateFailureType = sanitizeRunText(details.failureType, 80);
     if (details.failureMessage) run.lateFailureMessage = sanitizeRunText(details.failureMessage, 500);
+  } else if (alreadyTimedOut && terminal === 'aborted') {
+    run.lateFailureAt = finishedAt;
+    run.lastSignal = 'aborted';
+    if (details.failureType) run.lateFailureType = sanitizeRunText(details.failureType, 80);
+    if (details.failureMessage) run.lateFailureMessage = sanitizeRunText(details.failureMessage, 500);
   } else {
     run.status = terminal;
     run.outcome = terminal;
@@ -299,6 +304,10 @@ async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
     run.lastSignal = terminal;
     if (terminal === 'success') {
       run.successAt = finishedAt;
+    } else if (terminal === 'aborted') {
+      run.abortedAt = finishedAt;
+      run.failureType = sanitizeRunText(details.failureType || 'user_closed_tab', 80);
+      run.failureMessage = sanitizeRunText(details.failureMessage || 'L’utilisateur a fermé l’onglet avant la fin de la candidature.', 500);
     } else {
       run.failedAt = finishedAt;
       run.failureType = sanitizeRunText(details.failureType || 'failure', 80);
@@ -699,9 +708,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   try {
     const activeRuns = await getActiveApplyRuns();
     if (activeRuns[String(tabId)]) {
-      delete activeRuns[String(tabId)];
-      await setActiveApplyRuns(activeRuns);
-      await clearApplyStuckWatchdog();
+      await finalizeApplyRunForTab(tabId, 'aborted', {
+        failureType: 'user_closed_tab',
+        failureMessage: 'L’utilisateur a fermé l’onglet de candidature avant le succès.'
+      }).catch(() => null);
     }
     const state = await chrome.storage.local.get([
       'taleos_sg_tab_id',
