@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.80",
-  "version_name": "1.1.80-bnp-blueprint-runtime",
+  "version": "1.1.81",
+  "version_name": "1.1.81-test-dashboard",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

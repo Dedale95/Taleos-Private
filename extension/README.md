@@ -35,6 +35,12 @@ extension/
 
 Le bouton recharge l'extension sans passer par `chrome://extensions`.
 
+## Canal de test
+
+- Chaque push qui touche `extension/` déclenche le workflow GitHub `Package Extension Test Build`.
+- Le workflow publie un artifact zip `taleos-extension-<version>.zip` réutilisable pour un envoi rapide en canal test.
+- Pour de vraies mises à jour automatiques chez des testeurs Chrome sur macOS / Windows, privilégier un déploiement **Chrome Web Store non répertorié** plutôt qu’une extension unpacked locale.
+
 **Option : rechargement automatique**  
 Installez [Extensions Reloader](https://chrome.google.com/webstore/detail/extensions-reloader/fimgfedafeadlieiabdeeaodndnlbhid) et configurez-le pour surveiller le dossier `extension/`. L'extension se rechargera à chaque modification de fichier.
 

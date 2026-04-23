@@ -3,8 +3,12 @@
  * Orchestre : ouverture onglet, récupération profil Firestore, injection du script banque
  */
 
-/** Après 2 min, si une candidature est encore « en cours », capture + rapport (Firestore + e-mail contact@taleos.co via Cloud Function). */
-const APPLY_STUCK_ALARM = 'taleos_apply_stuck_2min';
+/** Watchdog des candidatures : timeout produit à 5 min + capture diagnostic. */
+const APPLY_STUCK_ALARM = 'taleos_apply_watchdog_1min';
+const APPLY_TIMEOUT_MINUTES = 5;
+const APPLY_WATCHDOG_PERIOD_MINUTES = 1;
+const EXTENSION_APPLICATION_RUNS_COLLECTION = 'extension_application_runs';
+const ACTIVE_APPLY_RUNS_STORAGE_KEY = 'taleos_apply_runs_by_tab';
 const STUCK_REPORT_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/report-stuck-automation';
 
 chrome.alarms.create('taleos-keepalive', { periodInMinutes: 4 });
@@ -110,11 +114,10 @@ const caLastInject = new Map();
 
 async function scheduleApplyStuckWatchdog() {
   try {
-    const { taleosUserId } = await chrome.storage.local.get(['taleosUserId']);
-    if (!taleosUserId) return;
-    await chrome.storage.local.remove('taleos_stuck_report_sent');
+    const { [ACTIVE_APPLY_RUNS_STORAGE_KEY]: activeRuns = {} } = await chrome.storage.local.get([ACTIVE_APPLY_RUNS_STORAGE_KEY]);
+    if (!activeRuns || Object.keys(activeRuns).length === 0) return;
     await chrome.alarms.clear(APPLY_STUCK_ALARM);
-    await chrome.alarms.create(APPLY_STUCK_ALARM, { delayInMinutes: 2 });
+    await chrome.alarms.create(APPLY_STUCK_ALARM, { periodInMinutes: APPLY_WATCHDOG_PERIOD_MINUTES });
   } catch (e) {
     console.error('[Taleos] scheduleApplyStuckWatchdog:', e);
   }
@@ -122,8 +125,214 @@ async function scheduleApplyStuckWatchdog() {
 
 async function clearApplyStuckWatchdog() {
   try {
-    await chrome.alarms.clear(APPLY_STUCK_ALARM);
+    const { [ACTIVE_APPLY_RUNS_STORAGE_KEY]: activeRuns = {} } = await chrome.storage.local.get([ACTIVE_APPLY_RUNS_STORAGE_KEY]);
+    if (!activeRuns || Object.keys(activeRuns).length === 0) {
+      await chrome.alarms.clear(APPLY_STUCK_ALARM);
+    }
   } catch (_) {}
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function addMinutes(dateLike, minutes) {
+  return new Date(new Date(dateLike).getTime() + minutes * 60 * 1000).toISOString();
+}
+
+function sanitizeRunText(value, max = 500) {
+  return String(value || '').trim().slice(0, max);
+}
+
+function computeDurationSeconds(startedAt, endedAt) {
+  const startMs = Date.parse(startedAt || '') || 0;
+  const endMs = Date.parse(endedAt || '') || 0;
+  if (!startMs || !endMs || endMs < startMs) return 0;
+  return Math.round((endMs - startMs) / 1000);
+}
+
+function buildApplyRunId(bankId, jobId) {
+  const bank = String(bankId || 'unknown').toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+  const job = String(jobId || 'unknown').trim().replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 80) || 'unknown';
+  return `${bank}_${job}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function getActiveApplyRuns() {
+  try {
+    const out = await chrome.storage.local.get([ACTIVE_APPLY_RUNS_STORAGE_KEY]);
+    return out[ACTIVE_APPLY_RUNS_STORAGE_KEY] || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+async function setActiveApplyRuns(activeRuns) {
+  await chrome.storage.local.set({ [ACTIVE_APPLY_RUNS_STORAGE_KEY]: activeRuns || {} });
+}
+
+function buildFirestoreFieldsFromObject(obj) {
+  const fields = {};
+  for (const [key, value] of Object.entries(obj || {})) {
+    if (value === undefined) continue;
+    if (value === null) {
+      fields[key] = { nullValue: null };
+      continue;
+    }
+    if (typeof value === 'string') {
+      fields[key] = { stringValue: value };
+      continue;
+    }
+    if (typeof value === 'boolean') {
+      fields[key] = { booleanValue: value };
+      continue;
+    }
+    if (typeof value === 'number') {
+      if (Number.isFinite(value) && Number.isInteger(value)) fields[key] = { integerValue: String(value) };
+      else if (Number.isFinite(value)) fields[key] = { doubleValue: value };
+      continue;
+    }
+    if (Array.isArray(value)) {
+      fields[key] = {
+        arrayValue: {
+          values: value
+            .filter((item) => item !== undefined)
+            .map((item) => {
+              if (item === null) return { nullValue: null };
+              if (typeof item === 'string') return { stringValue: item };
+              if (typeof item === 'boolean') return { booleanValue: item };
+              if (typeof item === 'number') {
+                if (Number.isFinite(item) && Number.isInteger(item)) return { integerValue: String(item) };
+                if (Number.isFinite(item)) return { doubleValue: item };
+              }
+              return { stringValue: JSON.stringify(item) };
+            })
+        }
+      };
+      continue;
+    }
+    fields[key] = { stringValue: JSON.stringify(value) };
+  }
+  return fields;
+}
+
+async function persistExtensionApplicationRun(run) {
+  const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+  if (!taleosIdToken || !run?.runId) return false;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${EXTENSION_APPLICATION_RUNS_COLLECTION}/${encodeURIComponent(run.runId)}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${taleosIdToken}`
+    },
+    body: JSON.stringify({ fields: buildFirestoreFieldsFromObject(run) })
+  });
+  if (!res.ok) {
+    console.error('[Taleos] Apply run save:', await res.text());
+    return false;
+  }
+  return true;
+}
+
+async function registerApplyRunForTab(tabId, payload) {
+  const { taleosUserId, taleosUserEmail } = await chrome.storage.local.get(['taleosUserId', 'taleosUserEmail']);
+  const extVer = getExtensionVersionForGa4();
+  const startedAt = nowIso();
+  const run = {
+    runId: buildApplyRunId(payload?.bankId, payload?.jobId),
+    startedAt,
+    deadlineAt: addMinutes(startedAt, APPLY_TIMEOUT_MINUTES),
+    status: 'running',
+    outcome: 'running',
+    timedOut: false,
+    userId: sanitizeRunText(taleosUserId, 120),
+    userEmail: sanitizeRunText(taleosUserEmail, 200),
+    bankId: sanitizeRunText(payload?.bankId, 80),
+    companyName: sanitizeRunText(payload?.companyName, 200),
+    jobId: sanitizeRunText(payload?.jobId, 200),
+    jobTitle: sanitizeRunText(payload?.jobTitle, 300),
+    offerUrl: sanitizeRunText(payload?.offerUrl, 1200),
+    location: sanitizeRunText(payload?.location, 200),
+    contractType: sanitizeRunText(payload?.contractType, 120),
+    experienceLevel: sanitizeRunText(payload?.experienceLevel, 120),
+    jobFamily: sanitizeRunText(payload?.jobFamily, 160),
+    publicationDate: sanitizeRunText(payload?.publicationDate, 120),
+    routeAs: sanitizeRunText(payload?.routeAs, 40),
+    routingSource: sanitizeRunText(payload?.routingSource, 40),
+    automationSource: sanitizeRunText(payload?.automationSource, 40),
+    extensionVersion: extVer.extension_version,
+    extensionVersionName: extVer.extension_version_name,
+    taleosTabId: payload?.taleosTabId ?? null,
+    careersTabId: tabId ?? null
+  };
+  const activeRuns = await getActiveApplyRuns();
+  activeRuns[String(tabId)] = run;
+  await setActiveApplyRuns(activeRuns);
+  await persistExtensionApplicationRun(run);
+  await scheduleApplyStuckWatchdog();
+  return run;
+}
+
+async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
+  const tabKey = String(tabId || '');
+  if (!tabKey) return null;
+  const activeRuns = await getActiveApplyRuns();
+  const run = activeRuns[tabKey];
+  if (!run) return null;
+
+  const finishedAt = nowIso();
+  const alreadyTimedOut = run.outcome === 'timeout' || run.timedOut === true;
+
+  if (alreadyTimedOut && terminal === 'success') {
+    run.lateSuccessAt = finishedAt;
+    run.lastSignal = 'success';
+  } else if (alreadyTimedOut && terminal === 'failed') {
+    run.lateFailureAt = finishedAt;
+    run.lastSignal = 'failed';
+    if (details.failureType) run.lateFailureType = sanitizeRunText(details.failureType, 80);
+    if (details.failureMessage) run.lateFailureMessage = sanitizeRunText(details.failureMessage, 500);
+  } else {
+    run.status = terminal;
+    run.outcome = terminal;
+    run.completedAt = finishedAt;
+    run.durationSeconds = computeDurationSeconds(run.startedAt, finishedAt);
+    run.lastSignal = terminal;
+    if (terminal === 'success') {
+      run.successAt = finishedAt;
+    } else {
+      run.failedAt = finishedAt;
+      run.failureType = sanitizeRunText(details.failureType || 'failure', 80);
+      run.failureMessage = sanitizeRunText(details.failureMessage || '', 500);
+    }
+  }
+
+  await persistExtensionApplicationRun(run);
+  delete activeRuns[tabKey];
+  await setActiveApplyRuns(activeRuns);
+  await clearApplyStuckWatchdog();
+  return run;
+}
+
+async function markTimedOutApplyRun(tabId, details = {}) {
+  const tabKey = String(tabId || '');
+  if (!tabKey) return null;
+  const activeRuns = await getActiveApplyRuns();
+  const run = activeRuns[tabKey];
+  if (!run || run.outcome === 'timeout') return run || null;
+
+  const timedOutAt = nowIso();
+  run.status = 'timeout';
+  run.outcome = 'timeout';
+  run.timedOut = true;
+  run.timedOutAt = timedOutAt;
+  run.completedAt = timedOutAt;
+  run.durationSeconds = computeDurationSeconds(run.startedAt, timedOutAt);
+  run.failureType = sanitizeRunText(details.failureType || 'timeout', 80);
+  run.failureMessage = sanitizeRunText(details.failureMessage || 'La candidature n’a pas atteint l’état succès dans les 5 minutes.', 500);
+  await persistExtensionApplicationRun(run);
+  activeRuns[tabKey] = run;
+  await setActiveApplyRuns(activeRuns);
+  return run;
 }
 
 /**
@@ -288,106 +497,112 @@ async function sendStuckReportToCloudFunction(payload, idToken) {
 }
 
 async function handleApplyStuckAlarm() {
-  const pending = await chrome.storage.local.get([
-    'taleos_pending_sg',
-    'taleos_pending_offer',
-    'taleos_pending_deloitte',
-    'taleos_pending_bpce',
-    'taleos_pending_bnp'
-  ]);
-  const hasPending =
-    !!pending.taleos_pending_sg ||
-    !!pending.taleos_pending_offer ||
-    !!pending.taleos_pending_deloitte ||
-    !!pending.taleos_pending_bpce ||
-    !!pending.taleos_pending_bnp;
-  if (!hasPending) return;
-
-  const { taleosUserId, taleosIdToken, taleos_stuck_report_sent } = await chrome.storage.local.get([
-    'taleosUserId',
-    'taleosIdToken',
-    'taleos_stuck_report_sent'
-  ]);
-  if (!taleosUserId) return;
-
-  const meta = await resolveTabAndMetaForStuckReport();
-  if (!meta?.tabId) {
-    console.warn('[Taleos] Stuck watchdog : onglet candidature introuvable');
+  const activeRuns = await getActiveApplyRuns();
+  const entries = Object.entries(activeRuns || {});
+  if (!entries.length) {
+    await clearApplyStuckWatchdog();
     return;
   }
 
-  const pendingTs =
-    pending.taleos_pending_sg?.timestamp ||
-    pending.taleos_pending_offer?.timestamp ||
-    pending.taleos_pending_deloitte?.timestamp ||
-    pending.taleos_pending_bpce?.timestamp ||
-    pending.taleos_pending_bnp?.timestamp ||
-    '';
-  const dedupKey = `${meta.jobId || ''}|${meta.offerUrl || ''}|${pendingTs}`;
-  if (taleos_stuck_report_sent === dedupKey) return;
+  const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
+  const timeoutMs = APPLY_TIMEOUT_MINUTES * 60 * 1000;
 
-  let pageUrl = '';
-  let screenshotBase64 = '';
-  let prevActiveId = null;
-  try {
-    const cur = await chrome.tabs.query({ active: true, currentWindow: true });
-    prevActiveId = cur[0]?.id;
-    await chrome.tabs.update(meta.tabId, { active: true });
-    await new Promise((r) => setTimeout(r, 450));
-    const tab = await chrome.tabs.get(meta.tabId);
-    pageUrl = tab?.url || '';
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 52 });
-    screenshotBase64 = dataUrlToJpegBase64(dataUrl);
-  } catch (e) {
-    console.error('[Taleos] Capture écran stuck:', e);
-  } finally {
-    if (prevActiveId && prevActiveId !== meta.tabId) {
-      try {
-        await chrome.tabs.update(prevActiveId, { active: true });
-      } catch (_) {}
+  for (const [tabKey, run] of entries) {
+    if (!run || run.outcome === 'timeout') continue;
+    const startedMs = Date.parse(run.startedAt || '') || 0;
+    if (!startedMs || Date.now() - startedMs < timeoutMs) continue;
+
+    const meta = {
+      tabId: Number(tabKey),
+      bankId: run.bankId || '',
+      jobId: run.jobId || '',
+      offerUrl: run.offerUrl || ''
+    };
+
+    let pageUrl = '';
+    let screenshotBase64 = '';
+    let prevActiveId = null;
+    try {
+      const cur = await chrome.tabs.query({ active: true, currentWindow: true });
+      prevActiveId = cur[0]?.id || null;
+      await chrome.tabs.update(meta.tabId, { active: true });
+      await new Promise((r) => setTimeout(r, 450));
+      const tab = await chrome.tabs.get(meta.tabId);
+      pageUrl = tab?.url || '';
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 52 });
+      screenshotBase64 = dataUrlToJpegBase64(dataUrl);
+    } catch (e) {
+      console.error('[Taleos] Capture écran stuck:', e);
+    } finally {
+      if (prevActiveId && prevActiveId !== meta.tabId) {
+        try {
+          await chrome.tabs.update(prevActiveId, { active: true });
+        } catch (_) {}
+      }
     }
-  }
 
-  const payload = {
-    userId: taleosUserId,
-    jobId: meta.jobId,
-    offerUrl: meta.offerUrl,
-    pageUrl,
-    bankId: meta.bankId,
-    screenshotBase64
-  };
-
-  try {
-    if (screenshotBase64.length > 700000 && taleosIdToken) {
-      const path = await uploadStuckScreenshotToStorage(screenshotBase64, taleosUserId, taleosIdToken);
-      payload.screenshotStoragePath = path;
-      payload.screenshotBase64 = '';
-    }
-    await saveStuckAutomationReportToFirestore({
-      ...payload,
-      screenshotBase64: payload.screenshotBase64 || undefined,
-      screenshotStoragePath: payload.screenshotStoragePath
+    const timeoutMessage = 'La candidature n’a pas atteint l’état succès dans les 5 minutes.';
+    const timedOutRun = await markTimedOutApplyRun(meta.tabId, {
+      failureType: 'timeout',
+      failureMessage: timeoutMessage
     });
-  } catch (e) {
-    console.error('[Taleos] Stuck Firestore/Storage:', e);
-  }
 
-  try {
-    await sendStuckReportToCloudFunction(
-      { ...payload, userId: taleosUserId, screenshotBase64: payload.screenshotBase64 || '' },
-      taleosIdToken
-    );
-  } catch (e) {
-    console.error('[Taleos] Stuck e-mail CF:', e);
-  }
+    const payload = {
+      userId: taleosUserId,
+      jobId: meta.jobId,
+      offerUrl: meta.offerUrl,
+      pageUrl,
+      bankId: meta.bankId,
+      screenshotBase64
+    };
 
-  try {
-    await chrome.storage.local.set({ taleos_stuck_report_sent: dedupKey });
-  } catch (_) {}
+    try {
+      if (screenshotBase64.length > 700000 && taleosIdToken) {
+        const path = await uploadStuckScreenshotToStorage(screenshotBase64, taleosUserId, taleosIdToken);
+        payload.screenshotStoragePath = path;
+        payload.screenshotBase64 = '';
+      }
+      await saveStuckAutomationReportToFirestore({
+        ...payload,
+        screenshotBase64: payload.screenshotBase64 || undefined,
+        screenshotStoragePath: payload.screenshotStoragePath
+      });
+    } catch (e) {
+      console.error('[Taleos] Stuck Firestore/Storage:', e);
+    }
+
+    try {
+      await sendStuckReportToCloudFunction(
+        { ...payload, userId: taleosUserId, screenshotBase64: payload.screenshotBase64 || '' },
+        taleosIdToken
+      );
+    } catch (e) {
+      console.error('[Taleos] Stuck e-mail CF:', e);
+    }
+
+    try {
+      await trackError('apply_timeout', timeoutMessage, run.bankId, run.jobId, run.offerUrl);
+    } catch (_) {}
+
+    try {
+      await notifyTaleosCandidatureFailure({
+        jobId: run.jobId,
+        error: timeoutMessage
+      });
+    } catch (_) {}
+
+    if (timedOutRun?.runId) {
+      console.warn('[Taleos] Timeout candidature:', timedOutRun.runId, timedOutRun.jobTitle || timedOutRun.jobId || meta.tabId);
+    }
+  }
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
+  if (changes[ACTIVE_APPLY_RUNS_STORAGE_KEY]) {
+    clearApplyStuckWatchdog();
+    return;
+  }
   const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp'];
   for (const k of keys) {
     const ch = changes[k];
@@ -482,6 +697,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   try {
+    const activeRuns = await getActiveApplyRuns();
+    if (activeRuns[String(tabId)]) {
+      delete activeRuns[String(tabId)];
+      await setActiveApplyRuns(activeRuns);
+      await clearApplyStuckWatchdog();
+    }
     const state = await chrome.storage.local.get([
       'taleos_sg_tab_id',
       'taleos_bpce_tab_id',
@@ -1092,35 +1313,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === 'candidature_success') {
-    clearApplyStuckWatchdog();
-    clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
-    const tabIdToClose = sender.tab?.id;
-    trackApplySuccess(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
-    saveCandidatureAndNotifyTaleos(msg, tabIdToClose).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    (async () => {
+      const tabIdToClose = sender.tab?.id;
+      const runInfo = await finalizeApplyRunForTab(tabIdToClose, 'success').catch(() => null);
+      clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
+      trackApplySuccess(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
+      saveCandidatureAndNotifyTaleos({
+        ...msg,
+        applyRunId: runInfo?.runId || '',
+        extensionVersion: runInfo?.extensionVersion || getExtensionVersionForGa4().extension_version,
+        extensionVersionName: runInfo?.extensionVersionName || getExtensionVersionForGa4().extension_version_name
+      }, tabIdToClose).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    })();
     return true;
   }
   if (msg.action === 'candidature_failure') {
-    const { offerExpired, jobId, jobTitle, error } = msg;
-    const isExpired = !!offerExpired || /404|non disponible|expirée|n'est plus en ligne/i.test(error || '');
-    if (isExpired) {
-      trackApplyExpired(msg.bankId, jobTitle, jobId, msg.offerUrl, error).catch(() => {});
-      upsertGlobalExpiredJobSignal({
-        jobId,
-        jobTitle,
-        offerUrl: msg.offerUrl || '',
-        source: msg.bankId || ''
-      }).catch(() => {});
-    } else {
-      trackError('apply_failure', error || 'Erreur candidature', msg.bankId, jobId, msg.offerUrl).catch(() => {});
-    }
-    clearApplyStuckWatchdog();
-    clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
-    if (sender.tab?.id && isExpired) chrome.tabs.remove(sender.tab.id).catch(() => {});
-    if (isExpired && jobId) {
-      notifyTaleosOfferUnavailable({ jobId, jobTitle: jobTitle || '' }).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
-    } else {
-      notifyTaleosCandidatureFailure(msg).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
-    }
+    (async () => {
+      const { offerExpired, jobId, jobTitle, error } = msg;
+      const isExpired = !!offerExpired || /404|non disponible|expirée|n'est plus en ligne/i.test(error || '');
+      await finalizeApplyRunForTab(sender.tab?.id, 'failed', {
+        failureType: isExpired ? 'offer_expired' : 'failure',
+        failureMessage: error || (isExpired ? 'Offre expirée' : 'Erreur candidature')
+      }).catch(() => null);
+      if (isExpired) {
+        trackApplyExpired(msg.bankId, jobTitle, jobId, msg.offerUrl, error).catch(() => {});
+        upsertGlobalExpiredJobSignal({
+          jobId,
+          jobTitle,
+          offerUrl: msg.offerUrl || '',
+          source: msg.bankId || ''
+        }).catch(() => {});
+      } else {
+        trackError('apply_failure', error || 'Erreur candidature', msg.bankId, jobId, msg.offerUrl).catch(() => {});
+      }
+      clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
+      if (sender.tab?.id && isExpired) chrome.tabs.remove(sender.tab.id).catch(() => {});
+      if (isExpired && jobId) {
+        notifyTaleosOfferUnavailable({ jobId, jobTitle: jobTitle || '' }).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+      } else {
+        notifyTaleosCandidatureFailure(msg).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+      }
+    })();
     return true;
   }
   if (msg.action === 'reload_and_continue') {
@@ -1748,6 +1981,22 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   const pilotExec = buildLocalPilotExecution(scriptKey, scriptPath);
   await persistLastPilot(pilotExec, { bankId, jobId, jobTitle, routeAs, offerUrl, scriptKey });
   chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+  const runMeta = {
+    bankId,
+    companyName: companyName || '',
+    jobId,
+    jobTitle,
+    offerUrl,
+    taleosTabId,
+    location: offerMeta?.location || '',
+    contractType: offerMeta?.contractType || '',
+    experienceLevel: offerMeta?.experienceLevel || '',
+    jobFamily: offerMeta?.jobFamily || '',
+    publicationDate: offerMeta?.publicationDate || '',
+    routeAs,
+    routingSource: pilotExec.routingSource,
+    automationSource: pilotExec.automationSource
+  };
 
   if (routeAs === 'ca') {
     chrome.storage.local.set({
@@ -1769,6 +2018,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     const tab = await chrome.tabs.create(caCreateOpts);
     const tabId = tab.id;
     chrome.storage.local.set({ taleos_ca_apply_tab_id: tabId });
+    await registerApplyRunForTab(tabId, runMeta);
     scheduleApplyStuckWatchdog();
     chrome.storage.local.remove(['taleos_ca_candidature_reloaded', 'taleos_ca_candidature_pending']);
     if (taleosTabId) {
@@ -1837,6 +2087,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(deloitteCreateOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
     chrome.storage.local.set({
       taleos_pending_deloitte: {
         profile: { ...profile, auth_email: profile.auth_email || profile.email, auth_password: profile.auth_password },
@@ -1862,6 +2113,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
       [100, 300, 600].forEach(ms => setTimeout(() => {
@@ -1888,6 +2140,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
       [100, 300, 600].forEach(ms => setTimeout(() => {
@@ -1914,6 +2167,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       } catch (_) {}
     }
     const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
       [100, 300, 600].forEach(ms => setTimeout(() => {
@@ -1944,6 +2198,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     }
     const tab = await chrome.tabs.create(otherCreateOpts);
     const tabId = tab.id;
+    await registerApplyRunForTab(tabId, runMeta);
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
     }
@@ -1991,6 +2246,9 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
     const experienceLevel = (msg.experienceLevel || mergedMeta.experienceLevel || '').trim();
     const jobFamily = (msg.jobFamily || mergedMeta.jobFamily || '').trim();
     const publicationDate = (msg.publicationDate || mergedMeta.publicationDate || '').trim();
+    const extensionVersion = String(msg.extensionVersion || '').trim();
+    const extensionVersionName = String(msg.extensionVersionName || '').trim();
+    const applyRunId = String(msg.applyRunId || '').trim();
 
     const doc = {
       jobId: String(jobId || '').trim(),
@@ -2003,7 +2261,10 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
       jobFamily: jobFamily || 'Non spécifié',
       publicationDate: publicationDate || 'Non spécifié',
       appliedDate: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
-      status: 'envoyée'
+      status: 'envoyée',
+      extensionVersion: extensionVersion || 'unknown',
+      extensionVersionName: extensionVersionName || '',
+      applyRunId: applyRunId || ''
     };
 
     const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;

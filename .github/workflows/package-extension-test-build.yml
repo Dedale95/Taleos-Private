@@ -1,0 +1,39 @@
+name: Package Extension Test Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "extension/**"
+      - ".github/workflows/package-extension-test-build.yml"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read manifest version
+        id: manifest
+        run: |
+          VERSION=$(node -p "require('./extension/manifest.json').version")
+          VERSION_NAME=$(node -p "require('./extension/manifest.json').version_name || ''")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build test package
+        run: |
+          mkdir -p build
+          cp -R extension build/taleos-extension
+          cd build
+          zip -qr "taleos-extension-${{ steps.manifest.outputs.version }}.zip" taleos-extension
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taleos-extension-${{ steps.manifest.outputs.version }}
+          path: build/taleos-extension-${{ steps.manifest.outputs.version }}.zip
+          if-no-files-found: error
+
