@@ -328,6 +328,18 @@
       }
       return String(el.value || '').trim();
     }
+    if (question.type === 'dynamic_optional') {
+      if (el.tagName === 'SELECT') {
+        const option = el.options?.[el.selectedIndex];
+        const optionText = String(option?.textContent || '').replace(/×/g, '').trim();
+        if (optionText) return optionText;
+      }
+      const fieldSpec = el.closest('.fieldSpec');
+      const rendered = fieldSpec?.querySelector('.select2-selection__rendered, .chosen-single span, [role="combobox"], input[type="text"]');
+      const renderedText = String(rendered?.textContent || '').replace(/×/g, '').trim();
+      const renderedValue = String(rendered?.value || '').trim();
+      return renderedText || renderedValue || String(el.value || '').trim();
+    }
     return String(el.value || '').trim();
   }
 

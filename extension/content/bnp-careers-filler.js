@@ -211,6 +211,27 @@
     return directMap[raw] || String(language).trim();
   }
 
+  function findVisibleDropdownOptionByText(targetText, anchorEl) {
+    const normalizedTarget = normalizeText(targetText);
+    const anchorRect = anchorEl?.getBoundingClientRect?.() || null;
+    const candidates = Array.from(document.querySelectorAll('li, div, span, button, a'))
+      .filter((el) => {
+        if (!isVisible(el)) return false;
+        const text = normalizeText(el.textContent || '');
+        if (!text || text !== normalizedTarget) return false;
+        const rect = el.getBoundingClientRect?.();
+        if (!rect || rect.width < 40 || rect.height < 18) return false;
+        if (!anchorRect) return true;
+        return rect.top >= anchorRect.top - 20 && rect.left >= anchorRect.left - 40;
+      })
+      .sort((a, b) => {
+        const ar = a.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
+        return Math.abs(ar.top - (anchorRect?.bottom || 0)) - Math.abs(br.top - (anchorRect?.bottom || 0));
+      });
+    return candidates[0] || null;
+  }
+
   async function setAutocompleteSelectValue(name, targetText, label) {
     const hiddenSelect = qs([`select[name="${name}"]`], false);
     if (!hiddenSelect || !targetText) return false;
@@ -236,34 +257,70 @@
     }
 
     const fieldSpec = hiddenSelect.closest('.fieldSpec');
-    const selection = fieldSpec?.querySelector('.select2-selection');
-    if (!selection) return false;
+    if (!fieldSpec) return false;
 
-    selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selection.click();
-    await sleep(250);
-
-    const searchInput = document.querySelector('.select2-container--open input.select2-search__field');
-    if (!searchInput) {
-      log(`⚠️ ${label} → widget de recherche BNP introuvable`);
-      return false;
+    const selection = fieldSpec.querySelector(
+      '.select2-selection, .chosen-single, .chosen-container, .ui-selectmenu-button, [role="combobox"], .combobox-container, .dropdown-toggle'
+    );
+    if (selection) {
+      selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      try { selection.click(); } catch (_) {}
+      await sleep(250);
     }
 
-    dispatchTextInput(searchInput, targetText);
-    await sleep(350);
+    const searchInput = fieldSpec.querySelector('input[type="text"], input[role="combobox"], input.ui-autocomplete-input')
+      || document.querySelector('.select2-container--open input.select2-search__field')
+      || document.querySelector('.chosen-container-active input')
+      || document.querySelector('[role="listbox"] input[type="text"]');
 
-    const results = Array.from(document.querySelectorAll('.select2-container--open .select2-results__option'))
-      .filter((el) => isVisible(el) && !String(el.className || '').includes('loading-results'));
+    if (searchInput) {
+      dispatchTextInput(searchInput, targetText);
+      searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'e', bubbles: true }));
+      await sleep(350);
+    }
+
+    const optionSelectors = [
+      '.select2-container--open .select2-results__option',
+      '.chosen-container .chosen-results li',
+      '.ui-autocomplete li',
+      '[role="option"]',
+      '.ui-menu-item',
+      '.dropdown-menu li',
+      '.dropdown-menu [data-value]'
+    ];
+    const results = optionSelectors.flatMap((selector) => {
+      try {
+        return Array.from(document.querySelectorAll(selector));
+      } catch (_) {
+        return [];
+      }
+    }).filter((el) => isVisible(el) && !normalizeText(el.textContent).includes('selectionner une option') && !normalizeText(el.textContent).includes('sélectionner une option'));
+
     const option = results.find((el) => normalizeText(el.textContent) === normalizedTarget)
       || results.find((el) => normalizeText(el.textContent).includes(normalizedTarget));
 
-    if (!option) {
+    const robustVisibleOption = option || findVisibleDropdownOptionByText(targetText, fieldSpec);
+
+    if (!robustVisibleOption) {
+      if (searchInput) {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+        await sleep(150);
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+        await sleep(300);
+        const typedValue = String(searchInput.value || '').trim();
+        if (normalizeText(typedValue) === normalizedTarget) {
+          log(`✅ ${label} → ${typedValue}`);
+          return true;
+        }
+      }
       log(`⚠️ ${label} → aucune proposition BNP pour « ${targetText} »`);
       document.body.click();
       return false;
     }
 
-    option.click();
+    robustVisibleOption.click();
     await sleep(350);
 
     const refreshedOption = hiddenSelect.options?.[hiddenSelect.selectedIndex];
@@ -273,10 +330,20 @@
       return true;
     }
 
-    const rendered = fieldSpec?.querySelector('.select2-selection__rendered');
+    const rendered = fieldSpec?.querySelector('.select2-selection__rendered, .chosen-single span, [role="combobox"], input[type="text"]');
     const renderedText = String(rendered?.textContent || '').replace(/×/g, '').trim();
-    if (renderedText && normalizeText(renderedText) === normalizedTarget) {
-      log(`✅ ${label} → ${renderedText}`);
+    const renderedValue = String(rendered?.value || '').trim();
+    if ((renderedText && normalizeText(renderedText) === normalizedTarget) || (renderedValue && normalizeText(renderedValue) === normalizedTarget)) {
+      log(`✅ ${label} → ${renderedText || renderedValue}`);
+      return true;
+    }
+
+    const fallbackExact = Array.from(hiddenSelect.options || []).find((opt) => normalizeText(opt.textContent) === normalizedTarget);
+    if (fallbackExact) {
+      hiddenSelect.value = fallbackExact.value;
+      hiddenSelect.dispatchEvent(new Event('input', { bubbles: true }));
+      hiddenSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      log(`✅ ${label} → ${String(fallbackExact.textContent || '').trim()}`);
       return true;
     }
 
