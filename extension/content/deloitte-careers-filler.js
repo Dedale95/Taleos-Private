@@ -177,6 +177,79 @@
     return true;
   }
 
+  function setNativeInputValue(el, value) {
+    if (!el) return false;
+    var str = value != null ? String(value) : '';
+    try {
+      var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      if (desc && desc.set) desc.set.call(el, str);
+      else el.value = str;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setWorkdayDateInputValue(el, value, label) {
+    if (!el || value == null || value === '') return false;
+    var str = String(value).trim();
+    scrollIntoViewIfNeeded(el);
+    try {
+      el.focus();
+      el.click();
+    } catch (_) {}
+    setNativeInputValue(el, str);
+    try {
+      el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      el.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
+      el.blur();
+    } catch (_) {}
+    log('   ✅ ' + label + ' → ' + str, 5);
+    return true;
+  }
+
+  function acceptWorkdayCheckbox(checkboxEl, label) {
+    if (!checkboxEl || checkboxEl.offsetParent === null) return false;
+    if (checkboxEl.checked) {
+      log('   — ' + label + ' → déjà OK', 5);
+      return false;
+    }
+    scrollIntoViewIfNeeded(checkboxEl);
+    try {
+      checkboxEl.click();
+    } catch (_) {}
+    if (!checkboxEl.checked) {
+      checkboxEl.checked = true;
+    }
+    try {
+      checkboxEl.dispatchEvent(new Event('input', { bubbles: true }));
+      checkboxEl.dispatchEvent(new Event('change', { bubbles: true }));
+      checkboxEl.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
+    } catch (_) {}
+    if (checkboxEl.checked) {
+      log('   ✅ ' + label, 5);
+      return true;
+    }
+    log('   ❌ ' + label + ' → échec validation', 5);
+    return false;
+  }
+
+  function isDeloitteSuccessPage(text, href) {
+    var normalizedText = normalizeLoose(text || '');
+    var normalizedHref = String(href || '').toLowerCase();
+    return normalizedHref.includes('/jobtasks/completed/application') ||
+      normalizedText.includes('candidature soumise') ||
+      normalizedText.includes('felicitations') ||
+      normalizedText.includes('vous recevrez un accusé de réception par mail suite à votre candidature') ||
+      normalizedText.includes('vous recevrez un accuse de reception par mail suite a votre candidature') ||
+      normalizedText.includes("vous n'avez plus de tâches") ||
+      normalizedText.includes("vous n'avez plus de taches") ||
+      normalizedText.includes('thank you for applying') ||
+      normalizedText.includes('application submitted');
+  }
+
   function parseAvailabilityDateParts(value) {
     var raw = String(value || '').trim();
     if (!raw) return null;
@@ -1001,33 +1074,17 @@
     // ——— Date de disponibilité (JJ/MM/AAAA) ———
     var parsedDate = parseAvailabilityDateParts(availDate);
     if (parsedDate) {
-      var dateFields = document.querySelectorAll('[id*="primaryQuestionnaire"][id*="dateSection"]');
       var dayInput = document.querySelector('[data-automation-id="dateSectionDay-input"]');
       var monthInput = document.querySelector('[data-automation-id="dateSectionMonth-input"]');
       var yearInput = document.querySelector('[data-automation-id="dateSectionYear-input"]');
-      if (!dayInput) dayInput = Array.from(dateFields).find(function(el) { return el.id && el.id.includes('Day-input'); });
-      if (!monthInput) monthInput = Array.from(dateFields).find(function(el) { return el.id && el.id.includes('Month-input'); });
-      if (!yearInput) yearInput = Array.from(dateFields).find(function(el) { return el.id && el.id.includes('Year-input'); });
 
-      if (dayInput) {
-        scrollIntoViewIfNeeded(dayInput);
-        fillInputStrict(dayInput, parsedDate.day, 'Date dispo (jour)', { normalize: normalizeDigits });
-        try { dayInput.blur(); } catch (_) {}
-      }
+      if (dayInput) setWorkdayDateInputValue(dayInput, parsedDate.day, 'Date dispo (jour)');
       setTimeout(function() {
-        if (monthInput) {
-          scrollIntoViewIfNeeded(monthInput);
-          fillInputStrict(monthInput, parsedDate.month, 'Date dispo (mois)', { normalize: normalizeDigits });
-          try { monthInput.blur(); } catch (_) {}
-        }
+        if (monthInput) setWorkdayDateInputValue(monthInput, parsedDate.month, 'Date dispo (mois)');
         setTimeout(function() {
-          if (yearInput) {
-            scrollIntoViewIfNeeded(yearInput);
-            fillInputStrict(yearInput, parsedDate.year, 'Date dispo (année)', { normalize: normalizeDigits });
-            try { yearInput.blur(); } catch (_) {}
-          }
-        }, 300);
-      }, 300);
+          if (yearInput) setWorkdayDateInputValue(yearInput, parsedDate.year, 'Date dispo (année)');
+        }, 240);
+      }, 240);
     } else if (availDate) {
       log('   ⏭️  Date dispo → format non reconnu: "' + availDate + '"', 5);
     } else {
@@ -1052,6 +1109,34 @@
         }
       }
     }, 1500);
+  }
+
+  function fillWorkdayStep4Voluntary() {
+    log('📋 Étape 4 "Déclaration volontaire" : acceptation des conditions générales', 5);
+    var termsCheckbox = document.getElementById('termsAndConditions--acceptTermsAndAgreements') ||
+      document.querySelector('input[name="acceptTermsAndAgreements"][type="checkbox"]');
+    if (!termsCheckbox) {
+      log('   ⏭️  Conditions générales → case non trouvée', 5);
+      return false;
+    }
+    return acceptWorkdayCheckbox(termsCheckbox, 'Conditions générales acceptées');
+  }
+
+  function submitDeloitteReview() {
+    var submitBtn = Array.from(document.querySelectorAll('button, a')).find(function(btn) {
+      if (!btn || btn.offsetParent === null) return false;
+      var text = String(btn.textContent || btn.getAttribute('aria-label') || '').trim().toLowerCase();
+      return /^(soumettre|envoyer|submit)$/.test(text);
+    });
+    if (!submitBtn) {
+      log('   ⏭️  Réviser → bouton de soumission non trouvé', 5);
+      return false;
+    }
+    scrollIntoViewIfNeeded(submitBtn);
+    submitBtn.click();
+    log('➡️  Clic "Soumettre"', 0);
+    setTimeout(runAutomation, 2500);
+    return true;
   }
 
   function fillWorkdayStep2Education(profile) {
@@ -1298,7 +1383,7 @@
       return true;
     }
 
-    var cleanup = await cleanupExistingCvUploads(cvName);
+    var cleanup = await cleanupExistingCvUploads();
     if (cleanup.removed > 0) {
       log('   🧹 CV → ' + cleanup.removed + ' ancienne(s) pièce(s) jointe(s) supprimée(s)', 5);
     } else if (cleanup.alreadyPresent) {
@@ -1396,9 +1481,7 @@
     }
 
     const successDetected = blueprintApi?.detectPage?.({ document, location })?.key === 'success' ||
-      pageText.includes('merci pour votre candidature') ||
-      pageText.includes('thank you for applying') ||
-      pageText.includes('application submitted');
+      isDeloitteSuccessPage(document.body?.innerText || '', url);
     if (successDetected) {
       await validateBlueprintPage(['success'], profile, 'succes');
       log('Page Deloitte/Workday de confirmation detectee', 0);
@@ -1417,6 +1500,44 @@
       }).catch(() => {});
       chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
       hideBanner();
+      return;
+    }
+
+    var isStep5Review = /current step 5 of 5|reviser|réviser/i.test(document.body?.innerText || '') &&
+      Array.from(document.querySelectorAll('button, a')).some(function(btn) {
+        if (!btn || btn.offsetParent === null) return false;
+        var text = String(btn.textContent || btn.getAttribute('aria-label') || '').trim().toLowerCase();
+        return /^(soumettre|envoyer|submit)$/.test(text);
+      });
+    if (isStep5Review) {
+      if (step5AttemptCount >= MAX_STEP_ATTEMPTS) {
+        log('📋 Étape 5 : ' + step5AttemptCount + ' tentatives → arrêt', 5);
+        chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
+        setTimeout(hideBanner, 2000);
+        return;
+      }
+      step5AttemptCount++;
+      await validateBlueprintPage(['review'], profile, 'revision');
+      log('📋 Étape 5 "Réviser" détectée (tentative ' + step5AttemptCount + '/' + MAX_STEP_ATTEMPTS + ')', 5);
+      submitDeloitteReview();
+      return;
+    }
+
+    var termsCheckbox = document.getElementById('termsAndConditions--acceptTermsAndAgreements') ||
+      document.querySelector('input[name="acceptTermsAndAgreements"][type="checkbox"]');
+    if (termsCheckbox && termsCheckbox.offsetParent !== null) {
+      if (step4AttemptCount >= MAX_STEP_ATTEMPTS) {
+        log('📋 Étape 4 : ' + step4AttemptCount + ' tentatives → arrêt', 5);
+        chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
+        setTimeout(hideBanner, 2000);
+        return;
+      }
+      step4AttemptCount++;
+      step5AttemptCount = 0;
+      await validateBlueprintPage(['voluntary_data'], profile, 'declaration_volontaire');
+      log('📋 Étape 4 "Déclaration volontaire" détectée (tentative ' + step4AttemptCount + '/' + MAX_STEP_ATTEMPTS + ')', 5);
+      fillWorkdayStep4Voluntary();
+      clickNextAndContinue(1200);
       return;
     }
 
@@ -1595,6 +1716,8 @@
         return;
       }
       step3AttemptCount++;
+      step4AttemptCount = 0;
+      step5AttemptCount = 0;
       await validateBlueprintPage(['questionnaire'], profile, 'questions_candidature');
       await auditBlueprintQuestions(profile, 'questionnaire', 'questions_candidature');
       log('📋 Étape 3 "Questions de candidature" détectée (tentative ' + step3AttemptCount + '/' + MAX_STEP_ATTEMPTS + ')', 5);
@@ -1626,6 +1749,8 @@
       }
       step2AttemptCount++;
       step3AttemptCount = 0;
+      step4AttemptCount = 0;
+      step5AttemptCount = 0;
       await validateBlueprintPage(['experience'], profile, 'experience');
       await auditBlueprintQuestions(profile, 'experience', 'experience');
       log('📋 Étape 2 "Mon expérience" détectée (tentative ' + step2AttemptCount + '/' + MAX_STEP_ATTEMPTS + ')', 5);
@@ -2013,6 +2138,8 @@
   var step1Attempts = 0;
   let step2AttemptCount = 0;
   let step3AttemptCount = 0;
+  let step4AttemptCount = 0;
+  let step5AttemptCount = 0;
   let step2LastEstablishmentApplied = '';
   let step2LastCvHandled = '';
   let step2CvRefreshAttempted = false;

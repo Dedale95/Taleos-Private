@@ -57,8 +57,25 @@
       'niveau d\'experience',
       'bourse'
     ],
+    voluntaryData: [
+      'declaration volontaire de donnees personnelles',
+      'déclaration volontaire de données personnelles',
+      'j’ai lu et j’accepte les conditions generales',
+      "j'ai lu et j'accepte les conditions générales"
+    ],
+    review: [
+      'reviser',
+      'réviser',
+      'soumettre'
+    ],
     success: [
-      'merci pour votre candidature',
+      'candidature soumise',
+      'felicitations',
+      'félicitations',
+      'vous recevrez un accuse de reception par mail suite a votre candidature',
+      'vous recevrez un accusé de réception par mail suite à votre candidature',
+      "vous n'avez plus de taches",
+      "vous n'avez plus de tâches",
       'thank you for applying',
       'application submitted',
       'we have received your application'
@@ -130,10 +147,27 @@
       ],
       textPatterns: TEXT_PATTERNS.questionnaire
     },
+    voluntary_data: {
+      label: 'Déclaration volontaire',
+      hostIncludes: ['myworkdayjobs.com'],
+      pathMatches: [/\/apply/],
+      selectorsAny: [
+        '#termsAndConditions--acceptTermsAndAgreements',
+        'input[name="acceptTermsAndAgreements"][type="checkbox"]'
+      ],
+      textPatterns: TEXT_PATTERNS.voluntaryData
+    },
+    review: {
+      label: 'Réviser',
+      hostIncludes: ['myworkdayjobs.com'],
+      pathMatches: [/\/apply/],
+      selectorsAny: ['button', 'a'],
+      textPatterns: TEXT_PATTERNS.review
+    },
     success: {
       label: 'Succes candidature',
       hostIncludes: ['myworkdayjobs.com'],
-      pathMatches: [/\/submission/, /\/apply\//],
+      pathMatches: [/\/submission/, /\/jobTasks\/completed\/application/, /\/apply\//],
       textPatterns: TEXT_PATTERNS.success
     }
   };
@@ -163,6 +197,9 @@
       { key: 'experience_level', label: 'Niveau d experience', profileKey: 'experience_level', selectors: ['[data-fkit-id*="primaryQuestionnaire"] button[aria-haspopup="listbox"]', 'button[id*="primaryQuestionnaire"][aria-haspopup="listbox"]'], type: 'questionnaire', critical: true },
       { key: 'available_date', label: 'Date de disponibilite', profileKey: 'available_date', selectors: ['[data-automation-id="dateSectionDay-input"]', '[data-automation-id="dateSectionMonth-input"]', '[data-automation-id="dateSectionYear-input"]'], type: 'date', critical: true },
       { key: 'apprenticeship_grant', label: 'Bourse alternance', expectedValue: 'Ne se prononce pas', selectors: ['[data-fkit-id*="primaryQuestionnaire"]'], type: 'questionnaire' }
+    ],
+    voluntary_data: [
+      { key: 'accept_terms', label: 'Conditions générales', expectedValue: 'true', selectors: ['#termsAndConditions--acceptTermsAndAgreements', 'input[name="acceptTermsAndAgreements"][type="checkbox"]'], type: 'checkbox', critical: true }
     ]
   };
 
@@ -344,6 +381,9 @@
       const checked = radios.find((radio) => radio.checked);
       return checked ? String(checked.value || '').trim() : '';
     }
+    if (question.type === 'checkbox') {
+      return el.checked ? 'true' : '';
+    }
     if (question.type === 'file') {
       const attachmentScope = el.closest?.('[data-automation-id*="attachment"], [data-automation-id*="resume"], [data-automation-id*="file"], section, form, div') || doc.body;
       const scopeText = String(attachmentScope?.textContent || '');
@@ -391,7 +431,8 @@
   function questionLooksBoolean(expected, current) {
     const booleanPairs = [
       [['yes', 'oui', 'true', '1'], ['yes', 'oui', 'true', '1']],
-      [['no', 'non', 'false', '0'], ['no', 'non', 'false', '0']]
+      [['no', 'non', 'false', '0'], ['no', 'non', 'false', '0']],
+      [['true', 'checked', 'oui', 'yes', '1'], ['true', 'checked', 'oui', 'yes', '1']]
     ];
     return booleanPairs.some(([a, b]) => a.includes(expected) && b.includes(current));
   }
