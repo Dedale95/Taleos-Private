@@ -452,12 +452,44 @@
     if (!exact) return false;
     try {
       scrollIntoViewIfNeeded(exact);
+      var radioLike = exact.querySelector('input[type="radio"], [role="radio"], label, button, [data-automation-id="promptOption"]');
+      var targetNode = radioLike || exact;
+      try {
+        targetNode.focus && targetNode.focus();
+      } catch (_) {}
+      ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(function(type) {
+        try {
+          targetNode.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        } catch (_) {}
+      });
+      try {
+        targetNode.click();
+      } catch (_) {}
       ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(function(type) {
         try {
           exact.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
         } catch (_) {}
       });
       exact.click();
+      setTimeout(function() {
+        try {
+          (targetNode || exact).dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          }));
+          (targetNode || exact).dispatchEvent(new KeyboardEvent('keyup', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true
+          }));
+        } catch (_) {}
+      }, 80);
       return true;
     } catch (_) {
       return false;
@@ -568,7 +600,6 @@
     target = document.createElement('button');
     target.type = 'button';
     target.id = 'taleos-workday-blur-target';
-    target.setAttribute('aria-hidden', 'true');
     target.tabIndex = -1;
     Object.assign(target.style, {
       position: 'fixed',
