@@ -25,6 +25,11 @@
       'cette offre est peut-etre expiree',
       'cette offre est peut être expirée'
     ],
+    alreadyApplied: [
+      'vous avez deja postule a cet emploi',
+      'vous avez déjà postulé à cet emploi',
+      'you have already applied to this job'
+    ],
     applyChoice: [
       'postuler manuellement',
       'utiliser ma derniere candidature',
@@ -93,6 +98,12 @@
     unavailable: {
       label: 'Offre indisponible',
       textPatterns: TEXT_PATTERNS.unavailable
+    },
+    already_applied: {
+      label: 'Offre déjà postulée',
+      hostIncludes: ['myworkdayjobs.com'],
+      pathMatches: [/\/apply/],
+      textPatterns: TEXT_PATTERNS.alreadyApplied
     },
     apply_choice: {
       label: 'Choix de candidature Workday',

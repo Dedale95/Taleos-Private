@@ -295,6 +295,8 @@ async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
   if (alreadyTimedOut && terminal === 'success') {
     run.lateSuccessAt = finishedAt;
     run.lastSignal = 'success';
+    if (details.successType) run.lateSuccessType = sanitizeRunText(details.successType, 80);
+    if (details.successMessage) run.lateSuccessMessage = sanitizeRunText(details.successMessage, 500);
   } else if (alreadyTimedOut && terminal === 'failed') {
     run.lateFailureAt = finishedAt;
     run.lastSignal = 'failed';
@@ -313,6 +315,8 @@ async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
     run.lastSignal = terminal;
     if (terminal === 'success') {
       run.successAt = finishedAt;
+      if (details.successType) run.successType = sanitizeRunText(details.successType, 80);
+      if (details.successMessage) run.successMessage = sanitizeRunText(details.successMessage, 500);
     } else if (terminal === 'aborted') {
       run.abortedAt = finishedAt;
       run.failureType = sanitizeRunText(details.failureType || 'user_closed_tab', 80);
@@ -1357,7 +1361,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'candidature_success') {
     (async () => {
       const tabIdToClose = sender.tab?.id;
-      const runInfo = await finalizeApplyRunForTab(tabIdToClose, 'success').catch(() => null);
+      const runInfo = await finalizeApplyRunForTab(tabIdToClose, 'success', {
+        successType: msg.successType,
+        successMessage: msg.successMessage || msg.message
+      }).catch(() => null);
       clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
       trackApplySuccess(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
       saveCandidatureAndNotifyTaleos({
@@ -2304,6 +2311,9 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
     const extensionVersion = String(msg.extensionVersion || '').trim();
     const extensionVersionName = String(msg.extensionVersionName || '').trim();
     const applyRunId = String(msg.applyRunId || '').trim();
+    const status = String(msg.status || 'envoyée').trim() || 'envoyée';
+    const successType = String(msg.successType || '').trim();
+    const successMessage = String(msg.successMessage || msg.message || '').trim();
 
     const doc = {
       jobId: String(jobId || '').trim(),
@@ -2316,10 +2326,12 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
       jobFamily: jobFamily || 'Non spécifié',
       publicationDate: publicationDate || 'Non spécifié',
       appliedDate: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
-      status: 'envoyée',
+      status,
       extensionVersion: extensionVersion || 'unknown',
       extensionVersionName: extensionVersionName || '',
-      applyRunId: applyRunId || ''
+      applyRunId: applyRunId || '',
+      extensionSuccessType: successType || '',
+      extensionSuccessMessage: successMessage || ''
     };
 
     const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
@@ -2351,7 +2363,13 @@ async function saveCandidatureAndNotifyTaleos(msg, tabIdToClose) {
     }
     if (taleosTab) {
       try {
-        await chrome.tabs.sendMessage(taleosTab, { action: 'taleos_candidature_success', jobId, status: 'envoyée' });
+        await chrome.tabs.sendMessage(taleosTab, {
+          action: 'taleos_candidature_success',
+          jobId,
+          status,
+          successType,
+          successMessage
+        });
         chrome.tabs.update(taleosTab, { active: true }).catch(() => {});
       } catch (_) {}
     }

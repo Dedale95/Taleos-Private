@@ -1480,6 +1480,30 @@
       return;
     }
 
+    if (pageText.includes('vous avez déjà postulé à cet emploi') || pageText.includes('you have already applied to this job')) {
+      await validateBlueprintPage(['already_applied'], profile, 'deja_postule');
+      log('Offre Deloitte déjà postulée → synchronisation Taleos et fermeture onglet', 0);
+      chrome.runtime.sendMessage({
+        action: 'candidature_success',
+        bankId: 'deloitte',
+        jobId,
+        jobTitle,
+        companyName: taleos_pending_deloitte.companyName || 'Deloitte',
+        offerUrl: taleos_pending_deloitte.offerUrl || url,
+        location: taleos_pending_deloitte.location || '',
+        contractType: taleos_pending_deloitte.contractType || '',
+        experienceLevel: taleos_pending_deloitte.experienceLevel || '',
+        jobFamily: taleos_pending_deloitte.jobFamily || '',
+        publicationDate: taleos_pending_deloitte.publicationDate || '',
+        status: 'envoyée',
+        successType: 'already_applied',
+        successMessage: 'Vous avez déjà postulé à cet emploi.'
+      }).catch(() => {});
+      chrome.storage.local.remove(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
+      hideBanner();
+      return;
+    }
+
     const successDetected = blueprintApi?.detectPage?.({ document, location })?.key === 'success' ||
       isDeloitteSuccessPage(document.body?.innerText || '', url);
     if (successDetected) {

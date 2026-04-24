@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.95",
-  "version_name": "1.1.95-deloitte-full-flow-success-detection",
+  "version": "1.1.96",
+  "version_name": "1.1.96-deloitte-already-applied-sync",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
