@@ -2578,6 +2578,9 @@ async function fetchProfile(uid, bankId, token) {
     }
   }
   if (!phoneCountryCode) phoneCountryCode = '+33';
+  const normalizedAvailableDate = normalizeAvailableDateForAutomation(
+    profile.available_from || profile.available_from_raw || profile.availableFrom || ''
+  );
 
   return {
     civility: profile.civility || '',
@@ -2593,8 +2596,8 @@ async function fetchProfile(uid, bankId, token) {
     'phone-number': profile.phone || '',
     job_families: profile.jobs || [],
     contract_types: contractList,
-    available_date: profile.available_from || profile.available_from_raw || profile.availableFrom || '',
-    available_from_raw: profile.available_from_raw || profile.availableFrom || '',
+    available_date: normalizedAvailableDate,
+    available_from_raw: normalizedAvailableDate,
     continents: profile.continents || [],
     target_countries: profile.preferred_countries || [],
     target_regions: profile.regions || [],
@@ -3141,6 +3144,27 @@ function getLocalDateTimeParts() {
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   return { event_local_date: date, event_local_time: time, event_local_datetime: `${date} ${time}`, event_timezone: tz };
+}
+
+function normalizeAvailableDateForAutomation(rawValue) {
+  const raw = String(rawValue || '').trim();
+  const today = getLocalDateTimeParts().event_local_date;
+  if (!raw) return today;
+
+  let year = '';
+  let month = '';
+  let day = '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    [year, month, day] = raw.split('-');
+  } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+    [day, month, year] = raw.split('/');
+  } else {
+    return today;
+  }
+
+  const normalized = `${year}-${month}-${day}`;
+  return normalized < today ? today : normalized;
 }
 
 async function getOfferMetaForTracking(jobId) {

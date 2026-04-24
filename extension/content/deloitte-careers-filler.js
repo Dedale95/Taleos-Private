@@ -22,6 +22,7 @@
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const SITE_DELOITTE_CAREERS = 'Site Deloitte Careers';
   let currentTabIdPromise = null;
+  let automationRunToken = 0;
 
   function reportRunLog(message) {
     try {
@@ -471,29 +472,14 @@
         } catch (_) {}
       });
       exact.click();
-      setTimeout(function() {
-        try {
-          (targetNode || exact).dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
-          }));
-          (targetNode || exact).dispatchEvent(new KeyboardEvent('keyup', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true
-          }));
-        } catch (_) {}
-      }, 80);
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  function isCurrentRunToken(token) {
+    return token === automationRunToken;
   }
 
   function hasLookupLoadingState(options) {
@@ -530,8 +516,15 @@
     if (!inputEl || !expectedText) return;
     var waitMs = options?.waitMs || 1200;
     var scope = options?.scope || getLookupScope(inputEl);
+    var runToken = options?.runToken;
     var attempts = 0;
+    function shouldAbort() {
+      if (runToken != null && !isCurrentRunToken(runToken)) return true;
+      if (!inputEl || !inputEl.isConnected) return true;
+      return false;
+    }
     function verifyAndFinish(message) {
+      if (shouldAbort()) return true;
       if (!isLookupSelectionConfirmed(inputEl, expectedText, { scope: scope, selectors: options?.selectors })) {
         return false;
       }
@@ -540,17 +533,30 @@
       return true;
     }
     setTimeout(function() {
+      if (shouldAbort()) return;
       pressEnterSequence(inputEl);
       setTimeout(function retry() {
+        if (shouldAbort()) return;
         attempts += 1;
         waitForLookupOption(expectedText, options, function(optionNode) {
+          if (shouldAbort()) return;
           if (optionNode && clickVisibleOptionMatchingText(expectedText, options)) {
             setTimeout(function() {
+              if (shouldAbort()) return;
+              pressEnterSequence(inputEl);
+              setTimeout(function() {
+                try { inputEl.blur(); } catch (_) {}
+              }, 140);
+            }, 70);
+            setTimeout(function() {
+              if (shouldAbort()) return;
               if (!verifyAndFinish('suggestion sélectionnée')) {
                 pressEnterSequence(inputEl);
                 setTimeout(function() {
+                  if (shouldAbort()) return;
                   pressEnterSequence(inputEl);
                   setTimeout(function() {
+                    if (shouldAbort()) return;
                     if (!verifyAndFinish('suggestion + double Enter')) {
                       log('   ⏳ ' + label + ' → suggestion cliquée mais sélection non confirmée, nouvelle tentative…', 5);
                       if (attempts < 5) setTimeout(retry, 700);
@@ -559,7 +565,7 @@
                   }, 500);
                 }, 350);
               }
-            }, 800);
+            }, 650);
             return;
           }
         if (verifyAndFinish('valeur déjà confirmée')) return;
@@ -587,7 +593,7 @@
         scrollIntoViewIfNeeded(nextBtn);
         nextBtn.click();
         log('➡️  Clic "Enregistrer et continuer"', 0);
-        setTimeout(runAutomation, 3000);
+        setTimeout(runAutomation, 1800);
       } else {
         log('⏭️  Bouton "Enregistrer et continuer" non trouvé', 0);
       }
@@ -1064,6 +1070,7 @@
           selectWorkdaySearchOption(estabInput, establishmentVal, 'Établissement', {
             waitMs: 1500,
             scope: getLookupScope(estabInput),
+            runToken: automationRunToken,
             onSelected: function() {
               step2LastEstablishmentApplied = establishmentVal;
             }
@@ -1328,6 +1335,7 @@
   }
 
   async function runAutomation() {
+    automationRunToken += 1;
     const currentTabId = await getCurrentTabId();
     const { taleos_pending_deloitte, taleos_deloitte_did_login_click } = await chrome.storage.local.get(['taleos_pending_deloitte', 'taleos_deloitte_did_login_click']);
     if (!taleos_pending_deloitte) {
