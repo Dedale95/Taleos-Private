@@ -258,7 +258,7 @@ def mark_credit_mutuel_error_pages_invalid(db_path):
     """Marque is_valid=0 pour les offres CM avec titre/description 'Erreur de navigation', 'Accusé de réception', etc."""
     if not db_path.exists():
         return 0
-    error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable', 'votre candidature en 4 étapes']
+    error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable']
     conn = sqlite3.connect(db_path)
     cursor = conn.execute(
         "SELECT job_url, job_title, job_description FROM jobs WHERE is_valid = 1 AND (job_title IS NOT NULL OR job_description IS NOT NULL)"

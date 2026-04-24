@@ -11,13 +11,19 @@ COMPANY_DISPLAY_MAPPING = {
     "euro information": "Euro Information",
     "cic": "CIC",
     "credit industriel et commercial": "CIC",
+    "acm gie": "ACM GIE",
+    "acm": "ACM GIE",
     "lyonnaise de banque": "Lyonnaise de Banque",
     "banque transatlantique": "Banque Transatlantique",
+    "dubly transatlantique gestion": "Banque Transatlantique",
     "monabanq": "Monabanq",
     "creatis": "Creatis",
     "factofrance": "FactoFrance",
     "afedim": "AFEDIM",
     "ataraxia promotion": "Ataraxia Promotion",
+    "groupe la francaise": "Groupe La Française",
+    "la francaise real estate managers": "Groupe La Française",
+    "la francaise finance services": "Groupe La Française",
 }
 
 def normalize_company_name(raw: str) -> str:

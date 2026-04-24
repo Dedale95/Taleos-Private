@@ -54,7 +54,7 @@ LISTING_URL = f"{BASE_URL}/fr/nos_offres.html"
 class Config:
     MAX_LOAD_MORE_ROUNDS = 100  # Clics sur "Afficher plus" par page tc
     PAGE_TIMEOUT = 45000
-    WAIT_AFTER_CLICK = 2.5
+    WAIT_AFTER_CLICK = 1.0
     HEADLESS = True
     BASE_DIR = Path(__file__).parent
     DB_PATH = BASE_DIR / "credit_mutuel_jobs.db"
@@ -63,6 +63,23 @@ class Config:
     REQUEST_TIMEOUT = 30
 
 config = Config()
+
+
+def extract_expected_offer_count(page_text: str) -> Optional[int]:
+    text = str(page_text or "").replace("\xa0", " ")
+    patterns = [
+        r'(\d+)\s+offres?\s+affich(?:e|é)es?\s+sur\s+(\d+)',
+        r'parmi\s+nos\s+(\d+)\s+offres',
+        r'(\d+)\s+offres?\s+correspondent',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        if len(match.groups()) >= 2:
+            return int(match.group(2))
+        return int(match.group(1))
+    return None
 
 # ================= Contract type mapping =================
 CONTRACT_MAPPING = {
@@ -178,7 +195,7 @@ class JobDatabase:
 
     def mark_error_pages_invalid(self) -> int:
         """Marque is_valid=0 pour les jobs dont le titre/description indique une page d'erreur."""
-        error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable', 'votre candidature en 4 étapes']
+        error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable']
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT job_url, job_title, job_description FROM jobs WHERE is_valid = 1 AND (job_title IS NOT NULL OR job_description IS NOT NULL)"
@@ -217,7 +234,7 @@ class JobDatabase:
             # Exclure les pages d'erreur (Erreur de navigation, Accusé de réception, etc.)
             title_lower = (job.get('job_title') or '').lower().replace('\xa0', ' ')
             desc_lower = (job.get('job_description') or '').lower().replace('\xa0', ' ')
-            error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable', 'votre candidature en 4 étapes']
+            error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable']
             if any(err in title_lower for err in error_patterns) or any(err in desc_lower for err in error_patterns):
                 is_valid = 0
             technical_skills = job.get('technical_skills') or '[]'
@@ -277,7 +294,7 @@ class JobDatabase:
 # COLLECT JOB URLS (Playwright - par type de contrat + load more)
 # =========================================================
 async def _collect_urls_for_page(page, url: str) -> Set[str]:
-    """Charge une page, clique sur Afficher plus jusqu'à épuisement, retourne les IDs."""
+    """Charge une page, clique sur Plus de résultats jusqu'au total attendu, retourne les IDs."""
     await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until='domcontentloaded')
     await asyncio.sleep(2)
     await page.evaluate("""
@@ -290,7 +307,10 @@ async def _collect_urls_for_page(page, url: str) -> Set[str]:
     await asyncio.sleep(0.3)
 
     all_ids = set()
-    for _ in range(config.MAX_LOAD_MORE_ROUNDS):
+    target_count = extract_expected_offer_count(await page.text_content("body"))
+    stagnant_rounds = 0
+
+    for round_idx in range(config.MAX_LOAD_MORE_ROUNDS):
         ids = await page.evaluate("""
             () => {
                 const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
@@ -302,13 +322,26 @@ async def _collect_urls_for_page(page, url: str) -> Set[str]:
                 return Array.from(s);
             }
         """)
-        prev = len(all_ids)
+        previous_count = len(all_ids)
         all_ids.update(ids)
-        if len(all_ids) == prev:
+        current_count = len(all_ids)
+        logging.info(f"Crédit Mutuel listing: {current_count} offres collectées"
+                     + (f" / {target_count}" if target_count else "")
+                     + f" (tour {round_idx + 1})")
+
+        if target_count and current_count >= target_count:
             break
+
+        if current_count == previous_count:
+            stagnant_rounds += 1
+        else:
+            stagnant_rounds = 0
+
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         await asyncio.sleep(0.2)
+
         clicked = False
+        previous_visible_count = len(ids)
         try:
             load_more = page.locator('a[id*="plusDoffresAccessibilite:link"]').first
             if await load_more.count():
@@ -317,19 +350,29 @@ async def _collect_urls_for_page(page, url: str) -> Set[str]:
                 clicked = True
         except Exception:
             clicked = False
+
         if not clicked:
+            logging.warning("Crédit Mutuel listing: bouton 'Plus de résultats' introuvable avant d'atteindre le total attendu")
             break
+
         try:
             await page.wait_for_function(
                 """(previousVisibleCount) => {
                     const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
                     return links.length > previousVisibleCount;
                 }""",
-                arg=len(ids),
-                timeout=int(config.WAIT_AFTER_CLICK * 1000 * 4)
+                arg=previous_visible_count,
+                timeout=15000
             )
         except Exception:
             await asyncio.sleep(config.WAIT_AFTER_CLICK)
+
+        if stagnant_rounds >= 3:
+            logging.warning(
+                "Crédit Mutuel listing: arrêt après 3 tours sans progression"
+                + (f" ({current_count}/{target_count})" if target_count else f" ({current_count})")
+            )
+            break
 
     return all_ids
 
@@ -470,6 +513,17 @@ def scrape_job_detail(url: str, session: requests.Session) -> Optional[Dict]:
         return None
 
 
+def scrape_job_detail_with_retries(url: str, session: requests.Session, max_attempts: int = 3) -> Optional[Dict]:
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        job = scrape_job_detail(url, session)
+        if job:
+            return job
+        last_error = f"tentative {attempt}/{max_attempts}"
+    logging.warning(f"Échec définitif détail Crédit Mutuel {url} ({last_error})")
+    return None
+
+
 # =========================================================
 # MAIN PIPELINE
 # =========================================================
@@ -504,10 +558,20 @@ async def main_async():
     # 3. Scraper les détails (parallèle avec requests)
     logging.info("Étape 2: Scraping des détails...")
     jobs = []
+    failed_urls = []
     with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
-        futures = {executor.submit(scrape_job_detail, u, session): u for u in urls}
+        futures = {executor.submit(scrape_job_detail_with_retries, u, session): u for u in urls}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Offres"):
             job = future.result()
+            if job:
+                jobs.append(job)
+            else:
+                failed_urls.append(futures[future])
+
+    if failed_urls:
+        logging.warning(f"Crédit Mutuel: {len(failed_urls)} détails ratés au premier passage, nouvelle tentative séquentielle")
+        for url in failed_urls:
+            job = scrape_job_detail_with_retries(url, session, max_attempts=2)
             if job:
                 jobs.append(job)
 
@@ -515,7 +579,7 @@ async def main_async():
     for job in jobs:
         db.insert_or_update_job(job)
 
-    logging.info(f"Terminé: {len(jobs)} offres traitées")
+    logging.info(f"Terminé: {len(jobs)} offres traitées sur {len(urls)} URLs collectées")
     logging.info("=" * 60)
 
 
