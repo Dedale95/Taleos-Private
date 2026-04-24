@@ -562,6 +562,28 @@
     }, delayMs || 2000);
   }
 
+  function getWorkdayBlurTarget() {
+    var target = document.getElementById('taleos-workday-blur-target');
+    if (target) return target;
+    target = document.createElement('button');
+    target.type = 'button';
+    target.id = 'taleos-workday-blur-target';
+    target.setAttribute('aria-hidden', 'true');
+    target.tabIndex = -1;
+    Object.assign(target.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '1px',
+      height: '1px',
+      opacity: '0',
+      pointerEvents: 'none',
+      zIndex: '-1'
+    });
+    document.body?.appendChild(target);
+    return target;
+  }
+
   /**
    * Valider les champs Workday comme en manuel : focus → (re-set value) → click-away → blur.
    * Si fieldsWithValues est fourni (avec .val), la valeur est ré-injectée avec le hack _valueTracker
@@ -585,37 +607,50 @@
           { el: document.getElementById('previousWorker--email'), label: 'Ancienne email Deloitte' }
         ].filter(function (x) { return x.el && x.el.offsetParent; });
       }
-      var elsewhere = document.querySelector('h2[data-automation-id="sectionHeader"], [role="heading"][aria-level="2"], h2') || document.body;
+      var elsewhere = getWorkdayBlurTarget() || document.querySelector('h2[data-automation-id="sectionHeader"], [role="heading"][aria-level="2"], h2') || document.body;
       fields.forEach(function (item, index) {
-        var delay = index * 500;
+        var delay = index * 700;
         setTimeout(function () {
           try {
             scrollIntoViewIfNeeded(item.el);
+            ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(function(type) {
+              try {
+                item.el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+              } catch (_) {}
+            });
             item.el.focus();
             item.el.click();
             if (item.val) {
               var val = String(item.val).trim();
               if (val) {
-                var tracker = item.el._valueTracker;
-                if (tracker) tracker.setValue('');
-                var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-                if (desc && desc.set) desc.set.call(item.el, val);
-                else item.el.value = val;
-                item.el.dispatchEvent(new Event('input', { bubbles: true }));
-                item.el.dispatchEvent(new Event('change', { bubbles: true }));
+                fillInput(item.el, val);
+                setTimeout(function() {
+                  var current = normalizeLoose(item.el.value || '');
+                  var expected = normalizeLoose(val);
+                  if (current !== expected) {
+                    fillInput(item.el, val);
+                    log('   🔁 Validation renforcée → ' + item.label, 5);
+                  }
+                }, 160);
               }
             }
             log('   🔁 Validation → ' + item.label, 5);
           } catch (_) {}
         }, delay);
         setTimeout(function () {
-          try { elsewhere.click(); } catch (_) {}
-        }, delay + 250);
+          try {
+            elsewhere.focus();
+            elsewhere.click();
+          } catch (_) {}
+        }, delay + 320);
         setTimeout(function () {
           try {
+            item.el.dispatchEvent(new Event('change', { bubbles: true }));
+            item.el.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: elsewhere }));
+            item.el.dispatchEvent(new FocusEvent('blur', { bubbles: false, relatedTarget: elsewhere }));
             if (document.activeElement === item.el) item.el.blur();
           } catch (_) {}
-        }, delay + 350);
+        }, delay + 430);
       });
     } catch (e) {
       log('   ❌ workdayClickThenClickAway: ' + (e && e.message), 5);
@@ -1831,7 +1866,7 @@
         if (pvLocEl) validationFields.push({ el: pvLocEl, label: 'Ancien bureau', val: (profile.deloitte_old_office || '').trim() });
         if (pvEmailEl) validationFields.push({ el: pvEmailEl, label: 'Ancienne email', val: (profile.deloitte_old_email || '').trim() });
       }
-      setTimeout(function() { workdayClickThenClickAway(validationFields); }, 800);
+      setTimeout(function() { workdayClickThenClickAway(validationFields); }, 900);
       if (phoneEl && phoneVal) {
         setTimeout(function() {
           fillInputStrict(phoneEl, phoneVal, 'Numéro de téléphone', { normalize: normalizeDigits });
@@ -1888,7 +1923,7 @@
     if (isOnApplyForm) {
       step1Attempts++;
       log('✅ Étape 1 tentative ' + step1Attempts + '/3 → clic auto "Enregistrer et continuer"', 5);
-      clickNextAndContinue(6000);
+      clickNextAndContinue(7800);
       return;
     }
     if (filled) {

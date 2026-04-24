@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.90",
-  "version_name": "1.1.90-deloitte-school-selection-fix",
+  "version": "1.1.91",
+  "version_name": "1.1.91-deloitte-step1-workday-commit-fix",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -121,7 +121,11 @@
       "matches": [
         "https://*.recruitmentplatform.com/*"
       ],
-      "js": ["scripts/taleos-automation-banner.js", "scripts/bpce_blueprint.js", "content/bpce-lumesse-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
+        "content/bpce-lumesse-filler.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     },
