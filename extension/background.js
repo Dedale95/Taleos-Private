@@ -47,7 +47,8 @@ const BANK_SCRIPT_MAP = {
   societe_generale: 'scripts/societe_generale.js',
   deloitte: 'content/deloitte-careers-filler.js',
   bpce: 'content/bpce-careers-filler.js',
-  bnp_paribas: 'content/bnp-careers-filler.js'
+  bnp_paribas: 'content/bnp-careers-filler.js',
+  credit_mutuel: 'content/credit-mutuel-careers-filler.js'
 };
 
 const PROJECT_ID = 'project-taleos';
@@ -67,6 +68,7 @@ const SG_BLUEPRINT_SCRIPT = 'scripts/societe_generale_blueprint.js';
 const BPCE_BLUEPRINT_SCRIPT = 'scripts/bpce_blueprint.js';
 const DELOITTE_BLUEPRINT_SCRIPT = 'scripts/deloitte_blueprint.js';
 const BNP_BLUEPRINT_SCRIPT = 'scripts/bnp_paribas_blueprint.js';
+const CREDIT_MUTUEL_BLUEPRINT_SCRIPT = 'scripts/credit_mutuel_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -91,6 +93,9 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'bnp_paribas') {
     return injectFilesWithBanner([BNP_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'credit_mutuel') {
+    return injectFilesWithBanner([CREDIT_MUTUEL_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
 }
 
@@ -102,6 +107,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'deloitte') keys.push('taleos_pending_deloitte', 'taleos_deloitte_did_login_click');
   if (bid === 'bpce') keys.push('taleos_pending_bpce', 'taleos_bpce_tab_id');
   if (bid === 'bnp_paribas') keys.push('taleos_pending_bnp', 'taleos_bnp_tab_id');
+  if (bid === 'credit_mutuel') keys.push('taleos_pending_credit_mutuel', 'taleos_credit_mutuel_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -391,6 +397,8 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_bpce_tab_id',
     'taleos_pending_bnp',
     'taleos_bnp_tab_id',
+    'taleos_pending_credit_mutuel',
+    'taleos_credit_mutuel_tab_id',
     'taleos_pending_deloitte',
     'taleos_pending_offer',
     'taleos_ca_apply_tab_id'
@@ -434,6 +442,17 @@ async function resolveTabAndMetaForStuckReport() {
         bankId: 'bnp_paribas',
         jobId: s.taleos_pending_bnp.jobId || '',
         offerUrl: s.taleos_pending_bnp.offerUrl || ''
+      };
+    }
+  }
+  if (s.taleos_pending_credit_mutuel && s.taleos_credit_mutuel_tab_id) {
+    const tab = await chrome.tabs.get(s.taleos_credit_mutuel_tab_id).catch(() => null);
+    if (tab?.id) {
+      return {
+        tabId: tab.id,
+        bankId: 'credit_mutuel',
+        jobId: s.taleos_pending_credit_mutuel.jobId || '',
+        offerUrl: s.taleos_pending_credit_mutuel.offerUrl || ''
       };
     }
   }
@@ -753,10 +772,12 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       'taleos_sg_tab_id',
       'taleos_bpce_tab_id',
       'taleos_bnp_tab_id',
+      'taleos_credit_mutuel_tab_id',
       'taleos_ca_apply_tab_id',
       'taleos_pending_sg',
       'taleos_pending_bpce',
       'taleos_pending_bnp',
+      'taleos_pending_credit_mutuel',
       'taleos_pending_deloitte',
       'taleos_pending_offer',
       'taleos_ca_candidature_pending',
@@ -775,6 +796,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (state.taleos_bnp_tab_id === tabId || state.taleos_pending_bnp?.tabId === tabId) {
       keysToRemove.add('taleos_pending_bnp');
       keysToRemove.add('taleos_bnp_tab_id');
+    }
+    if (state.taleos_credit_mutuel_tab_id === tabId || state.taleos_pending_credit_mutuel?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_credit_mutuel');
+      keysToRemove.add('taleos_credit_mutuel_tab_id');
     }
     if (state.taleos_ca_apply_tab_id === tabId || state.taleos_ca_candidature_pending?.tabId === tabId) {
       keysToRemove.add('taleos_pending_offer');
@@ -1896,6 +1921,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   const url = String(offerUrl || '').toLowerCase();
   const bid = String(bankId || '').toLowerCase();
   if (bid === 'credit_agricole' || url.includes('groupecreditagricole.jobs')) return 'ca';
+  if (bid === 'credit_mutuel' || url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
   if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
@@ -2247,6 +2273,36 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         timestamp: Date.now()
       },
       taleos_bnp_tab_id: tab.id
+    });
+    scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'credit_mutuel') {
+    chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach(ms => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    chrome.storage.local.set({
+      taleos_pending_credit_mutuel: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'Crédit Mutuel', __offerUrl: offerUrl },
+        offerUrl,
+        jobId,
+        jobTitle,
+        companyName: companyName || 'Crédit Mutuel',
+        tabId: tab.id,
+        timestamp: Date.now()
+      },
+      taleos_credit_mutuel_tab_id: tab.id
     });
     scheduleApplyStuckWatchdog();
   } else {
@@ -3127,11 +3183,13 @@ async function sendGA4Event(eventName, params = {}, userId = null) {
 function normalizeSite(site, offerUrl) {
   const raw = (site || '').toLowerCase();
   if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
+  if (raw.includes('mutuel')) return 'credit_mutuel';
   if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
   if (raw.includes('bpce')) return 'bpce';
   if (raw.includes('deloitte')) return 'deloitte';
   const url = (offerUrl || '').toLowerCase();
   if (url.includes('groupecreditagricole.jobs')) return 'credit_agricole';
+  if (url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';

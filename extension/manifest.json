@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.96",
-  "version_name": "1.1.96-deloitte-already-applied-sync",
+  "version": "1.1.97",
+  "version_name": "1.1.97-credit-mutuel-blueprint",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -31,6 +31,7 @@
     "https://groupecreditagricole.jobs/*",
     "https://group.bnpparibas/*",
     "https://bwelcome.hr.bnpparibas/*",
+    "https://recrutement.creditmutuel.fr/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
@@ -183,6 +184,17 @@
         "scripts/taleos-automation-banner.js",
         "scripts/bnp_paribas_blueprint.js",
         "content/bnp-careers-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://recrutement.creditmutuel.fr/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/credit_mutuel_blueprint.js",
+        "content/credit-mutuel-careers-filler.js"
       ],
       "run_at": "document_idle"
     },
