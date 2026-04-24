@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.93",
-  "version_name": "1.1.93-deloitte-school-retry-and-date-fix",
+  "version": "1.1.94",
+  "version_name": "1.1.94-deloitte-dom-probe-hardening",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

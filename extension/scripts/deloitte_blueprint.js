@@ -114,7 +114,8 @@
       pathMatches: [/\/apply/],
       selectorsAny: [
         'button[aria-haspopup="listbox"][id*="degree"]',
-        'input[data-automation-id="searchBox"][id*="school"]',
+        'input[id*="school"][placeholder="Rechercher"]',
+        '[data-automation-id="formField-school"] [data-automation-id="selectedItem"]',
         '[data-automation-id="file-upload-drop-zone"]'
       ],
       textPatterns: TEXT_PATTERNS.experience
@@ -153,13 +154,13 @@
       { key: 'deloitte_old_email', label: 'Ancienne adresse email Deloitte', profileKey: 'deloitte_old_email', selectors: ['#previousWorker--email'], type: 'input', when: (profile) => String(profile.deloitte_worked || '').toLowerCase() === 'yes' }
     ],
     experience: [
-      { key: 'establishment', label: 'Etablissement ou universite', profileKey: 'establishment', selectors: ['input[data-automation-id="searchBox"][id*="school"]', 'input[id*="school"][placeholder="Rechercher"]'], type: 'input', critical: true },
+      { key: 'establishment', label: 'Etablissement ou universite', profileKey: 'establishment', selectors: ['[data-automation-id="formField-school"] [data-automation-id="selectedItem"]', 'input[id*="school"][placeholder="Rechercher"]', 'input[id*="school"]'], type: 'input', critical: true },
       { key: 'education_level', label: 'Diplome', profileKey: 'education_level', selectors: ['button[aria-haspopup="listbox"][id*="degree"]', 'button[aria-haspopup="listbox"][name="degree"]'], type: 'listbox', critical: true },
       { key: 'diploma_year', label: 'Annee de fin', profileKey: 'diploma_year', selectors: ['input[id*="lastYearAttended"][id*="Year"]', '[data-automation-id="dateSectionYear-display"]'], type: 'input', critical: true },
       { key: 'cv_storage_path', label: 'CV', profileKey: 'cv_storage_path', selectors: ['[data-automation-id="file-upload-drop-zone"]', 'input[type="file"]'], type: 'file', critical: true }
     ],
     questionnaire: [
-      { key: 'experience_level', label: 'Niveau d experience', profileKey: 'experience_level', selectors: ['[data-fkit-id*="primaryQuestionnaire"]'], type: 'questionnaire', critical: true },
+      { key: 'experience_level', label: 'Niveau d experience', profileKey: 'experience_level', selectors: ['[data-fkit-id*="primaryQuestionnaire"] button[aria-haspopup="listbox"]', 'button[id*="primaryQuestionnaire"][aria-haspopup="listbox"]'], type: 'questionnaire', critical: true },
       { key: 'available_date', label: 'Date de disponibilite', profileKey: 'available_date', selectors: ['[data-automation-id="dateSectionDay-input"]', '[data-automation-id="dateSectionMonth-input"]', '[data-automation-id="dateSectionYear-input"]'], type: 'date', critical: true },
       { key: 'apprenticeship_grant', label: 'Bourse alternance', expectedValue: 'Ne se prononce pas', selectors: ['[data-fkit-id*="primaryQuestionnaire"]'], type: 'questionnaire' }
     ]

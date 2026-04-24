@@ -389,9 +389,12 @@
 
   function getVisibleLookupOptions(options) {
     var selectors = options?.selectors || [
-      '[data-automation-id="promptOption"]',
-      '[role="option"]',
-      '[data-automation-id="menuItem"]'
+      '[data-automation-id="responsiveMonikerPrompt"] [data-automation-id="menuItem"]',
+      '[data-automation-id="responsiveMonikerPrompt"] [data-automation-id="promptLeafNode"]',
+      '[data-automation-id="responsiveMonikerPrompt"] [role="option"]',
+      '[role="listbox"] [data-automation-id="menuItem"]',
+      '[role="listbox"] [data-automation-id="promptLeafNode"]',
+      '[role="listbox"] [role="option"]'
     ];
     return Array.from(document.querySelectorAll(selectors.join(', '))).filter(function(node) {
       return node && node.offsetParent !== null;
@@ -439,21 +442,29 @@
     var target = normalizeLoose(expectedText);
     if (!target) return false;
     var nodes = getVisibleLookupOptions(options);
+    function nodeText(node) {
+      return normalizeLoose(
+        node.textContent ||
+        node.getAttribute('aria-label') ||
+        node.getAttribute('data-automation-label') ||
+        ''
+      ).replace(/\s+not checked$/, '').replace(/\s+checked$/, '');
+    }
 
     var exact = nodes.find(function(node) {
-      var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-automation-label') || '');
+      var text = nodeText(node);
       return text === target;
     });
     if (!exact) {
       exact = nodes.find(function(node) {
-        var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-automation-label') || '');
+        var text = nodeText(node);
         return text.includes(target) || target.includes(text);
       });
     }
     if (!exact) return false;
     try {
       scrollIntoViewIfNeeded(exact);
-      var radioLike = exact.querySelector('input[type="radio"], [role="radio"], label, button, [data-automation-id="promptOption"]');
+      var radioLike = exact.querySelector('[data-automation-id="promptLeafNode"], input[type="radio"], [role="radio"], label, button');
       var targetNode = radioLike || exact;
       try {
         targetNode.focus && targetNode.focus();
@@ -486,7 +497,7 @@
     var nodes = getVisibleLookupOptions(options);
     return nodes.some(function(node) {
       var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || '');
-      return text.includes('resultats de la recherche') || text.includes('recherche') || text.includes('loading') || text.includes('charg');
+      return text.includes('recherche en cours') || text.includes('loading') || text.includes('charg');
     });
   }
 
@@ -973,12 +984,10 @@
     // ——— Niveau d'expérience : mapping Firebase → Workday ———
     var expOption = mapFirebaseExperienceToDeloitteOption(expLevel);
     if (expOption) {
-      var expBtns = Array.from(document.querySelectorAll('button[aria-haspopup="listbox"][id*="primaryQuestionnaire"]'));
-      var expBtn = expBtns.find(function(b) {
-        var field = b.closest('[data-fkit-id]');
-        if (!field) return false;
-        var legend = field.querySelector('legend');
-        return legend && /niveau\s*(d.)?exp/i.test(legend.textContent || '');
+      var expBtn = Array.from(document.querySelectorAll('[data-fkit-id*="primaryQuestionnaire"] button[aria-haspopup="listbox"]')).find(function(b) {
+        var field = b.closest('[data-fkit-id*="primaryQuestionnaire"], fieldset, [data-automation-id^="formField-"]');
+        var legend = field && field.querySelector('legend');
+        return legend && /niveau\s*d['’]?\s*experience|niveau\s*d['’]?\s*exp|niveau d'experience|niveau d’expérience/i.test(legend.textContent || '');
       });
       if (expBtn && expBtn.offsetParent !== null) {
         clickWorkdayListboxOption(expBtn, expOption, 'Niveau d\'expérience');
@@ -993,9 +1002,9 @@
     var parsedDate = parseAvailabilityDateParts(availDate);
     if (parsedDate) {
       var dateFields = document.querySelectorAll('[id*="primaryQuestionnaire"][id*="dateSection"]');
-      var dayInput = document.querySelector('[id*="primaryQuestionnaire"][data-automation-id="dateSectionDay-input"]');
-      var monthInput = document.querySelector('[id*="primaryQuestionnaire"][data-automation-id="dateSectionMonth-input"]');
-      var yearInput = document.querySelector('[id*="primaryQuestionnaire"][data-automation-id="dateSectionYear-input"]');
+      var dayInput = document.querySelector('[data-automation-id="dateSectionDay-input"]');
+      var monthInput = document.querySelector('[data-automation-id="dateSectionMonth-input"]');
+      var yearInput = document.querySelector('[data-automation-id="dateSectionYear-input"]');
       if (!dayInput) dayInput = Array.from(dateFields).find(function(el) { return el.id && el.id.includes('Day-input'); });
       if (!monthInput) monthInput = Array.from(dateFields).find(function(el) { return el.id && el.id.includes('Month-input'); });
       if (!yearInput) yearInput = Array.from(dateFields).find(function(el) { return el.id && el.id.includes('Year-input'); });
@@ -1003,16 +1012,19 @@
       if (dayInput) {
         scrollIntoViewIfNeeded(dayInput);
         fillInputStrict(dayInput, parsedDate.day, 'Date dispo (jour)', { normalize: normalizeDigits });
+        try { dayInput.blur(); } catch (_) {}
       }
       setTimeout(function() {
         if (monthInput) {
           scrollIntoViewIfNeeded(monthInput);
           fillInputStrict(monthInput, parsedDate.month, 'Date dispo (mois)', { normalize: normalizeDigits });
+          try { monthInput.blur(); } catch (_) {}
         }
         setTimeout(function() {
           if (yearInput) {
             scrollIntoViewIfNeeded(yearInput);
             fillInputStrict(yearInput, parsedDate.year, 'Date dispo (année)', { normalize: normalizeDigits });
+            try { yearInput.blur(); } catch (_) {}
           }
         }, 300);
       }, 300);
@@ -1052,8 +1064,9 @@
     log('   Établissement: ' + (establishmentVal || '—') + '  |  Diplôme: ' + (profile.education_level || '—') + '  |  Année fin: ' + (yearEnd || '—'), 5);
 
     // ——— Établissement ou université : simulateTyping → wait results → double Enter ———
-    var estabInput = document.querySelector('input[data-automation-id="searchBox"][id*="school"]') ||
-      document.querySelector('input[id*="school"][placeholder="Rechercher"]') ||
+    var estabInput = document.querySelector('input[id*="school"][placeholder="Rechercher"]') ||
+      document.querySelector('input[data-automation-id="searchBox"][id*="school"]') ||
+      document.querySelector('input[id*="school"]') ||
       findInputByLabel(['établissement ou université', 'institution']);
     if (estabInput && estabInput.offsetParent !== null && establishmentVal) {
       if (step2LastEstablishmentApplied && normalizeLoose(step2LastEstablishmentApplied) === normalizeLoose(establishmentVal) && isEstablishmentAlreadySet(estabInput, establishmentVal)) {
