@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.1.89",
-  "version_name": "1.1.89-bnp-exhaustive-language-mapping",
+  "version": "1.1.90",
+  "version_name": "1.1.90-deloitte-school-selection-fix",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

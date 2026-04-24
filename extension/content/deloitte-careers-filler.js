@@ -452,11 +452,46 @@
     if (!exact) return false;
     try {
       scrollIntoViewIfNeeded(exact);
+      ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(function(type) {
+        try {
+          exact.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        } catch (_) {}
+      });
       exact.click();
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  function hasLookupLoadingState(options) {
+    var nodes = getVisibleLookupOptions(options);
+    return nodes.some(function(node) {
+      var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || '');
+      return text.includes('resultats de la recherche') || text.includes('recherche') || text.includes('loading') || text.includes('charg');
+    });
+  }
+
+  function waitForLookupOption(expectedText, options, onReady, attemptsLeft) {
+    var remaining = typeof attemptsLeft === 'number' ? attemptsLeft : 8;
+    var target = normalizeLoose(expectedText);
+    var nodes = getVisibleLookupOptions(options);
+    var match = nodes.find(function(node) {
+      var text = normalizeLoose(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-automation-label') || '');
+      return text === target || text.includes(target) || target.includes(text);
+    });
+    if (match) {
+      onReady(match);
+      return;
+    }
+    if (remaining <= 0) {
+      onReady(null);
+      return;
+    }
+    var delay = hasLookupLoadingState(options) ? 500 : 250;
+    setTimeout(function() {
+      waitForLookupOption(expectedText, options, onReady, remaining - 1);
+    }, delay);
   }
 
   function selectWorkdaySearchOption(inputEl, expectedText, label, options) {
@@ -476,25 +511,35 @@
       pressEnterSequence(inputEl);
       setTimeout(function retry() {
         attempts += 1;
-        if (clickVisibleOptionMatchingText(expectedText, options)) {
-          setTimeout(function() {
-            if (!verifyAndFinish('suggestion sélectionnée')) {
-              log('   ⏳ ' + label + ' → suggestion cliquée mais sélection non confirmée, nouvelle tentative…', 5);
-              if (attempts < 5) setTimeout(retry, 600);
-              else log('   ❌ ' + label + ' → impossible de confirmer la sélection Workday', 5);
-            }
-          }, 700);
-          return;
-        }
+        waitForLookupOption(expectedText, options, function(optionNode) {
+          if (optionNode && clickVisibleOptionMatchingText(expectedText, options)) {
+            setTimeout(function() {
+              if (!verifyAndFinish('suggestion sélectionnée')) {
+                pressEnterSequence(inputEl);
+                setTimeout(function() {
+                  pressEnterSequence(inputEl);
+                  setTimeout(function() {
+                    if (!verifyAndFinish('suggestion + double Enter')) {
+                      log('   ⏳ ' + label + ' → suggestion cliquée mais sélection non confirmée, nouvelle tentative…', 5);
+                      if (attempts < 5) setTimeout(retry, 700);
+                      else log('   ❌ ' + label + ' → impossible de confirmer la sélection Workday', 5);
+                    }
+                  }, 500);
+                }, 350);
+              }
+            }, 800);
+            return;
+          }
         if (verifyAndFinish('valeur déjà confirmée')) return;
         if (attempts === 1 || attempts === 3) {
           pressEnterSequence(inputEl);
         }
         if (attempts < 5) {
-          setTimeout(retry, 600);
+          setTimeout(retry, 700);
           return;
         }
         log('   ❌ ' + label + ' → aucune suggestion Workday confirmée après frappe + Enter', 5);
+        }, 10);
       }, 500);
     }, waitMs);
   }
