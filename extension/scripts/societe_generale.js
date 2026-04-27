@@ -188,8 +188,19 @@
   function isSgScreeningQuestionsVisible() {
     for (const root of getSearchRoots()) {
       const t = ((root.body?.innerText || '') + (root.title || '')).toLowerCase();
+      // EN — patterns classiques
       if (/please answer the following questions|are you authorized to work in the european union|what is your notice period/i.test(t)) return true;
+      // FR — "Union européenne" ou "préavis"
       if (/êtes-vous autorisé.*travailler.*union européenne|quel est votre préavis/i.test(t)) return true;
+      // FR — "dans le pays dans lequel vous postulez" (nouvelle question pays)
+      if (/autorisé.*travailler.*pays.*postulez|autorisé.*travailler.*pays.*poste/i.test(t)) return true;
+      // FR — loi 11 février 2005 / RQTH
+      if (/11 f[eé]vrier 2005|insertion professionnelle.*handicap|b[eé]n[eé]ficiaire.*loi.*handicap/i.test(t)) return true;
+      // FR — aménagement dédié / tiers-temps
+      if (/am[eé]nagement d[eé]di[eé]|accessibilit[eé] sp[eé]cifique.*tests|tiers.temps/i.test(t)) return true;
+      // FR/EN — sous-titre générique de la page questions
+      if (/r[eé]pondez le plus pr[eé]cis[eé]ment possible aux questions/i.test(t)) return true;
+      // EN/FR — date de disponibilité
       if (/what would be your start date|your start date\s*\?|date de (début|prise en poste|commence)/i.test(t)) return true;
     }
     return false;
@@ -1127,6 +1138,7 @@
       }
 
       const onStep2NotStep3 = !isSgVerifierReviewPage() &&
+        !isSgScreeningQuestionsVisible() &&
         (hasProfileFormVisible() || isInformationsPersonnellesPage()) && currentStep !== 'pieces' && !isPiecesJointesPage() && !profileFilled;
       if (onStep2NotStep3) {
       await snapshot('sg_personal_information_detected', { profile });
