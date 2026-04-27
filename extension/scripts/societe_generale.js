@@ -288,15 +288,28 @@
   }
 
   async function fillSgScreeningQuestionsFromProfile(profile) {
-    const eu = String(profile?.sg_eu_work_authorization || '').trim().toLowerCase();
-    const noticeRaw = String(profile?.sg_notice_period || '').trim();
+    const eu = String(profile?.sg_eu_work_authorization || ‘’).trim().toLowerCase();
+    const noticeRaw = String(profile?.sg_notice_period || ‘’).trim();
     /** Taleo SG ne propose pas « aucun » : on coche l’option la plus proche (1 month). */
-    const notice = noticeRaw === 'none' ? '1_month' : noticeRaw;
+    const notice = noticeRaw === ‘none’ ? ‘1_month’ : noticeRaw;
+    // Handicap RQTH (loi 11 fév. 2005) — défaut "non" si non renseigné
+    const handicap = String(profile?.sg_handicap || ‘non’).trim().toLowerCase();
+    const wantHandicapYes = handicap === ‘oui’ || handicap === ‘yes’;
+    // Aménagement spécifique pour tests — défaut "non"
+    const accommodation = String(profile?.sg_handicap_accommodation || ‘non’).trim().toLowerCase();
+    const wantAccommodationYes = accommodation === ‘oui’ || accommodation === ‘yes’;
+    // Autorisation de travailler dans le pays du poste — on réutilise sg_eu_work_authorization
+    // (autorisation UE = autorisation France pour les postes SG)
+    const countryAuth = eu || ‘yes’; // défaut "yes" si non renseigné
+
     if (!isSgScreeningQuestionsVisible()) return false;
     const startTaPresent = !!findSgStartDateTextarea();
     if (!eu && !noticeRaw && !startTaPresent) return false;
 
     let filledEu = false;
+    let filledCountryAuth = false;
+    let filledHandicap = false;
+    let filledAccommodation = false;
     let filledNotice = false;
     const noticePatterns = {
       '1_month': [/1\s*month/i, /1\s*mois/i, /^\s*1\s*$/],
@@ -323,22 +336,62 @@
 
         for (const [, group] of byName) {
           const labels = group.map(sgRadioLabelText);
-          if (eu && group.length === 2) {
+          if (group.length === 2) {
             const hasY = labels.some((t) => /\byes\b/i.test(t) || /\boui\b/i.test(t));
             const hasN = labels.some((t) => /\bno\b/i.test(t) || /\bnon\b/i.test(t));
             if (!hasY || !hasN) continue;
             const scope = group[0].closest?.('div, form, fieldset, table, tbody, section') || root.body;
             const st = (scope?.textContent || '').slice(0, 6000);
-            if (!/european union|union européenne|authorized to work|autorisé.*travailler/i.test(st)) continue;
-            const wantYes = eu === 'yes' || eu === 'oui';
-            for (const r of group) {
-              if (clickRadioMatchingLabel(r, wantYes)) {
-                log(`   ✅ Question UE : ${wantYes ? 'Oui' : 'Non'} (profil, libellés Taleo)`);
-                filledEu = true;
-                break;
+
+            // Q : Autorisé à travailler dans l'Union européenne
+            if (eu && !filledEu && /european union|union européenne|authorized to work in the eu|autorisé.*travailler.*union/i.test(st)) {
+              const wantYes = eu === 'yes' || eu === 'oui';
+              for (const r of group) {
+                if (clickRadioMatchingLabel(r, wantYes)) {
+                  log(`   ✅ Question UE : ${wantYes ? 'Oui' : 'Non'} (profil)`);
+                  filledEu = true;
+                  break;
+                }
               }
+              continue;
             }
-            continue;
+
+            // Q : Autorisé à travailler dans le pays du poste
+            if (!filledCountryAuth && /autorisé.*travailler.*pays.*poste|autorisé.*travailler.*pays.*postulez|authorized to work in the country/i.test(st)) {
+              const wantYes = countryAuth === 'yes' || countryAuth === 'oui';
+              for (const r of group) {
+                if (clickRadioMatchingLabel(r, wantYes)) {
+                  log(`   ✅ Autorisation pays : ${wantYes ? 'Oui' : 'Non'} (profil)`);
+                  filledCountryAuth = true;
+                  break;
+                }
+              }
+              continue;
+            }
+
+            // Q : Bénéficiaire loi 11 février 2005 (RQTH / handicap)
+            if (!filledHandicap && /11 f[ée]vrier 2005|insertion professionnelle.*handicap|b[ée]n[ée]ficiaire.*handicap|loi.*handicap/i.test(st)) {
+              for (const r of group) {
+                if (clickRadioMatchingLabel(r, wantHandicapYes)) {
+                  log(`   ✅ Handicap RQTH : ${wantHandicapYes ? 'Oui' : 'Non'} (profil)`);
+                  filledHandicap = true;
+                  break;
+                }
+              }
+              continue;
+            }
+
+            // Q : Aménagement spécifique pour tests (tiers-temps, accessibilité)
+            if (!filledAccommodation && /am[ée]nagement.*d[ée]di[ée]|accessibilit[ée].*sp[ée]cifique|tiers.temps|amenagement.*tests/i.test(st)) {
+              for (const r of group) {
+                if (clickRadioMatchingLabel(r, wantAccommodationYes)) {
+                  log(`   ✅ Aménagement handicap : ${wantAccommodationYes ? 'Oui' : 'Non'} (profil)`);
+                  filledAccommodation = true;
+                  break;
+                }
+              }
+              continue;
+            }
           }
 
           if (notice && noticePatterns[notice] && group.length >= 3 && group.length <= 8) {
@@ -365,11 +418,12 @@
 
     tryFillFromRadioGroups();
 
-    if ((eu && !filledEu) || (noticeRaw && !filledNotice)) {
+    if ((eu && !filledEu) || !filledCountryAuth || !filledHandicap || !filledAccommodation || (noticeRaw && !filledNotice)) {
       for (const root of getSearchRoots()) {
         const blocks = root.querySelectorAll?.('table, div, form, fieldset, tr, tbody') || [];
         for (const block of blocks) {
           const bt = (block.textContent || '').toLowerCase();
+
           if (eu && !filledEu && /authorized to work in the european union|autorisé.*travailler.*union européenne|travail.*union européenne/i.test(bt)) {
             const wantYes = eu === 'yes' || eu === 'oui';
             const radios = block.querySelectorAll?.('input[type="radio"]') || [];
@@ -381,6 +435,41 @@
               }
             }
           }
+
+          if (!filledCountryAuth && /autorisé.*travailler.*pays.*postulez|authorized to work in the country/i.test(bt)) {
+            const wantYes = countryAuth === 'yes' || countryAuth === 'oui';
+            const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+            for (const r of radios) {
+              if (clickRadioMatchingLabel(r, wantYes)) {
+                log(`   ✅ Autorisation pays (fallback) : ${wantYes ? 'Oui' : 'Non'}`);
+                filledCountryAuth = true;
+                break;
+              }
+            }
+          }
+
+          if (!filledHandicap && /11 f[ée]vrier 2005|insertion professionnelle.*handicap|b[ée]n[ée]ficiaire.*handicap/i.test(bt)) {
+            const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+            for (const r of radios) {
+              if (clickRadioMatchingLabel(r, wantHandicapYes)) {
+                log(`   ✅ Handicap RQTH (fallback) : ${wantHandicapYes ? 'Oui' : 'Non'}`);
+                filledHandicap = true;
+                break;
+              }
+            }
+          }
+
+          if (!filledAccommodation && /am[ée]nagement.*d[ée]di[ée]|accessibilit[ée].*sp[ée]cifique|tiers.temps/i.test(bt)) {
+            const radios = block.querySelectorAll?.('input[type="radio"]') || [];
+            for (const r of radios) {
+              if (clickRadioMatchingLabel(r, wantAccommodationYes)) {
+                log(`   ✅ Aménagement handicap (fallback) : ${wantAccommodationYes ? 'Oui' : 'Non'}`);
+                filledAccommodation = true;
+                break;
+              }
+            }
+          }
+
           if (notice && !filledNotice && noticePatterns[notice] && /notice period|préavis|délai de préavis/i.test(bt)) {
             const pats = noticePatterns[notice];
             const radios = block.querySelectorAll?.('input[type="radio"]') || [];
@@ -429,7 +518,7 @@
       filledStart = true;
     }
 
-    const did = filledEu || filledNotice || filledStart;
+    const did = filledEu || filledCountryAuth || filledHandicap || filledAccommodation || filledNotice || filledStart;
     if (did) await delay(600);
     return did;
   }
