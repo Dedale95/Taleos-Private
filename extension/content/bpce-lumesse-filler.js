@@ -728,18 +728,18 @@
     return true;
   }
 
-  /** Détection élargie (variantes TalentLink / Lumesse / Oracle). */
+  /** Détection élargie (variantes TalentLink / Lumesse). Ne doit PAS matcher les pages Oracle. */
   function detectLumesseForm() {
     const sels = [
       "form.apply-main-form",
       "select[name='form_of_address']",
       "select[name='custom_question_7344']",
-      "input[name='last_name']",
-      "input[name='first_name']",
+      "input[name='last_name']",          // Lumesse snake_case — pas Oracle
+      "input[name='first_name']",         // Lumesse snake_case — pas Oracle
       "input[name='e-mail_address']",
       "[data-talentlink-apply-number='country_code']",
-      "input[id*='lastName']",
-      "input[id*='firstName']",
+      // NB: input[id*='lastName'] et input[id*='firstName'] RETIRÉS : ce sont des sélecteurs Oracle
+      // (IDs camelCase) qui généraient de faux positifs sur les pages Oracle Cloud.
       "select[name^='custom_question_']",
     ];
     const hits = sels.filter((s) => {
@@ -749,8 +749,9 @@
         return false;
       }
     });
+    // hasName : uniquement les attributs name snake_case Lumesse (pas les id* Oracle)
     const hasName = !!document.querySelector(
-      "input[name='last_name'], input[name='first_name'], input[id*='lastName'], input[id*='firstName'], input[id*='LastName'], input[id*='FirstName']"
+      "input[name='last_name'], input[name='first_name']"
     );
     const hasCivility = !!document.querySelector("select[name='form_of_address'], select[id*='form_of_address'], select[id*='Form_of_address']");
     return hits.length >= 2 || (hasName && hasCivility);
@@ -837,6 +838,10 @@
     if (successSent) return;
     if (filling || done) return;
 
+    // Sur oraclecloud.com, bpce-oracle-filler.js gère le remplissage.
+    // Le lumesse-filler est chargé ici uniquement pour la détection de succès (déjà faite ci-dessus).
+    if (/oraclecloud\.com/i.test(location.hostname || '')) return;
+
     const pending = await hasPendingBpce();
     const onBpceApplyHost =
       /oraclecloud\.com$/i.test(location.hostname || "") ||
@@ -873,6 +878,10 @@
       const report = bpceBlueprint.getLumesseStructureReport();
       await bpceBlueprint.logCheck('Structure lumesse formulaire', report);
       if (!pageValidation.ok || !report.ok) {
+        // Si c'est une page Oracle, on s'arrête définitivement (oracle-filler prend la main)
+        if (pageValidation.detected.page === 'oracle_form') {
+          done = true;
+        }
         log(`❌ Blueprint Lumesse mismatch : ${pageValidation.detected.page}`);
         setPing("error", `blueprint mismatch ${pageValidation.detected.page}`);
         return;
