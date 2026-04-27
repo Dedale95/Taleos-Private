@@ -636,6 +636,9 @@
   }
 
   function detectLumesseSuccess() {
+    // Ne détecter le succès que sur les domaines Lumesse/Oracle, pas sur recrutement.bpce.fr
+    const hostname = location.hostname || '';
+    if (!hostname.includes('recruitmentplatform.com') && !hostname.includes('oraclecloud.com')) return false;
     const text = normText(document.body?.innerText || document.body?.textContent || "");
     return (
       !detectLumesseForm() &&
@@ -645,9 +648,10 @@
 
   async function maybeNotifyLumesseSuccess() {
     if (successSent || !detectLumesseSuccess()) return;
-    successSent = true;
     const taleos_pending_bpce = await getPendingBpceEntry();
-    const pending = taleos_pending_bpce || {};
+    if (!taleos_pending_bpce) return; // Onglet non armé — pas notre run
+    successSent = true;
+    const pending = taleos_pending_bpce;
     log("🎉 Confirmation Lumesse détectée — notification de succès à Taleos");
     chrome.runtime.sendMessage({
       action: "candidature_success",

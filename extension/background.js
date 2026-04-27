@@ -1788,6 +1788,20 @@ async function getGmailAuthState(uid, idToken) {
 
 async function runTestConnection(msg) {
   const { bankId, email, password, firebaseUserId, taleosTabId, bankName } = msg;
+
+  // BPCE utilise l'OTP Oracle — pas de mot de passe ni d'URL de connexion traditionnelle
+  if (bankId === 'bpce') {
+    if (!email || !firebaseUserId) {
+      return { success: false, message: 'Email BPCE manquant.' };
+    }
+    const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+    if (!taleosIdToken) {
+      return { success: false, message: 'Vous devez être connecté à Taleos' };
+    }
+    await saveCareerConnectionToFirestore(firebaseUserId, taleosIdToken, bankId, bankName || 'BPCE', email, '');
+    return { success: true };
+  }
+
   const loginUrl = CONNECTION_TEST_URLS[bankId];
   if (!loginUrl || !email || !password || !firebaseUserId) {
     return { success: false, message: 'Paramètres manquants' };
@@ -2582,6 +2596,22 @@ async function checkProfileCompletenessFromFirestore(bankId) {
       missingFields.push(PROFILE_FIELD_LABELS[k] || k);
     }
   }
+  // BPCE : vérifier que l'email de connexion a été configuré dans la page Connexions
+  if (isBpce) {
+    let bpceEmailConfigured = false;
+    try {
+      const connRes = await fetch(`${base}/profiles/${taleosUserId}/career_connections/bpce`, {
+        headers: { Authorization: `Bearer ${taleosIdToken}` }
+      });
+      if (connRes.ok) {
+        const connData = parseFirestoreDoc(await connRes.json());
+        bpceEmailConfigured = !!(connData.email || '').trim();
+      }
+    } catch (_) {}
+    if (!bpceEmailConfigured) {
+      missingFields.push('Email de connexion BPCE (page Connexions)');
+    }
+  }
   return { complete: missingFields.length === 0, missingFields };
 }
 
@@ -2610,12 +2640,6 @@ async function fetchProfile(uid, bankId, token) {
         }
       }
     }
-  }
-  // BPCE : fallback sur email du profil ou taleosUserEmail si pas de career_connection
-  if (bankId === 'bpce' && (!creds || !creds.email)) {
-    const { taleosUserEmail } = await chrome.storage.local.get(['taleosUserEmail']);
-    const fallbackEmail = (profile.email || taleosUserEmail || '').trim();
-    if (fallbackEmail) creds = { email: fallbackEmail };
   }
   if (!creds || !creds.email) throw new Error(`Identifiants ${bankId} introuvables. Configurez-les sur la page Connexions.`);
 

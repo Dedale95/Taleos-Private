@@ -679,12 +679,15 @@
     return !!document.getElementById('form-apply-firstname');
   }
 
-  async function waitForSuccessMessage(maxWait = 45000) {
+  async function waitForSuccessMessage(maxWait = 90000) {
     const start = Date.now();
     const re = new RegExp(TEXTS.successMessage.join('|'), 'i');
     while (Date.now() - start < maxWait) {
       const txt = document.body?.textContent || '';
       if (re.test(txt)) return true;
+      const href = window.location.href || '';
+      const pathname = window.location.pathname || '';
+      if (pathname.includes('candidature-validee') || href.includes('application-submitted')) return true;
       await delay(1000);
     }
     return false;
@@ -937,8 +940,8 @@
           log('   ⏳ Attente de sécurité de 3 SECONDES avant envoi...');
           log('🚀 CLIC FINAL : ENVOI DE LA CANDIDATURE...');
           submitBtn.click();
-          log('⏳ Attente du message de confirmation (Timeout 45s)...');
-          const success = await waitForSuccessMessage(45000);
+          log('⏳ Attente du message de confirmation (Timeout 90s)...');
+          const success = await waitForSuccessMessage(90000);
           if (success) {
             await snapshot('ca_success_phase3_after_submit');
             if (!(await validateSuccessStructure(jobId))) return;
@@ -1048,8 +1051,8 @@
         log('   ⏳ Attente de sécurité de 3 SECONDES avant envoi...');
         log('🚀 CLIC FINAL : ENVOI DE LA CANDIDATURE...');
         submitBtn.click();
-        log('⏳ Attente du message de confirmation (Timeout 45s)...');
-        const success = await waitForSuccessMessage(45000);
+        log('⏳ Attente du message de confirmation (Timeout 90s)...');
+        const success = await waitForSuccessMessage(90000);
         if (success) {
           await snapshot('ca_success_after_login_submit');
           if (!(await validateSuccessStructure(jobId))) return;
