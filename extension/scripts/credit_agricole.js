@@ -682,12 +682,42 @@
   async function waitForSuccessMessage(maxWait = 90000) {
     const start = Date.now();
     const re = new RegExp(TEXTS.successMessage.join('|'), 'i');
+    // Capture l'état initial du bouton pour détecter sa réactivation (indicateur d'échec)
+    const submitBtn = document.getElementById('applyBtn');
+    let btnWasDisabled = submitBtn ? submitBtn.disabled : false;
+    let earlyFailureCount = 0;
+
     while (Date.now() - start < maxWait) {
+      // 1. Succès — message de confirmation ou redirection
       const txt = document.body?.textContent || '';
       if (re.test(txt)) return true;
       const href = window.location.href || '';
       const pathname = window.location.pathname || '';
       if (pathname.includes('candidature-validee') || href.includes('application-submitted')) return true;
+
+      // 2. Détection rapide d'échec serveur (après 5s minimum)
+      const elapsed = Date.now() - start;
+      if (elapsed > 5000) {
+        const btn = document.getElementById('applyBtn');
+        // Bouton réactivé = le serveur a rejeté la soumission
+        if (btn && !btn.disabled && btnWasDisabled) {
+          earlyFailureCount++;
+          if (earlyFailureCount >= 2) {
+            log('⚠️ Bouton envoi réactivé — le serveur a probablement rejeté la candidature.');
+            return 'server_error';
+          }
+        }
+        // Erreur explicite dans le DOM (message d'erreur CA)
+        const errEl = document.querySelector('.alert-danger, .error-message, [class*="error"]:not([class*="noerror"]), .wpcf7-not-valid-tip');
+        if (errEl && errEl.offsetParent !== null) {
+          const errTxt = (errEl.textContent || '').trim().slice(0, 120);
+          if (errTxt.length > 5) {
+            log(`⚠️ Erreur détectée dans le DOM : "${errTxt}"`);
+            return 'server_error';
+          }
+        }
+      }
+
       await delay(1000);
     }
     return false;
@@ -942,7 +972,7 @@
           submitBtn.click();
           log('⏳ Attente du message de confirmation (Timeout 90s)...');
           const success = await waitForSuccessMessage(90000);
-          if (success) {
+          if (success === true) {
             await snapshot('ca_success_phase3_after_submit');
             if (!(await validateSuccessStructure(jobId))) return;
             console.log('\n' + '✅'.repeat(35));
@@ -958,6 +988,9 @@
                 offerUrl: offerUrlForNotify
               });
             }
+          } else if (success === 'server_error') {
+            log('⚠️ Erreur serveur Crédit Agricole — candidature probablement non envoyée. Vérifiez votre espace candidat.');
+            sendCandidatureFailure(jobId, 'Erreur serveur Crédit Agricole (500)');
           } else {
             log('⚠️ Message de succès non détecté (timeout).');
             sendCandidatureFailure(jobId, 'Message de succès non détecté');
@@ -1053,7 +1086,7 @@
         submitBtn.click();
         log('⏳ Attente du message de confirmation (Timeout 90s)...');
         const success = await waitForSuccessMessage(90000);
-        if (success) {
+        if (success === true) {
           await snapshot('ca_success_after_login_submit');
           if (!(await validateSuccessStructure(jobId))) return;
           console.log('\n' + '✅'.repeat(35));
@@ -1069,6 +1102,9 @@
               offerUrl: offerUrlForNotify
             });
           }
+        } else if (success === 'server_error') {
+          log('⚠️ Erreur serveur Crédit Agricole — candidature probablement non envoyée. Vérifiez votre espace candidat.');
+          sendCandidatureFailure(jobId, 'Erreur serveur Crédit Agricole (500)');
         } else {
           log('⚠️ Message de succès non détecté (timeout).');
           sendCandidatureFailure(jobId, 'Message de succès non détecté');
