@@ -46,9 +46,15 @@ SEARCH_URL = f"{BASE_URL}/emploi-carriere/toutes-offres-emploi"
 
 # Filtres par type de contrat : le site BNP expose une URL par type.
 # On scrape chaque filtre pour obtenir le type de contrat de façon fiable.
-# Ordre : types génériques d'abord, puis spécifiques (Graduate Programme, Job étudiant)
-# pour que les doublons gardent le type le plus précis.
+# Ordre : types génériques d'abord (index bas = priorité basse dans la déduplication),
+# puis spécifiques (Graduate Programme, Job étudiant) pour que les doublons gardent
+# le type le plus précis.
+# L'entrée ("", None) à l'index 0 scrape le listing GLOBAL (toutes langues confondues,
+# 4739 offres sur le site) pour capturer les offres internationales qui n'apparaissent
+# sous aucun filtre nommé (type de contrat libellé en anglais : Permanent, Fixed-term…).
+# Le contract_type de ces offres supplémentaires est résolu via la page de détail.
 CONTRACT_FILTERS = [
+    ("", None),       # listing global — index 0 (priorité la plus basse, surchargé par les filtres nommés)
     ("cdi", "CDI"),
     ("cdd", "CDD"),
     ("stage", "Stage"),
@@ -694,18 +700,19 @@ async def main():
         page_tasks = []
         cookie_done = False
         for idx, (filter_slug, contract_type) in enumerate(CONTRACT_FILTERS):
+            label = contract_type or "(global — toutes offres)"
             try:
                 total_pages = await get_total_pages_for_filter(
                     context, filter_slug, cookie_banner_dismissed=cookie_done
                 )
                 cookie_done = True
-                logging.info(f"  {contract_type}: {total_pages} pages")
+                logging.info(f"  {label}: {total_pages} pages")
                 for p in range(1, total_pages + 1):
                     page_tasks.append(
                         fetch_listing_page(context, filter_slug, contract_type, idx, p, sem_pages)
                     )
             except Exception as e:
-                logging.warning(f"  {contract_type} ({filter_slug}): {e}")
+                logging.warning(f"  {label} ({filter_slug or 'no-filter'}): {e}")
 
         all_jobs_basic = []
         for coro in tqdm(
