@@ -730,14 +730,42 @@
 
         // Auto-submit : clic unique sur le bouton Soumettre
         if (!filledFields.has('form_submitted')) {
-          const submitBtn = document.querySelector('button[title="Soumettre"]')
-            || Array.from(document.querySelectorAll('button')).find(
-                 (b) => b.textContent.trim() === 'Soumettre' && b.offsetParent !== null
-               );
-          if (submitBtn && !submitBtn.disabled) {
+          const findSubmitButton = () => {
+            // 1. Sélecteurs connus Oracle Cloud CX
+            const bySelector = document.querySelector('button[title*="Soumettre" i]')
+              || document.querySelector('button.apply-flow-submit-button')
+              || document.querySelector('.oj-button-button.apply-flow-submit-button');
+            if (bySelector && bySelector.offsetParent !== null) return bySelector;
+
+            // 2. Recherche par texte / aria-label
+            const candidates = Array.from(document.querySelectorAll(
+              'button, a.oj-button, [role="button"], input[type="submit"], .oj-button-button'
+            ));
+            const found = candidates.find((b) => {
+              const t = (b.textContent || b.value || b.getAttribute('aria-label') || '').trim().toLowerCase();
+              return t === 'soumettre' || t === 'submit'
+                || t.includes('soumettre la candidature')
+                || t.includes('envoyer la candidature');
+            });
+            if (!found) {
+              // Debug : liste les boutons visibles pour diagnostic
+              const visible = candidates
+                .filter((b) => b.offsetParent !== null)
+                .map((b) => `'${(b.textContent || '').trim().slice(0, 30)}'`)
+                .filter((t) => t.length > 2);
+              logOnce(`ℹ️ Boutons visibles : ${visible.join(', ')}`, 2);
+            }
+            return found || null;
+          };
+
+          // Délai pour laisser les événements React/Oracle se propager
+          await new Promise((r) => setTimeout(r, 1200));
+          const submitBtn = findSubmitButton();
+
+          if (submitBtn && submitBtn.offsetParent !== null && !submitBtn.disabled) {
             filledFields.add('form_submitted');
-            // Délai court pour laisser tous les événements React/Oracle se propager
-            await new Promise((r) => setTimeout(r, 1200));
+            submitBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            await new Promise((r) => setTimeout(r, 400));
             logOnce('🚀 Clic Soumettre — candidature en cours d\'envoi…', 2);
             submitBtn.click();
             chrome.runtime.sendMessage({
@@ -746,8 +774,10 @@
               params: { site: 'bpce', job_title: jobTitle || 'Unknown', job_id: jobId || 'unknown' },
               userId: profile?.uid
             }).catch(() => {});
+          } else if (!submitBtn) {
+            logOnce('⏳ Bouton Soumettre pas encore dans le DOM — prochaine itération…', 2);
           } else {
-            logOnce('⏳ Bouton Soumettre pas encore disponible — prochaine itération…', 2);
+            logOnce('⏳ Bouton Soumettre présent mais non disponible (disabled/hidden)…', 2);
           }
         }
       }
