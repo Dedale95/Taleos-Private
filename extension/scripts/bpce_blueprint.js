@@ -155,7 +155,7 @@
         'input[id*="firstName"]',
         'textarea[name="300000620007177"]',
         'input[id*="siteLink"]',
-        'input[type="file"][id*="uploadedFile"]'
+        'input[id^="attachment-upload"][type="file"]'
       ]
     },
     lumesse_form: {

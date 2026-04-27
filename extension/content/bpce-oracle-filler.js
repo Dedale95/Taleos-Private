@@ -715,8 +715,8 @@
 
         applyJobAlertsCheckboxOnce(profile);
 
-        logOnce('✅ Formulaire rempli ! Veuillez vérifier et SOUMETTRE.', 2);
-        
+        logOnce('✅ Formulaire rempli — soumission automatique en cours…', 2);
+
         // Track: Formulaire rempli
         if (!filledFields.has('form_filled_tracked')) {
           chrome.runtime.sendMessage({
@@ -726,6 +726,29 @@
             userId: profile?.uid
           }).catch(() => {});
           filledFields.add('form_filled_tracked');
+        }
+
+        // Auto-submit : clic unique sur le bouton Soumettre
+        if (!filledFields.has('form_submitted')) {
+          const submitBtn = document.querySelector('button[title="Soumettre"]')
+            || Array.from(document.querySelectorAll('button')).find(
+                 (b) => b.textContent.trim() === 'Soumettre' && b.offsetParent !== null
+               );
+          if (submitBtn && !submitBtn.disabled) {
+            filledFields.add('form_submitted');
+            // Délai court pour laisser tous les événements React/Oracle se propager
+            await new Promise((r) => setTimeout(r, 1200));
+            logOnce('🚀 Clic Soumettre — candidature en cours d\'envoi…', 2);
+            submitBtn.click();
+            chrome.runtime.sendMessage({
+              action: 'track_event',
+              eventName: 'apply_submitted',
+              params: { site: 'bpce', job_title: jobTitle || 'Unknown', job_id: jobId || 'unknown' },
+              userId: profile?.uid
+            }).catch(() => {});
+          } else {
+            logOnce('⏳ Bouton Soumettre pas encore disponible — prochaine itération…', 2);
+          }
         }
       }
     } catch (e) {
