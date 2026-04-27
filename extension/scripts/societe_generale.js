@@ -184,7 +184,7 @@
     return false;
   }
 
-  /** Questions d’écranage SG (souvent en anglais pour offres hors France) — valeurs depuis le profil Firebase */
+  /** Questions d'écranage SG (souvent en anglais pour offres hors France) — valeurs depuis le profil Firebase */
   function isSgScreeningQuestionsVisible() {
     for (const root of getSearchRoots()) {
       const t = ((root.body?.innerText || '') + (root.title || '')).toLowerCase();
@@ -288,19 +288,19 @@
   }
 
   async function fillSgScreeningQuestionsFromProfile(profile) {
-    const eu = String(profile?.sg_eu_work_authorization || ‘’).trim().toLowerCase();
-    const noticeRaw = String(profile?.sg_notice_period || ‘’).trim();
-    /** Taleo SG ne propose pas « aucun » : on coche l’option la plus proche (1 month). */
-    const notice = noticeRaw === ‘none’ ? ‘1_month’ : noticeRaw;
+    const eu = String(profile?.sg_eu_work_authorization || '').trim().toLowerCase();
+    const noticeRaw = String(profile?.sg_notice_period || '').trim();
+    /** Taleo SG ne propose pas « aucun » : on coche l'option la plus proche (1 month). */
+    const notice = noticeRaw === 'none' ? '1_month' : noticeRaw;
     // Handicap RQTH (loi 11 fév. 2005) — défaut "non" si non renseigné
-    const handicap = String(profile?.sg_handicap || ‘non’).trim().toLowerCase();
-    const wantHandicapYes = handicap === ‘oui’ || handicap === ‘yes’;
+    const handicap = String(profile?.sg_handicap || 'non').trim().toLowerCase();
+    const wantHandicapYes = handicap === 'oui' || handicap === 'yes';
     // Aménagement spécifique pour tests — défaut "non"
-    const accommodation = String(profile?.sg_handicap_accommodation || ‘non’).trim().toLowerCase();
-    const wantAccommodationYes = accommodation === ‘oui’ || accommodation === ‘yes’;
+    const accommodation = String(profile?.sg_handicap_accommodation || 'non').trim().toLowerCase();
+    const wantAccommodationYes = accommodation === 'oui' || accommodation === 'yes';
     // Autorisation de travailler dans le pays du poste — on réutilise sg_eu_work_authorization
     // (autorisation UE = autorisation France pour les postes SG)
-    const countryAuth = eu || ‘yes’; // défaut "yes" si non renseigné
+    const countryAuth = eu || 'yes'; // défaut "yes" si non renseigné
 
     if (!isSgScreeningQuestionsVisible()) return false;
     const startTaPresent = !!findSgStartDateTextarea();
@@ -726,7 +726,7 @@
 
       /**
        * Récap final avant envoi : on y voit « Informations personnelles » / « Pièces jointes » en lecture seule,
-       * mais ce n’est pas l’étape 2 à remplir — ne pas relancer l’audit prénom/nom.
+       * mais ce n'est pas l'étape 2 à remplir — ne pas relancer l'audit prénom/nom.
        */
       function isSgVerifierReviewPage() {
         if (getCurrentStepFromNav() === 'verifier') return true;
@@ -936,7 +936,7 @@
           if (filledScreening) {
             const afterScreeningBtn = findFlowStartOrContinueBtn() || findDisclaimerOrContinueBtn();
             if (afterScreeningBtn) {
-              if (DEBUG) log(`   Clic après questions d’écranage SG (${i + 1})`);
+              if (DEBUG) log(`   Clic après questions d'écranage SG (${i + 1})`);
               afterScreeningBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
               await delay(300);
               afterScreeningBtn.focus();
@@ -980,7 +980,7 @@
         if (filledAfterLoop) {
           const afterScreeningBtn = findFlowStartOrContinueBtn() || findDisclaimerOrContinueBtn();
           if (afterScreeningBtn) {
-            log('   ✅ Questions d’écranage SG — poursuite du flux');
+            log("   ✅ Questions d'écranage SG — poursuite du flux");
             afterScreeningBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
             await delay(300);
             if (typeof window.cmdSubmit === 'function' && afterScreeningBtn.id) {
@@ -1242,7 +1242,7 @@
       await delay(5000);
       }
 
-      /** Clic « Postuler » final uniquement sur l’étape « Vérifier et postuler » — pas de bouton générique « submit ». */
+      /** Clic « Postuler » final uniquement sur l'étape « Vérifier et postuler » — pas de bouton générique « submit ». */
       function findFinalSgPostulerButton() {
         const onRecap = getCurrentStepFromNav() === 'verifier' || isSgVerifierReviewPage();
         for (const root of getSearchRoots()) {
