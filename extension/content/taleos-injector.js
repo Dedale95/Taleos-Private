@@ -293,9 +293,18 @@
       }).catch(function () { });
     } catch (_) { }
 
-    const msg = missingFields && missingFields.length > 0
-      ? 'Votre profil est incomplet. Veuillez compléter toutes les informations requises dans Mon profil avant de lancer une candidature : ' + missingFields.join(', ')
-      : 'Votre profil est incomplet. Complétez toutes les informations requises dans Mon profil avant de lancer une candidature.';
+    const isBpceConnection = Array.isArray(missingFields) && missingFields.some(function (f) {
+      return f.includes('Connexions') || f.includes('connexion BPCE') || f.includes('BPCE');
+    });
+
+    const titleText = isBpceConnection ? '🔗 Connexion manquante' : 'Profil incomplet';
+    const msg = isBpceConnection
+      ? 'Votre email de connexion BPCE n\'est pas configuré. Rendez-vous sur la page Connexions pour l\'ajouter avant de lancer une candidature BPCE.'
+      : missingFields && missingFields.length > 0
+        ? 'Votre profil est incomplet. Veuillez compléter toutes les informations requises dans Mon profil avant de lancer une candidature : ' + missingFields.join(', ')
+        : 'Votre profil est incomplet. Complétez toutes les informations requises dans Mon profil avant de lancer une candidature.';
+    const btnPrimaryText = isBpceConnection ? 'Configurer la connexion' : 'Compléter mon profil';
+    const btnPrimaryTarget = isBpceConnection ? 'connexions.html?bank=bpce' : 'profile.html';
 
     // Créer la modale directement en DOM (évite CSP qui bloque l'injection de script inline)
     const existing = document.getElementById('taleos-profile-incomplete-modal');
@@ -313,7 +322,7 @@
 
     const title = document.createElement('h3');
     title.id = 'taleos-profile-incomplete-title';
-    title.textContent = 'Profil incomplet';
+    title.textContent = titleText;
     title.style.cssText = 'margin:0 0 16px;font-size:18px;color:#1f2937';
 
     const text = document.createElement('p');
@@ -321,7 +330,7 @@
     text.style.cssText = 'margin:0 0 20px;font-size:14px;line-height:1.5;color:#4b5563';
 
     const btnProfile = document.createElement('button');
-    btnProfile.textContent = 'Compléter mon profil';
+    btnProfile.textContent = btnPrimaryText;
     btnProfile.style.cssText = 'margin:8px;padding:10px 20px;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px';
 
     const btnClose = document.createElement('button');
@@ -339,7 +348,7 @@
     });
     btnProfile.addEventListener('click', function () {
       overlay.remove();
-      window.location.href = new URL('profile.html', window.location.href).href;
+      window.location.href = new URL(btnPrimaryTarget, window.location.href).href;
     });
     btnClose.addEventListener('click', function () {
       overlay.remove();
