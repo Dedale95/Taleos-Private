@@ -2042,7 +2042,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   }
   profile.__jobId = jobId;
   profile.__jobTitle = jobTitle || '';
-  profile.__companyName = companyName || 'Crédit Agricole';
+  profile.__companyName = companyName || (String(bankId || '').toLowerCase() === 'credit_mutuel' ? 'Crédit Mutuel' : 'Crédit Agricole');
   profile.__offerUrl = offerUrl;
   profile.__offerMeta = offerMeta || {};
 
@@ -2618,6 +2618,8 @@ async function checkProfileCompletenessFromFirestore(bankId) {
 async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
+  const normalizedBankId = String(bankId || '').toLowerCase().trim();
+  const requiresCareerCredentials = !['credit_mutuel'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
@@ -2641,7 +2643,10 @@ async function fetchProfile(uid, bankId, token) {
       }
     }
   }
-  if (!creds || !creds.email) throw new Error(`Identifiants ${bankId} introuvables. Configurez-les sur la page Connexions.`);
+  if (requiresCareerCredentials && (!creds || !creds.email)) {
+    throw new Error(`Identifiants ${bankId} introuvables. Configurez-les sur la page Connexions.`);
+  }
+  if (!creds) creds = {};
 
   const authPassword = creds.password ? decodeBase64(creds.password) : '';
 
