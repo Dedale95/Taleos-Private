@@ -261,6 +261,78 @@
     return true;
   }
 
+  function setSelectValue(el, value) {
+    if (!el) return false;
+    const str = value != null ? String(value) : '';
+    el.focus?.();
+    el.value = str;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.blur?.();
+    return true;
+  }
+
+  function formatLogValue(value) {
+    const str = value == null ? '' : String(value).trim();
+    return str || '(vide)';
+  }
+
+  function getSelectedOptionText(selectEl) {
+    if (!selectEl) return '';
+    const option = selectEl.options?.[selectEl.selectedIndex];
+    return String(option?.textContent || option?.label || '').trim();
+  }
+
+  function syncInputField(el, value, label) {
+    if (!el) {
+      log(`   ⚠️ ${label} : champ introuvable dans le formulaire`);
+      return;
+    }
+    const target = value != null ? String(value).trim() : '';
+    const current = String(el.value || '').trim();
+    if (!target) {
+      log(`   ℹ️ ${label} : aucune valeur Firebase exploitable -> Skip`);
+      return;
+    }
+    if (current === target) {
+      log(`   ✅ ${label} : formulaire='${formatLogValue(current)}' | Firebase='${formatLogValue(target)}' -> Skip`);
+      return;
+    }
+    log(`   ✏️ ${label} : formulaire='${formatLogValue(current)}' | Firebase='${formatLogValue(target)}' -> Correction`);
+    setInputValue(el, target);
+  }
+
+  function syncSelectField(selectEl, targetValue, label, targetLabel) {
+    if (!selectEl) {
+      log(`   ⚠️ ${label} : select introuvable dans le formulaire`);
+      return;
+    }
+    const currentValue = String(selectEl.value || '').trim();
+    const currentLabel = getSelectedOptionText(selectEl);
+    const expectedValue = targetValue != null ? String(targetValue).trim() : '';
+    const expectedLabel = String(targetLabel || '').trim() || expectedValue;
+    if (!expectedValue) {
+      log(`   ℹ️ ${label} : aucune valeur Firebase exploitable -> Skip`);
+      return;
+    }
+    if (currentValue === expectedValue) {
+      log(`   ✅ ${label} : formulaire='${formatLogValue(currentLabel)}' [${formatLogValue(currentValue)}] | Firebase='${formatLogValue(expectedLabel)}' [${formatLogValue(expectedValue)}] -> Skip`);
+      return;
+    }
+    log(`   ✏️ ${label} : formulaire='${formatLogValue(currentLabel)}' [${formatLogValue(currentValue)}] | Firebase='${formatLogValue(expectedLabel)}' [${formatLogValue(expectedValue)}] -> Correction`);
+    setSelectValue(selectEl, expectedValue);
+  }
+
+  function syncCheckboxField(checkboxEl, hiddenBoolEl, label) {
+    const checked = Boolean(checkboxEl?.checked) || String(hiddenBoolEl?.value || '').toLowerCase() === 'true';
+    if (checked) {
+      log(`   ✅ ${label} : déjà coché -> Skip`);
+      return;
+    }
+    log(`   ✏️ ${label} : non coché -> Correction`);
+    setCheckbox(checkboxEl, hiddenBoolEl);
+  }
+
   function setCheckbox(checkboxEl, hiddenBoolEl) {
     if (checkboxEl) checkboxEl.checked = true;
     if (hiddenBoolEl) hiddenBoolEl.value = 'true';
@@ -296,6 +368,13 @@
   function mapOrigin(profile) {
     if (String(profile.linkedin_url || '').trim()) return '14';
     return '1';
+  }
+
+  function describeOrigin(profile, mappedValue) {
+    if (String(mappedValue) === '14') {
+      return `LinkedIn (linkedin_url='${formatLogValue(profile.linkedin_url)}')`;
+    }
+    return 'Site institutionnel / autre';
   }
 
   function mapLanguages(profile) {
@@ -414,37 +493,44 @@
 
     if (await uploadLetterIfNeeded(profile)) return;
 
+    log('🧾 Crédit Mutuel → audit détaillé Firebase vs formulaire');
     document.getElementById('C:pagePrincipale.M:DataEntry')?.click();
-    setInputValue(document.getElementById('C:pagePrincipale.i-74-1'), profile.lastname || '');
-    setInputValue(document.getElementById('C:pagePrincipale.i-74-2'), profile.firstname || '');
-    setInputValue(document.getElementById('C:pagePrincipale.i135'), profile.email || '');
-    setInputValue(document.getElementById('C:pagePrincipale.i136'), profile.email || '');
-    setInputValue(document.getElementById('C:pagePrincipale.i117'), profile['phone-number'] || profile.phone_number || '');
+    syncInputField(document.getElementById('C:pagePrincipale.i-74-1'), profile.lastname || '', 'Nom');
+    syncInputField(document.getElementById('C:pagePrincipale.i-74-2'), profile.firstname || '', 'Prénom');
+    syncInputField(document.getElementById('C:pagePrincipale.i135'), profile.email || '', 'Email');
+    syncInputField(document.getElementById('C:pagePrincipale.i136'), profile.email || '', 'Confirmation email');
+    syncInputField(document.getElementById('C:pagePrincipale.i117'), profile['phone-number'] || profile.phone_number || '', 'Téléphone');
 
     const diploma = document.getElementById('C:pagePrincipale.ddl1:DataEntry');
-    if (diploma) diploma.value = mapDiploma(profile);
+    const diplomaValue = mapDiploma(profile);
+    syncSelectField(diploma, diplomaValue, 'Niveau d\'études', profile.education_level || diplomaValue);
 
     const origin = document.getElementById('C:pagePrincipale.originePanel.ddl2:DataEntry');
-    if (origin) origin.value = mapOrigin(profile);
+    const originValue = mapOrigin(profile);
+    syncSelectField(origin, originValue, 'Origine de candidature', describeOrigin(profile, originValue));
 
     const languages = mapLanguages(profile);
     const rows = await ensureVisibleLanguageRows(Math.max(1, languages.length));
     rows.forEach((rowIndex, index) => {
       const lang = languages[index];
-      if (!lang) return;
+      if (!lang) {
+        log(`   ℹ️ Langue slot ${index + 1} : aucune langue Firebase pour cette ligne -> Skip`);
+        return;
+      }
       const prefix = `C:pagePrincipale.LesLangues.F1_${rowIndex}`;
       const langEl = document.getElementById(`${prefix}.i122:DataEntry`);
       const writtenEl = document.getElementById(`${prefix}.i123:DataEntry`);
       const oralEl = document.getElementById(`${prefix}.i124:DataEntry`);
-      if (langEl) langEl.value = lang.id;
-      if (writtenEl) writtenEl.value = lang.written;
-      if (oralEl) oralEl.value = lang.oral;
-      log(`🗣️ Crédit Mutuel → langue ${index + 1}: ${lang.name} (${lang.level})`);
+      syncSelectField(langEl, lang.id, `Langue ${index + 1}`, lang.name);
+      syncSelectField(writtenEl, lang.written, `Niveau écrit ${index + 1}`, `${lang.level} (écrit)`);
+      syncSelectField(oralEl, lang.oral, `Niveau oral ${index + 1}`, `${lang.level} (oral)`);
+      log(`   🗣️ Langue ${index + 1} : Firebase='${lang.name}' / niveau='${lang.level}'`);
     });
 
-    setCheckbox(
+    syncCheckboxField(
       document.getElementById('C:pagePrincipale.cb2:DataEntry'),
-      document.getElementById('C:pagePrincipale.cb2:DataEntry:cbhf')
+      document.getElementById('C:pagePrincipale.cb2:DataEntry:cbhf'),
+      'Certification de sincérité'
     );
 
     const audit = await blueprintApi?.validateQuestionAudit?.(profile, { pageKey: 'application_form' });
