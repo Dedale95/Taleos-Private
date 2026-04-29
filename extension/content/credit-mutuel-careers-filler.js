@@ -140,15 +140,30 @@
     const out = await chrome.storage.local.get([PENDING_KEY, TAB_ID_KEY]);
     const pending = out[PENDING_KEY];
     const expectedTabId = out[TAB_ID_KEY] || pending?.tabId || null;
-    if (!pending?.profile) return null;
-    if (Date.now() - Number(pending.timestamp || 0) > MAX_PENDING_AGE) return null;
-    const tabId = await getCurrentTabId();
-    // Guard strict : refuser si l'onglet courant n'est pas le tab de candidature,
-    // ou si l'un des deux IDs est inconnu (évite d'agir sur des onglets non ciblés).
-    if (!expectedTabId || !tabId || expectedTabId !== tabId) {
-      log(`⏭️ Onglet Crédit Mutuel non ciblé ignoré (tab ${tabId}, attendu ${expectedTabId ?? 'inconnu'})`);
+    if (!pending?.profile) {
+      log('⏭️ Aucun contexte Crédit Mutuel pending trouvé');
       return null;
     }
+    if (Date.now() - Number(pending.timestamp || 0) > MAX_PENDING_AGE) {
+      log('⏭️ Contexte Crédit Mutuel pending expiré');
+      return null;
+    }
+    const tabId = await getCurrentTabId();
+
+    // Garde souple :
+    // - si on connaît les 2 tabIds et qu'ils diffèrent, on n'agit pas
+    // - si le tabId courant n'est pas résolu, on accepte quand même le pending
+    //   car Chrome peut injecter le content script avant que l'ID ne soit
+    //   récupérable de façon fiable.
+    if (expectedTabId && tabId && expectedTabId !== tabId) {
+      log(`⏭️ Onglet Crédit Mutuel non ciblé ignoré (tab ${tabId}, attendu ${expectedTabId})`);
+      return null;
+    }
+
+    if (expectedTabId && !tabId) {
+      log(`ℹ️ Tab courant non résolu, poursuite avec le contexte pending ciblé ${expectedTabId}`);
+    }
+
     return pending;
   }
 
