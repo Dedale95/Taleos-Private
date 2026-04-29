@@ -143,7 +143,13 @@
       }
       return { done: false, error: 'Bouton Connexion non trouvé' };
     }
-    if (!bankId || !email || !password) return { done: false, error: 'Paramètres manquants' };
+    if (!bankId || !email || !password) {
+      const missing = [];
+      if (!bankId) missing.push('bankId');
+      if (!email) missing.push('email');
+      if (!password) missing.push('mot de passe');
+      return { done: false, error: `Paramètres manquants: ${missing.join(', ')}` };
+    }
     return fillAndSubmit(bankId, email, password);
   };
 

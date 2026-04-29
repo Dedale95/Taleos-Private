@@ -598,7 +598,16 @@
 
   window.addEventListener('taleos-request-test-connection', function (e) {
     const d = e.detail || {};
-    if (!d.bankId || !d.email || !d.firebaseUserId) return;
+    if (!d.bankId || !d.email || !d.firebaseUserId) {
+      const missing = [];
+      if (!d.bankId) missing.push('bankId');
+      if (!d.email) missing.push('email');
+      if (!d.firebaseUserId) missing.push('session Taleos');
+      window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
+        detail: { success: false, message: `Bridge incomplet: ${missing.join(', ')}` }
+      }));
+      return;
+    }
     chrome.runtime.sendMessage({
       action: 'test_connection',
       bankId: d.bankId,
