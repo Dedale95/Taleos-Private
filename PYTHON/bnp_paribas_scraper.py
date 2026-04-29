@@ -133,6 +133,70 @@ def normalize_contract_type(raw: str) -> Optional[str]:
     return raw.strip()
 
 
+# Patterns pour inférer le type de contrat depuis le titre de l'offre.
+# BNP ajoute souvent une mention entre parenthèses dans le titre des offres
+# internationales ou temporaires (ex: "Analyst (Internship)", "Manager (Temp)").
+# Chaque entrée : (regex sur le texte normalisé, type canonique)
+_TITLE_CONTRACT_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # Stage / Internship
+    (re.compile(r'\binternship\b', re.I), 'Stage'),
+    (re.compile(r'\bstagiaire\b', re.I), 'Stage'),
+
+    # CDD — mentions en anglais
+    (re.compile(r'\btemp\b', re.I), 'CDD'),
+    (re.compile(r'\btemporary\b', re.I), 'CDD'),
+    (re.compile(r'\btemporary\s+contract\b', re.I), 'CDD'),
+    (re.compile(r'\bfixed[\s\-]term\b', re.I), 'CDD'),
+    (re.compile(r'\b\d+[\s\-]month\b', re.I), 'CDD'),          # "6-month", "12 month"
+    (re.compile(r'\bcontract\s+up\s+to\b', re.I), 'CDD'),
+
+    # CDD — mentions en français
+    (re.compile(r'\bcontrat\s+[àa]\s+dur[eé]e\s+d[eé]termin[eé]e\b', re.I), 'CDD'),
+    (re.compile(r'\bcontrat\s+dur[eé]e\s+d[eé]termin[eé]e\b', re.I), 'CDD'),
+    (re.compile(r'\b\d+\s*mois\b', re.I), 'CDD'),               # "9 mois", "18 mois"
+
+    # CDD — mentions en espagnol/portugais
+    (re.compile(r'\bcontrato\s+temporal\b', re.I), 'CDD'),
+    (re.compile(r'\bcontrato\s+a\s+prazo\b', re.I), 'CDD'),
+
+    # VIE
+    (re.compile(r'\bv\.?i\.?e\.?\b', re.I), 'VIE'),
+    (re.compile(r'\bvolontariat\s+international\b', re.I), 'VIE'),
+
+    # Alternance
+    (re.compile(r'\balternance\b', re.I), 'Alternance / Apprentissage'),
+    (re.compile(r'\balternant\b', re.I), 'Alternance / Apprentissage'),
+    (re.compile(r'\bapprentissage\b', re.I), 'Alternance / Apprentissage'),
+    (re.compile(r'\bapprentice\b', re.I), 'Alternance / Apprentissage'),
+]
+
+
+def infer_contract_type_from_title(title: str) -> Optional[str]:
+    """Infère le type de contrat depuis le titre de l'offre.
+
+    BNP ajoute fréquemment des mentions entre parenthèses dans les titres
+    des offres internationales (ex: "Risk Analyst (Internship)", "Manager (Temp)",
+    "Chargé de reporting (Fixed term contract - 9 months)").
+    On cherche d'abord dans le contenu des parenthèses, puis dans le titre entier.
+    """
+    if not title:
+        return None
+
+    # Priorité : contenu entre parenthèses (signal le plus fiable)
+    parens = re.findall(r'\(([^)]+)\)', title)
+    for paren_text in parens:
+        for pattern, contract_type in _TITLE_CONTRACT_PATTERNS:
+            if pattern.search(paren_text):
+                return contract_type
+
+    # Fallback : titre entier
+    for pattern, contract_type in _TITLE_CONTRACT_PATTERNS:
+        if pattern.search(title):
+            return contract_type
+
+    return None
+
+
 # =========================================================
 # DATABASE MANAGER
 # =========================================================
@@ -556,11 +620,19 @@ async def fetch_job_details(
                 job["job_title"] = h1.get_text(strip=True)
 
             # Contract type : priorité au type issu du filtre URL (scraping par /cdi, /stage, etc.)
-            # La page détail en fallback uniquement si absent
+            # Fallback 1 : champ offer-info-type de la page de détail
             if not job.get("contract_type"):
                 ct_raw = extract_offer_field(soup, "offer-info-type")
                 if ct_raw:
                     job["contract_type"] = normalize_contract_type(ct_raw)
+
+            # Fallback 2 : inférence depuis le titre (ex: "Analyst (Internship)", "Manager (Temp)")
+            # Couvre les offres internationales dont le type n'est pas dans les filtres URL
+            if not job.get("contract_type"):
+                inferred = infer_contract_type_from_title(job.get("job_title") or "")
+                if inferred:
+                    job["contract_type"] = inferred
+                    logging.debug(f"  Type inféré depuis titre : {inferred!r} ← {job.get('job_title')!r}")
 
             # Location
             loc_raw = extract_offer_field(soup, "offer-info-loc")
