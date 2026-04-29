@@ -9,6 +9,7 @@ const APPLY_TIMEOUT_MINUTES = 5;
 const APPLY_WATCHDOG_PERIOD_MINUTES = 1;
 const EXTENSION_APPLICATION_RUNS_COLLECTION = 'extension_application_runs';
 const ACTIVE_APPLY_RUNS_STORAGE_KEY = 'taleos_apply_runs_by_tab';
+const CREDIT_MUTUEL_LAST_APPLY_KEY = 'taleos_last_credit_mutuel_apply';
 const STUCK_REPORT_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/report-stuck-automation';
 const SAVE_EXTENSION_RUN_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/saveExtensionApplicationRun';
 
@@ -1320,6 +1321,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'taleos_apply') {
     const taleosTabId = sender.tab?.id;
+    if (String(msg.bankId || '').toLowerCase() === 'credit_mutuel') {
+      chrome.storage.local.set({
+        [CREDIT_MUTUEL_LAST_APPLY_KEY]: {
+          offerUrl: msg.offerUrl || '',
+          jobId: msg.jobId || '',
+          jobTitle: msg.jobTitle || '',
+          companyName: msg.companyName || 'Crédit Mutuel',
+          offerMeta: msg.offerMeta || null,
+          taleosTabId: taleosTabId || null,
+          timestamp: Date.now()
+        }
+      }).catch(() => {});
+    }
     // Tracking non bloquant du démarrage de candidature.
     trackApplyStart(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
     handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId, msg.offerMeta || null)
@@ -1336,6 +1350,67 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       })
       .catch(e => sendResponse({ error: e.message || 'Erreur', openUrl: true }));
+    return true;
+  }
+  if (msg.action === 'taleos_rehydrate_credit_mutuel_pending') {
+    (async () => {
+      try {
+        const tabId = sender.tab?.id;
+        const pageUrl = String(sender.tab?.url || msg.offerUrl || '').trim();
+        if (!tabId || !pageUrl) {
+          sendResponse({ ok: false, error: 'Onglet Crédit Mutuel introuvable' });
+          return;
+        }
+
+        const {
+          taleosUserId,
+          taleosIdToken,
+          [CREDIT_MUTUEL_LAST_APPLY_KEY]: lastApply
+        } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken', CREDIT_MUTUEL_LAST_APPLY_KEY]);
+
+        if (!taleosUserId || !taleosIdToken) {
+          sendResponse({ ok: false, error: 'Utilisateur non connecté' });
+          return;
+        }
+        if (!lastApply?.offerUrl || Date.now() - Number(lastApply.timestamp || 0) > 10 * 60 * 1000) {
+          sendResponse({ ok: false, error: 'Contexte Crédit Mutuel trop ancien' });
+          return;
+        }
+        if (String(lastApply.offerUrl).trim() !== pageUrl) {
+          sendResponse({ ok: false, error: 'Offre Crédit Mutuel non correspondante' });
+          return;
+        }
+
+        const profileCheck = await checkProfileCompletenessFromFirestore('credit_mutuel');
+        if (!profileCheck?.complete) {
+          sendResponse({ ok: false, error: 'Profil incomplet', missingFields: profileCheck?.missingFields || [] });
+          return;
+        }
+
+        const profile = await fetchProfile(taleosUserId, 'credit_mutuel', taleosIdToken);
+        profile.__jobId = lastApply.jobId || '';
+        profile.__jobTitle = lastApply.jobTitle || '';
+        profile.__companyName = lastApply.companyName || 'Crédit Mutuel';
+        profile.__offerUrl = lastApply.offerUrl || pageUrl;
+        profile.__offerMeta = lastApply.offerMeta || {};
+
+        await chrome.storage.local.set({
+          taleos_pending_credit_mutuel: {
+            profile: { ...profile },
+            offerUrl: profile.__offerUrl,
+            jobId: profile.__jobId,
+            jobTitle: profile.__jobTitle,
+            companyName: profile.__companyName,
+            tabId,
+            timestamp: Date.now()
+          },
+          taleos_credit_mutuel_tab_id: tabId
+        });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message || 'Réhydratation Crédit Mutuel impossible' });
+      }
+    })();
     return true;
   }
   if (msg.action === 'taleos_setup_for_open_tab') {

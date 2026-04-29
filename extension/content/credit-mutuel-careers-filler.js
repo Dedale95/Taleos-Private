@@ -167,6 +167,30 @@
     return pending;
   }
 
+  async function getPendingOrRehydrate() {
+    let pending = await getPending();
+    if (pending?.profile) return pending;
+
+    const detected = blueprintApi?.detectPage ? blueprintApi.detectPage() : { key: 'unknown' };
+    if (detected.key !== 'public_offer') return null;
+
+    try {
+      const rehydrated = await chrome.runtime.sendMessage({
+        action: 'taleos_rehydrate_credit_mutuel_pending',
+        offerUrl: location.href
+      }).catch(() => null);
+      if (!rehydrated?.ok) return null;
+      await sleep(200);
+      pending = await getPending();
+      if (pending?.profile) {
+        log('♻️ Contexte Crédit Mutuel réhydraté depuis le background');
+        return pending;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   function getSessionFlag(key) {
     try { return sessionStorage.getItem(SESSION_PREFIX + key) || ''; } catch (_) { return ''; }
   }
@@ -474,7 +498,7 @@
 
   async function run() {
     await dismissCookieDialog();
-    const pending = await getPending();
+    const pending = await getPendingOrRehydrate();
     if (!pending?.profile) return;
     showBanner();
     const profile = pending.profile;
