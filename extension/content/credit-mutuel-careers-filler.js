@@ -10,6 +10,7 @@
   const TAB_ID_KEY = 'taleos_credit_mutuel_tab_id';
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const MAX_SUBMIT_RETRIES = 2;
+  const MAX_NAVIGATION_RETRIES = 2;
   const SESSION_PREFIX = 'taleos_cm_';
   let currentTabIdPromise = null;
 
@@ -140,6 +141,22 @@
         if (key.startsWith(SESSION_PREFIX)) sessionStorage.removeItem(key);
       });
     } catch (_) {}
+  }
+
+  async function retryFromOffer(profile, reason) {
+    const retries = Number(getSessionFlag('navigation_retry') || '0');
+    if (retries >= MAX_NAVIGATION_RETRIES) {
+      await submitFailure(profile, `${reason} (persistant après relance)`);
+      return;
+    }
+    setSessionFlag('navigation_retry', String(retries + 1));
+    const targetUrl = String(profile.__offerUrl || '').trim();
+    log(`🔁 Crédit Mutuel → relance ${retries + 1}/${MAX_NAVIGATION_RETRIES} depuis l'offre (${reason})`);
+    if (targetUrl && location.href !== targetUrl) {
+      location.assign(targetUrl);
+      return;
+    }
+    history.back();
   }
 
   async function validatePage(expected, profile, label) {
@@ -275,6 +292,26 @@
     await sleep(500);
     const uploadBtn = qs('input[name="_FID_DoUploadCv"]');
     if (uploadBtn) uploadBtn.click();
+  }
+
+  async function clickApplyLinkRobustly(applyLink) {
+    const href = String(applyLink?.href || applyLink?.getAttribute?.('href') || '').trim();
+    applyLink?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    applyLink?.focus?.();
+    await sleep(1200);
+    const beforeHref = location.href;
+    try {
+      applyLink.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      applyLink.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      applyLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    } catch (_) {
+      applyLink.click();
+    }
+    await sleep(1800);
+    if (location.href === beforeHref && href) {
+      log('↪️ Crédit Mutuel → clic sans navigation, fallback location.assign(href)');
+      location.assign(new URL(href, location.href).href);
+    }
   }
 
   async function uploadLetterIfNeeded(profile) {
@@ -413,11 +450,18 @@
         return;
       }
       log('🔗 Offre Crédit Mutuel → clic sur Postuler avec mon CV');
-      applyLink.click();
+      await clickApplyLinkRobustly(applyLink);
+      return;
+    }
+
+    if (detected.key === 'navigation_error') {
+      await validatePage(['navigation_error'], profile, 'erreur navigation');
+      await retryFromOffer(profile, 'Erreur de navigation Crédit Mutuel');
       return;
     }
 
     if (detected.key === 'rgpd') {
+      setSessionFlag('navigation_retry', '0');
       await validatePage(['rgpd'], profile, 'rgpd');
       setCheckbox(
         document.getElementById('C:pagePrincipale.cb1:DataEntry'),
@@ -429,18 +473,21 @@
     }
 
     if (detected.key === 'upload_cv') {
+      setSessionFlag('navigation_retry', '0');
       await validatePage(['upload_cv'], profile, 'upload cv');
       await uploadCvStep(profile);
       return;
     }
 
     if (detected.key === 'application_form' || detected.key === 'technical_error') {
+      setSessionFlag('navigation_retry', '0');
       await validatePage(['application_form', 'technical_error'], profile, 'formulaire');
       await fillApplicationForm(profile);
       return;
     }
 
     if (detected.key === 'success') {
+      setSessionFlag('navigation_retry', '0');
       await validatePage(['success'], profile, 'succès');
       log('🎉 Crédit Mutuel → accusé de réception détecté');
       await submitSuccess(profile);

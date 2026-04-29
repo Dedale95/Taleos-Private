@@ -18,7 +18,8 @@
     uploadCv: ['postuler avec mon cv', 'joignez votre cv', 'avec mon cv en pièce jointe'],
     applicationForm: ['votre cv', 'votre identité', 'origine de votre candidature', 'valider la candidature'],
     success: ['accusé de réception', "votre candidature à l'offre", 'a été transmise ce jour'],
-    technicalError: ['une erreur technique s\'est produite', "veuillez confirmer l'exactitude des informations saisies"]
+    technicalError: ['une erreur technique s\'est produite', "veuillez confirmer l'exactitude des informations saisies"],
+    navigationError: ['erreur de navigation']
   };
 
   const PAGE_DEFS = {
@@ -63,6 +64,13 @@
       pathMatches: [/\/fr\/candidature_annonce\.html/],
       selectorsAny: ['#errctxjs2', '.__e_MessageBlock .blocmsg.err'],
       textPatterns: TEXT.technicalError
+    },
+    navigation_error: {
+      label: 'Erreur de navigation Crédit Mutuel',
+      hostIncludes: ['recrutement.creditmutuel.fr'],
+      pathMatches: [/\/fr\/candidature_annonce\.html/],
+      selectorsAny: ['main', 'body'],
+      textPatterns: TEXT.navigationError
     }
   };
 
