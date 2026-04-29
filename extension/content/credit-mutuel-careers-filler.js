@@ -11,7 +11,6 @@
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const MAX_SUBMIT_RETRIES = 2;
   const MAX_NAVIGATION_RETRIES = 2;
-  const FINAL_SUBMIT_WAIT_MS = 60 * 1000;
   const SESSION_PREFIX = 'taleos_cm_';
   let currentTabIdPromise = null;
 
@@ -401,6 +400,24 @@
     return rows;
   }
 
+  function reorderLanguagesToExistingRows(languages, rows) {
+    const remaining = [...languages];
+    const ordered = [];
+
+    rows.forEach((rowIndex) => {
+      const langEl = document.getElementById(`C:pagePrincipale.LesLangues.F1_${rowIndex}.i122:DataEntry`);
+      const currentValue = String(langEl?.value || '').trim();
+      const currentMatchIndex = remaining.findIndex((item) => String(item.id || '') === currentValue);
+      if (currentMatchIndex >= 0) {
+        ordered.push(remaining.splice(currentMatchIndex, 1)[0]);
+      } else {
+        ordered.push(null);
+      }
+    });
+
+    return ordered.map((item) => item || remaining.shift() || null);
+  }
+
   async function ensureVisibleLanguageRows(count) {
     let rows = getVisibleLanguageRows();
     while (rows.length < count) {
@@ -511,8 +528,9 @@
 
     const languages = mapLanguages(profile);
     const rows = await ensureVisibleLanguageRows(Math.max(1, languages.length));
+    const orderedLanguages = reorderLanguagesToExistingRows(languages, rows);
     rows.forEach((rowIndex, index) => {
-      const lang = languages[index];
+      const lang = orderedLanguages[index];
       if (!lang) {
         log(`   ℹ️ Langue slot ${index + 1} : aucune langue Firebase pour cette ligne -> Skip`);
         return;
@@ -547,11 +565,6 @@
     if (retries > MAX_SUBMIT_RETRIES) {
       await submitFailure(profile, 'Échec final Crédit Mutuel après plusieurs tentatives');
       return;
-    }
-    if (getSessionFlag('final_submit_waited') !== '1') {
-      setSessionFlag('final_submit_waited', '1');
-      log('⏳ Crédit Mutuel → attente 60s avant validation finale');
-      await sleep(FINAL_SUBMIT_WAIT_MS);
     }
     setSessionFlag('submit_retries', String(retries + 1));
     log(`➡️ Crédit Mutuel → clic Valider la candidature (tentative ${retries + 1}/${MAX_SUBMIT_RETRIES + 1})`);
