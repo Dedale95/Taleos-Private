@@ -72,8 +72,10 @@
     if (!pending || !pending.profile) return null;
     const expectedTabId = pending.tabId || state.taleos_bnp_tab_id || null;
     const currentTabId = await getCurrentTabId();
-    if (expectedTabId && currentTabId && Number(expectedTabId) !== Number(currentTabId)) {
-      log(`⏭️ Onglet BNP manuel ignoré (tab ${currentTabId}, attendu ${expectedTabId})`);
+    // Guard strict : si expectedTabId est connu, le tab courant DOIT correspondre.
+    // Si expectedTabId est null (cas rare), on bloque aussi — évite d'agir sur des onglets non ciblés.
+    if (!expectedTabId || !currentTabId || Number(expectedTabId) !== Number(currentTabId)) {
+      log(`⏭️ Onglet BNP non ciblé ignoré (tab ${currentTabId}, attendu ${expectedTabId ?? 'inconnu'})`);
       return null;
     }
     const age = Date.now() - (pending.timestamp || 0);
@@ -1118,9 +1120,19 @@
     setTimeout(run, 700);
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.taleos_pending_bnp?.newValue) {
-      setTimeout(run, 400);
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== 'local') return;
+    const newVal = changes.taleos_pending_bnp?.newValue;
+    if (!newVal) return;
+    // Ne s'activer que sur l'onglet ouvert par "Candidater", pas sur les autres onglets BNP ouverts
+    const expectedTabId = newVal.tabId ?? null;
+    if (expectedTabId !== null) {
+      const currentTabId = await getCurrentTabId();
+      if (currentTabId !== null && Number(currentTabId) !== Number(expectedTabId)) {
+        log(`⏭️ onChanged BNP ignoré (tab ${currentTabId}, attendu ${expectedTabId})`);
+        return;
+      }
     }
+    setTimeout(run, 400);
   });
 })();

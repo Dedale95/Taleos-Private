@@ -209,10 +209,20 @@
       }
     });
 
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.taleos_pending_bpce?.newValue) {
-        setTimeout(runAutomation, 800);
+    chrome.storage.onChanged.addListener(async (changes, area) => {
+      if (area !== 'local') return;
+      const newVal = changes.taleos_pending_bpce?.newValue;
+      if (!newVal) return;
+      // Ne s'activer que sur l'onglet ouvert par "Candidater", pas sur les autres onglets BPCE ouverts
+      const expectedTabId = newVal.tabId ?? null;
+      if (expectedTabId !== null) {
+        const currentTabId = await getCurrentTabId();
+        if (currentTabId !== null && Number(currentTabId) !== Number(expectedTabId)) {
+          log(`⏭️ onChanged BPCE ignoré (tab ${currentTabId}, attendu ${expectedTabId})`);
+          return;
+        }
       }
+      setTimeout(runAutomation, 800);
     });
   }
 

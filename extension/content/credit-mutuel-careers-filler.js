@@ -120,8 +120,10 @@
     if (!pending?.profile) return null;
     if (Date.now() - Number(pending.timestamp || 0) > MAX_PENDING_AGE) return null;
     const tabId = await getCurrentTabId();
-    if (expectedTabId && tabId && expectedTabId !== tabId) {
-      log(`⏭️ Onglet Crédit Mutuel manuel ignoré (tab ${tabId}, attendu ${expectedTabId})`);
+    // Guard strict : refuser si l'onglet courant n'est pas le tab de candidature,
+    // ou si l'un des deux IDs est inconnu (évite d'agir sur des onglets non ciblés).
+    if (!expectedTabId || !tabId || expectedTabId !== tabId) {
+      log(`⏭️ Onglet Crédit Mutuel non ciblé ignoré (tab ${tabId}, attendu ${expectedTabId ?? 'inconnu'})`);
       return null;
     }
     return pending;
@@ -503,9 +505,19 @@
     setTimeout(run, 500);
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[PENDING_KEY]?.newValue) {
-      setTimeout(run, 300);
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== 'local') return;
+    const newVal = changes[PENDING_KEY]?.newValue;
+    if (!newVal) return;
+    // Ne s'activer que sur l'onglet ouvert par "Candidater", pas sur les autres onglets Crédit Mutuel ouverts
+    const expectedTabId = newVal.tabId ?? null;
+    if (expectedTabId !== null) {
+      const currentTabId = await getCurrentTabId();
+      if (currentTabId !== null && Number(currentTabId) !== Number(expectedTabId)) {
+        console.log(`[Taleos CM] ⏭️ onChanged ignoré (tab ${currentTabId}, attendu ${expectedTabId})`);
+        return;
+      }
     }
+    setTimeout(run, 300);
   });
 })();

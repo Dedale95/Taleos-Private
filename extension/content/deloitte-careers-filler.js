@@ -2187,13 +2187,23 @@
     });
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.taleos_pending_deloitte?.newValue) {
-      runCount = 0;
-      postulerRetryCount = 0;
-      formFillRetryCount = 0;
-      setTimeout(runAutomation, 1000);
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== 'local') return;
+    const newVal = changes.taleos_pending_deloitte?.newValue;
+    if (!newVal) return;
+    // Ne s'activer que sur l'onglet ouvert par "Candidater", pas sur les autres onglets Deloitte/Workday ouverts
+    const expectedTabId = newVal.tabId ?? null;
+    if (expectedTabId !== null) {
+      const currentTabId = await getCurrentTabId();
+      if (currentTabId !== null && Number(currentTabId) !== Number(expectedTabId)) {
+        log(`⏭️ onChanged Deloitte ignoré (tab ${currentTabId}, attendu ${expectedTabId})`);
+        return;
+      }
     }
+    runCount = 0;
+    postulerRetryCount = 0;
+    formFillRetryCount = 0;
+    setTimeout(runAutomation, 1000);
   });
 
   if (document.readyState === 'loading') {
