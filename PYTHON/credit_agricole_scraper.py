@@ -343,22 +343,45 @@ class JobLinkScraper:
             return set()
 
     def scrape_all_links(self) -> Set[str]:
-        """Scrape tous les liens de jobs"""
+        """Scrape tous les liens de jobs.
+
+        N'utilise PAS get_last_page_number() : la pagination est rendue en JS
+        et requests ne voit que les 4-5 premiers numéros, pas la dernière page.
+        On calcule le nombre de pages depuis total_count (texte extrait par regex
+        dans le HTML statique) et on s'arrête dès qu'une page revient vide.
+        """
         total_count = self.get_total_jobs_count()
-        last_page = self.get_last_page_number()
 
-        all_links = set()
+        if total_count > 0:
+            # Le site CA affiche ~10 offres par page
+            estimated_pages = max(1, (total_count + 9) // 10)
+            self.logger.info(
+                f"Début du scraping: {total_count} offres annoncées → "
+                f"{estimated_pages} pages estimées (calcul depuis total)"
+            )
+        else:
+            # Fallback si le compte n'est pas lisible : 500 pages max (sécurité)
+            estimated_pages = 500
+            self.logger.warning(
+                "Impossible de lire le total d'offres — scraping jusqu'à page vide (max 500)"
+            )
 
-        self.logger.info(f"Début du scraping des liens ({last_page} pages)")
+        all_links: Set[str] = set()
 
-        with tqdm(total=total_count, desc="🔄 Collecte des liens", unit="job") as pbar:
-            for page in range(1, last_page + 1):
+        with tqdm(total=total_count or None, desc="🔄 Collecte des liens", unit="job") as pbar:
+            for page in range(1, estimated_pages + 1):
                 page_links = self.scrape_page(page)
+                if not page_links:
+                    self.logger.info(f"Page {page} vide — fin de la pagination")
+                    break
                 new_links = page_links - all_links
                 all_links.update(new_links)
                 pbar.update(len(new_links))
 
-        self.logger.info(f"Total de liens collectés: {len(all_links)}")
+        self.logger.info(
+            f"Total de liens collectés: {len(all_links)} "
+            f"(annoncé: {total_count or 'inconnu'})"
+        )
         return all_links
 
 # ============================================================================

@@ -390,36 +390,62 @@ def extract_education_level(text: str) -> Optional[str]:
 # FETCH ALL JOBS FROM API
 # =========================================================
 def fetch_all_jobs_from_api() -> List[Dict]:
-    """Récupère toutes les offres via l'API en une requête."""
-    payload = {
-        "lang": "fr",
-        "keyword": "",
-        "tax_sector": "",
-        "tax_contract": "",
-        "tax_place": "",
-        "tax_job": "",
-        "tax_experience": "",
-        "tax_degree": "",
-        "tax_brands": "",
-        "tax_department": "",
-        "tax_city": "",
-        "tax_country": "",
-        "tax_channel": "",
-        "jobcode": "",
-        "tax_community_job": "",
-        "external": False,
-        "userID": "",
-        "from": 0,
-        "size": 3000,
-    }
+    """Récupère toutes les offres via l'API en paginant par tranches de 1000.
+
+    L'API BPCE plafonne le nombre d'items retournés par requête (même avec size=3000),
+    il faut donc boucler en incrémentant `from` jusqu'à avoir tout récupéré.
+    """
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-    r = requests.post(API_URL, json=payload, headers=headers, timeout=config.REQUEST_TIMEOUT)
-    r.raise_for_status()
-    data = r.json()
-    items = data.get("data", {}).get("items", [])
-    total = data.get("data", {}).get("total", 0)
-    logging.info(f"API: {len(items)} offres reçues (total: {total})")
-    return items
+    all_items: List[Dict] = []
+    from_offset = 0
+    page_size = 1000
+    total_known = None
+
+    while True:
+        payload = {
+            "lang": "fr",
+            "keyword": "",
+            "tax_sector": "",
+            "tax_contract": "",
+            "tax_place": "",
+            "tax_job": "",
+            "tax_experience": "",
+            "tax_degree": "",
+            "tax_brands": "",
+            "tax_department": "",
+            "tax_city": "",
+            "tax_country": "",
+            "tax_channel": "",
+            "jobcode": "",
+            "tax_community_job": "",
+            "external": False,
+            "userID": "",
+            "from": from_offset,
+            "size": page_size,
+        }
+        r = requests.post(API_URL, json=payload, headers=headers, timeout=config.REQUEST_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        items = data.get("data", {}).get("items", [])
+        total = data.get("data", {}).get("total", 0)
+
+        if total_known is None:
+            total_known = total
+            logging.info(f"API BPCE: {total_known} offres annoncées — pagination par tranches de {page_size}")
+
+        if not items:
+            break
+
+        all_items.extend(items)
+        logging.info(f"  offset {from_offset}: {len(items)} items reçus ({len(all_items)}/{total_known})")
+
+        if len(all_items) >= total_known:
+            break
+
+        from_offset += len(items)
+
+    logging.info(f"API BPCE: {len(all_items)} offres récupérées au total (annoncé: {total_known})")
+    return all_items
 
 
 # =========================================================

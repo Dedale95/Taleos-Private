@@ -302,6 +302,15 @@ def clean_date(date_str: Optional[str]) -> Optional[str]:
 # Ne PAS supprimer le wait_for_selector ci-dessous : sans lui on ne récupère
 # qu'une seule page (~10 URLs) et tout le reste est marqué Expiré à tort.
 async def get_total_pages(context: BrowserContext) -> int:
+    """Détecte le nombre total de pages de résultats SG.
+
+    Le bouton "Aller à la dernière page" est rendu en lazy-load et peut ne pas
+    apparaître selon le viewport ou la vitesse de rendu.  Stratégie :
+    1. Scroll jusqu'en bas pour déclencher le chargement du paginateur complet.
+    2. Chercher explicitement le bouton "dernière page" (data-page le plus élevé).
+    3. Fallback : prendre le max de TOUS les data-page visibles.
+    4. Fallback final : parser le total d'offres affiché et diviser par ~10.
+    """
     page = await context.new_page()
     await page.goto(SEARCH_URL, timeout=config.PAGE_TIMEOUT, wait_until="domcontentloaded")
 
@@ -311,23 +320,58 @@ async def get_total_pages(context: BrowserContext) -> int:
     except:
         logging.info("Cookie banner not found")
 
-    # Attendre que la pagination ou la liste d'offres soit rendue (JS)
+    # Attendre que la liste d'offres soit rendue (JS)
     try:
         await page.wait_for_selector(
-            'a.js-pager[title="Aller à la dernière page"], a[href*="/offres-d-emploi/"], a[href*="/en/job-offers/"]',
+            'a[href*="/offres-d-emploi/"], a[href*="/en/job-offers/"]',
             timeout=config.WAIT_TIMEOUT
         )
     except Exception as e:
-        logging.warning(f"Timeout waiting for job list / pagination: {e}")
-    await asyncio.sleep(2)  # laisser le temps au dernier numéro de page d'apparaître
+        logging.warning(f"Timeout waiting for job list: {e}")
+
+    # Scroll jusqu'en bas : déclenche le rendu lazy du paginateur complet
+    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    await asyncio.sleep(3)
 
     html = await page.content()
     soup = BeautifulSoup(html, "html.parser")
-
-    last_page = soup.select_one('a.js-pager[title="Aller à la dernière page"]')
     await page.close()
 
-    return int(last_page["data-page"]) if last_page else 1
+    # Méthode 1 : bouton "Aller à la dernière page"
+    last_page_btn = soup.select_one('a.js-pager[title="Aller à la dernière page"]')
+    if last_page_btn and last_page_btn.get("data-page"):
+        total = int(last_page_btn["data-page"])
+        logging.info(f"Pages détectées (bouton dernière page) : {total}")
+        return total
+
+    # Méthode 2 : max de tous les data-page visibles dans le paginateur
+    page_nums = []
+    for a in soup.select("a.js-pager[data-page], a[data-page]"):
+        try:
+            page_nums.append(int(a["data-page"]))
+        except (ValueError, KeyError):
+            pass
+    if page_nums:
+        total = max(page_nums)
+        logging.info(f"Pages détectées (max data-page) : {total}")
+        return total
+
+    # Méthode 3 : total d'offres affiché → calcul du nombre de pages (~10/page)
+    text = soup.get_text()
+    m = re.search(r'(\d[\d\s\xa0]+)\s*offres?\b', text)
+    if m:
+        total_jobs = int(re.sub(r'[\s\xa0]', '', m.group(1)))
+        total_pages = max(1, (total_jobs + 9) // 10)
+        logging.warning(
+            f"Paginateur non détecté — estimation depuis total d'offres : "
+            f"{total_jobs} offres → {total_pages} pages"
+        )
+        return total_pages
+
+    logging.error(
+        "Impossible de détecter le nombre de pages SG — retour 1 (résultats incomplets probable)"
+    )
+    return 1
 
 # =========================================================
 # COLLECT JOB URLS

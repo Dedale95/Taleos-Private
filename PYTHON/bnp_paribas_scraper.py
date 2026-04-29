@@ -502,7 +502,14 @@ async def fetch_listing_page(
             soup = BeautifulSoup(html, "html.parser")
 
             jobs = []
-            for card in soup.select("a.card-link[href*='/emploi-carriere/offre-emploi/']"):
+            # Sélecteur élargi : couvre les offres FR (/emploi-carriere/offre-emploi/)
+            # ET les offres EN (/en/careers/job-offer/, /en/emploi-carriere/offre-emploi/)
+            card_selector = (
+                "a.card-link[href*='/emploi-carriere/offre-emploi/'], "
+                "a.card-link[href*='/en/careers/job-offer/'], "
+                "a.card-link[href*='/en/emploi-carriere/offre-emploi/']"
+            )
+            for card in soup.select(card_selector):
                 href = card.get("href", "")
                 job_url = BASE_URL + href if href.startswith('/') else href
 
