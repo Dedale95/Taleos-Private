@@ -65,6 +65,10 @@
     try { sessionStorage.setItem(SESSION_PREFIX + key, String(value)); } catch (_) {}
   }
 
+  function removeSessionFlag(key) {
+    try { sessionStorage.removeItem(SESSION_PREFIX + key); } catch (_) {}
+  }
+
   function formatLogValue(value) {
     const str = value == null ? '' : String(value).trim();
     return str || '(vide)';
@@ -72,6 +76,13 @@
 
   function qs(selector) {
     try { return document.querySelector(selector); } catch (_) { return null; }
+  }
+
+  function isElementVisible(el) {
+    if (!el) return false;
+    const style = globalThis.getComputedStyle ? getComputedStyle(el) : null;
+    const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+    return !!style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && !!rect && rect.width > 0 && rect.height > 0;
   }
 
   function setInputValue(el, value) {
@@ -349,6 +360,13 @@
     return heading.replace(/^Postuler au poste de\s*:\s*/i, '').trim();
   }
 
+  function hasVisibleSuccessMessage() {
+    const step3 = qs('#step3');
+    const message = qs('#step3 #submitMessage .alert-text');
+    if (!isElementVisible(step3) || !isElementVisible(message)) return false;
+    return normalizeText(message.textContent || '').includes('votre candidature a bien ete prise en compte');
+  }
+
   async function fetchMyPositioningsSnapshot() {
     try {
       const res = await fetch('/fr/mypositionings', { credentials: 'include' });
@@ -381,6 +399,34 @@
     return afterTotal > beforeTotal;
   }
 
+  async function handleMyPositioningsPage(profile) {
+    const submittedAt = Number(getSessionFlag('submitted_at') || '0');
+    const beforeCount = Number(getSessionFlag('before_count') || '0');
+    const successReported = getSessionFlag('success_reported') === '1';
+    if (!submittedAt || successReported) {
+      log('⏭️ Bpifrance → page Mes candidatures sans soumission récente à confirmer');
+      return;
+    }
+    const ageMs = Date.now() - submittedAt;
+    if (ageMs > 120000) {
+      log('⏭️ Bpifrance → soumission trop ancienne pour confirmer via Mes candidatures');
+      return;
+    }
+    const afterSnapshot = await fetchMyPositioningsSnapshot();
+    if (!afterSnapshot) {
+      log('⏭️ Bpifrance → impossible de lire Mes candidatures après redirection');
+      return;
+    }
+    log(`📚 Bpifrance → Mes candidatures après redirection: ${afterSnapshot.total}`);
+    if (afterSnapshot.total > beforeCount) {
+      setSessionFlag('success_reported', '1');
+      log('🎉 Bpifrance → succès confirmé après redirection vers Mes candidatures');
+      await submitSuccess(profile);
+      return;
+    }
+    log('⏭️ Bpifrance → aucune nouvelle candidature détectée après redirection');
+  }
+
   async function submitApplication(profile) {
     const retries = Number(getSessionFlag('submit_retries') || '0');
     if (retries > MAX_SUBMIT_RETRIES) {
@@ -395,11 +441,15 @@
     const beforeSnapshot = await fetchMyPositioningsSnapshot();
     if (beforeSnapshot) {
       log(`📚 Bpifrance → Mes candidatures avant soumission: ${beforeSnapshot.total}`);
+      setSessionFlag('before_count', beforeSnapshot.total);
     } else {
       log('ℹ️ Bpifrance → snapshot Mes candidatures indisponible avant soumission');
+      removeSessionFlag('before_count');
     }
 
     setSessionFlag('submit_retries', String(retries + 1));
+    setSessionFlag('submitted_at', Date.now());
+    removeSessionFlag('success_reported');
     globalThis.__TALEOS_BPI_LAST_APPLY_RESPONSE__ = null;
     log(`➡️ Bpifrance → clic POSTULER (tentative ${retries + 1}/${MAX_SUBMIT_RETRIES + 1})`);
     submitBtn.click();
@@ -431,8 +481,9 @@
       }
 
       const detected = blueprintApi?.detectPage ? blueprintApi.detectPage() : { key: 'unknown' };
-      if (detected.key === 'success' || (qs('#step3') && normalizeText(qs('#step3')?.textContent || '').includes('votre candidature a bien ete prise en compte'))) {
-        log('🎉 Bpifrance → confirmation de candidature détectée');
+      if (detected.key === 'success' || hasVisibleSuccessMessage()) {
+        setSessionFlag('success_reported', '1');
+        log('🎉 Bpifrance → confirmation visuelle de candidature détectée');
         await submitSuccess(profile);
         return;
       }
@@ -509,8 +560,15 @@
 
     if (detected.key === 'success') {
       await validatePage(['success'], profile, 'succès');
+      setSessionFlag('success_reported', '1');
       log('🎉 Bpifrance → accusé de réception détecté');
       await submitSuccess(profile);
+      return;
+    }
+
+    if (detected.key === 'my_positionings') {
+      await validatePage(['my_positionings'], profile, 'mes candidatures');
+      await handleMyPositioningsPage(profile);
       return;
     }
 

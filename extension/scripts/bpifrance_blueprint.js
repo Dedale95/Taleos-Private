@@ -16,6 +16,7 @@
     login: ['se connecter', 'email', 'password', 'login'],
     applyWizard: ['upload cv', 'informations personnelles', 'confirmation', 'telechargez votre cv'],
     success: ['votre candidature a bien ete prise en compte'],
+    myPositionings: ['mes candidatures', 'poste', 'date', 'origine', 'support'],
     accountExists: ['vous possedez deja un compte chez nous', 'connectez-vous ici']
   };
 
@@ -45,8 +46,15 @@
       label: 'Succès candidature Bpifrance',
       hostIncludes: ['bpi.tzportal.io'],
       pathMatches: [/\/fr\/apply/],
-      selectorsAny: ['#step3'],
+      selectorsAny: ['#step3', '#submitMessage', '#step3 #submitMessage .alert-text'],
       textPatterns: TEXT.success
+    },
+    my_positionings: {
+      label: 'Mes candidatures Bpifrance',
+      hostIncludes: ['bpi.tzportal.io'],
+      pathMatches: [/\/fr\/mypositionings/],
+      selectorsAny: ['table', 'td', 'a[href*="/fr/mypositionings"]'],
+      textPatterns: TEXT.myPositionings
     },
     account_exists_error: {
       label: 'Compte existant Bpifrance',
@@ -69,7 +77,9 @@
   function isVisible(el) {
     if (!el) return false;
     const style = globalThis.getComputedStyle ? getComputedStyle(el) : null;
-    return style?.display !== 'none' && style?.visibility !== 'hidden' && style?.opacity !== '0';
+    const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+    const hasBox = !!rect && rect.width > 0 && rect.height > 0;
+    return style?.display !== 'none' && style?.visibility !== 'hidden' && style?.opacity !== '0' && hasBox;
   }
 
   function queryVisible(selector) {
@@ -102,7 +112,7 @@
     const href = String(location.href || '').toLowerCase();
     const text = getPageText();
 
-    if (queryVisible('#step3') && text.includes(normalizeText(TEXT.success[0]))) {
+    if (queryVisible('#step3 #submitMessage .alert-text') && text.includes(normalizeText(TEXT.success[0]))) {
       return { key: 'success', score: 99, label: PAGE_DEFS.success.label };
     }
 
