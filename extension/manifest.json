@@ -32,6 +32,8 @@
     "https://group.bnpparibas/*",
     "https://bwelcome.hr.bnpparibas/*",
     "https://recrutement.creditmutuel.fr/*",
+    "https://talents.bpifrance.fr/*",
+    "https://bpi.tzportal.io/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
@@ -195,6 +197,18 @@
         "scripts/taleos-automation-banner.js",
         "scripts/credit_mutuel_blueprint.js",
         "content/credit-mutuel-careers-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://talents.bpifrance.fr/*",
+        "https://bpi.tzportal.io/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpifrance_blueprint.js",
+        "content/bpifrance-careers-filler.js"
       ],
       "run_at": "document_idle"
     },

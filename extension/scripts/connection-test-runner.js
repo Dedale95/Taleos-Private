@@ -1,6 +1,6 @@
 /**
  * Taleos - Script de test de connexion bancaire (injecté dans l'onglet)
- * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte
+ * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte, Bpifrance
  */
 (function() {
   'use strict';
@@ -45,6 +45,15 @@
           !!document.querySelector('[data-automation-id="navigationItem-Accueil candidat"]');
       },
       failureCheck: (url, content) => /errorMessage|data-automation-id="errorMessage"/i.test(content)
+    },
+    bpifrance: {
+      loginUrl: 'https://bpi.tzportal.io//fr/login',
+      emailSel: '#email, input[type="text"][name="email"], input[placeholder="Email"]',
+      passwordSel: '#password, input[type="password"][name="password"], input[placeholder="Password"]',
+      submitSel: 'a.btn.btn-primary, button[type="submit"], button',
+      cookieSel: null,
+      successCheck: (url, content) => /\/fr\/myaccount\b|se déconnecter|mon profil/i.test(url + content),
+      failureCheck: (url, content) => /mot de passe incorrect|identifiants incorrects|se connecter/i.test(content)
     }
   };
 
@@ -53,9 +62,10 @@
     if (!cfg) return { done: false, error: 'Banque non supportée' };
 
     const qs = (sel) => {
-      const s = sel.split(',')[0].trim();
-      const el = document.querySelector(s);
-      if (el) return el;
+      for (const part of sel.split(',')) {
+        const e = document.querySelector(part.trim());
+        if (e && e.offsetParent !== null) return e;
+      }
       for (const part of sel.split(',')) {
         const e = document.querySelector(part.trim());
         if (e) return e;
@@ -112,6 +122,9 @@
       }
       if (bankId === 'deloitte' && document.querySelector('[data-automation-id="errorMessage"]')) {
         return { success: false, message: 'Identifiants Deloitte incorrects' };
+      }
+      if (bankId === 'bpifrance') {
+        return { success: false, message: 'Identifiants Bpifrance incorrects' };
       }
       return { success: false, message: 'Email ou mot de passe incorrect.' };
     }

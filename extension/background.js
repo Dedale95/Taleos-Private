@@ -49,7 +49,8 @@ const BANK_SCRIPT_MAP = {
   deloitte: 'content/deloitte-careers-filler.js',
   bpce: 'content/bpce-careers-filler.js',
   bnp_paribas: 'content/bnp-careers-filler.js',
-  credit_mutuel: 'content/credit-mutuel-careers-filler.js'
+  credit_mutuel: 'content/credit-mutuel-careers-filler.js',
+  bpifrance: 'content/bpifrance-careers-filler.js'
 };
 
 const PROJECT_ID = 'project-taleos';
@@ -70,6 +71,7 @@ const BPCE_BLUEPRINT_SCRIPT = 'scripts/bpce_blueprint.js';
 const DELOITTE_BLUEPRINT_SCRIPT = 'scripts/deloitte_blueprint.js';
 const BNP_BLUEPRINT_SCRIPT = 'scripts/bnp_paribas_blueprint.js';
 const CREDIT_MUTUEL_BLUEPRINT_SCRIPT = 'scripts/credit_mutuel_blueprint.js';
+const BPIFRANCE_BLUEPRINT_SCRIPT = 'scripts/bpifrance_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -97,6 +99,9 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'credit_mutuel') {
     return injectFilesWithBanner([CREDIT_MUTUEL_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'bpifrance') {
+    return injectFilesWithBanner([BPIFRANCE_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
 }
 
@@ -119,6 +124,7 @@ async function clearPendingStateForBank(bankId, tabId) {
 let authSyncResolve = null;
 const sgLastInject = new Map();
 const caLastInject = new Map();
+const bpifranceLastInject = new Map();
 
 async function scheduleApplyStuckWatchdog() {
   try {
@@ -1553,7 +1559,8 @@ const CONNECTION_TEST_URLS = {
   credit_agricole: 'https://groupecreditagricole.jobs/fr/connexion/',
   bnp_paribas: 'https://bwelcome.hr.bnpparibas/fr_FR/externalcareers/Login',
   societe_generale: 'https://socgen.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=fr-FR&redirectionURI=https%3A%2F%2Fsocgen.taleo.net%2Fcareersection%2Fsgcareers%2Fprofile.ftl%3Flang%3Dfr-FR%26src%3DCWS-1%26pcid%3Dmjlsx8hz6i4vn92z&TARGET=https%3A%2F%2Fsocgen.taleo.net%2Fcareersection%2Fsgcareers%2Fprofile.ftl%3Flang%3Dfr-FR%26src%3DCWS-1%26pcid%3Dmjlsx8hz6i4vn92z',
-  deloitte: 'https://fina.wd103.myworkdayjobs.com/fr-FR/DeloitteRecrute'
+  deloitte: 'https://fina.wd103.myworkdayjobs.com/fr-FR/DeloitteRecrute',
+  bpifrance: 'https://bpi.tzportal.io//fr/login'
 };
 
 async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, email, passwordEncoded) {
@@ -2011,6 +2018,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   const bid = String(bankId || '').toLowerCase();
   if (bid === 'credit_agricole' || url.includes('groupecreditagricole.jobs')) return 'ca';
   if (bid === 'credit_mutuel' || url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
+  if (bid === 'bpifrance' || url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
   if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
@@ -2117,7 +2125,12 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   }
   profile.__jobId = jobId;
   profile.__jobTitle = jobTitle || '';
-  profile.__companyName = companyName || (String(bankId || '').toLowerCase() === 'credit_mutuel' ? 'Crédit Mutuel' : 'Crédit Agricole');
+  const normalizedBankId = String(bankId || '').toLowerCase();
+  profile.__companyName = companyName || (
+    normalizedBankId === 'credit_mutuel' ? 'Crédit Mutuel'
+      : normalizedBankId === 'bpifrance' ? 'Bpifrance'
+        : 'Crédit Agricole'
+  );
   profile.__offerUrl = offerUrl;
   profile.__offerMeta = offerMeta || {};
 
@@ -2393,6 +2406,47 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       },
       taleos_credit_mutuel_tab_id: tab.id
     });
+    await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'bpifrance') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+
+    const injectBpifrance = async () => {
+      try {
+        const openedTab = await chrome.tabs.get(tab.id).catch(() => null);
+        const currentUrl = String(openedTab?.url || '').toLowerCase();
+        if (!currentUrl.includes('talents.bpifrance.fr') && !currentUrl.includes('bpi.tzportal.io')) return;
+        const lastInject = bpifranceLastInject.get(tab.id) || 0;
+        if (Date.now() - lastInject < 2500) return;
+        bpifranceLastInject.set(tab.id, Date.now());
+        await injectAutomationTab(tab.id, profile, scriptPath, pilotExec, bankId);
+      } catch (e) {
+        console.error('[Taleos] Injection Bpifrance:', e);
+      }
+    };
+
+    const listener = async (id, info) => {
+      if (id !== tab.id || info.status !== 'complete') return;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await injectBpifrance();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 180000);
+    setTimeout(() => { injectBpifrance().catch(() => {}); }, 2500);
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
@@ -2694,7 +2748,7 @@ async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
   const normalizedBankId = String(bankId || '').toLowerCase().trim();
-  const requiresCareerCredentials = !['credit_mutuel'].includes(normalizedBankId);
+  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
@@ -3290,12 +3344,14 @@ function normalizeSite(site, offerUrl) {
   const raw = (site || '').toLowerCase();
   if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
   if (raw.includes('mutuel')) return 'credit_mutuel';
+  if (raw.includes('bpifrance') || raw.includes('bpi')) return 'bpifrance';
   if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
   if (raw.includes('bpce')) return 'bpce';
   if (raw.includes('deloitte')) return 'deloitte';
   const url = (offerUrl || '').toLowerCase();
   if (url.includes('groupecreditagricole.jobs')) return 'credit_agricole';
   if (url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
+  if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';

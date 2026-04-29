@@ -226,6 +226,7 @@
     if (url.includes('recrutement.bpce.fr')) return 'bpce';
     if (url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
     if (url.includes('recrutement.creditmutuel.fr') || url.includes('creditmutuel.fr')) return 'credit_mutuel';
+    if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
     return 'credit_agricole'; // défaut
   }
 
@@ -275,6 +276,7 @@
     const raw = String(bankId || 'unknown').toLowerCase();
     if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
     if (raw.includes('mutuel')) return 'credit_mutuel';
+    if (raw.includes('bpifrance') || raw.includes('bpi')) return 'bpifrance';
     if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
     if (raw.includes('bpce')) return 'bpce';
     if (raw.includes('deloitte')) return 'deloitte';
