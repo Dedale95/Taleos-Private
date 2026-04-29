@@ -169,6 +169,13 @@
     return 'm.';
   }
 
+  function mapTalentPoolConsent(profile) {
+    const raw = normalizeText(profile.bpifrance_talent_pool || '');
+    if (['oui', 'yes', 'true'].includes(raw)) return true;
+    if (['non', 'no', 'false'].includes(raw)) return false;
+    return null;
+  }
+
   async function setFileInputFromStorage(inputEl, storagePath, filename) {
     if (!inputEl || !storagePath) return false;
     const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
@@ -314,7 +321,12 @@
     syncCheckboxField(document.getElementById('consentement'), true, 'Consentement obligatoire');
     const optional = document.getElementById('optionnalConsentement');
     if (optional) {
-      log(`   ℹ️ Consentement vivier : non piloté par Firebase -> formulaire='${optional.checked ? 'coché' : 'non coché'}' -> Skip`);
+      const targetOptional = mapTalentPoolConsent(profile);
+      if (targetOptional == null) {
+        log(`   ℹ️ Consentement vivier : aucune préférence Firebase exploitable -> formulaire='${optional.checked ? 'coché' : 'non coché'}' -> Skip`);
+      } else {
+        syncCheckboxField(optional, targetOptional, 'Consentement vivier');
+      }
     }
 
     const audit = blueprintApi?.validateQuestionAudit?.(profile);

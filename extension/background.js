@@ -2860,6 +2860,7 @@ async function fetchProfile(uid, bankId, token) {
     bpce_application_source: (profile.bpce_application_source || '').trim(),
     linkedin_url: (profile.linkedin_url || '').trim(),
     bpce_job_alerts: !!profile.bpce_job_alerts,
+    bpifrance_talent_pool: (profile.bpifrance_talent_pool || '').trim(),
     group_data_sharing_scope: (profile.group_data_sharing_scope || profile.bnp_data_sharing_scope || '').trim(),
     sg_eu_work_authorization: profile.sg_eu_work_authorization || '',
     sg_notice_period: profile.sg_notice_period || '',
