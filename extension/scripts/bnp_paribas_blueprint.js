@@ -49,7 +49,18 @@
       'offre introuvable',
       'this job is no longer available',
       'n\'est plus disponible',
-      'plus disponible'
+      'plus disponible',
+      'cette offre est deja pourvue',
+      'cette offre est déjà pourvue',
+      'deja pourvue',
+      'déjà pourvue',
+      'offre deja pourvue',
+      'offre déjà pourvue',
+      'desole, cette offre',
+      'désolé, cette offre',
+      'job has already been filled',
+      'position has been filled',
+      'this position is no longer available'
     ]
   };
 
