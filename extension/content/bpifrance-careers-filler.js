@@ -306,6 +306,10 @@
     if (messageEl) {
       log(`   ℹ️ Motivation : aucune consigne Firebase structurée -> formulaire='${formatLogValue(messageEl.value)}' -> Skip`);
     }
+    const cooptedByEl = document.getElementById('cooptedBy');
+    if (cooptedByEl) {
+      log(`   ℹ️ Recommandation / matricule : non piloté par Firebase -> formulaire='${formatLogValue(cooptedByEl.value)}' -> Skip`);
+    }
 
     syncCheckboxField(document.getElementById('consentement'), true, 'Consentement obligatoire');
     const optional = document.getElementById('optionnalConsentement');
@@ -325,6 +329,46 @@
     return raw;
   }
 
+  function getOfferTitle() {
+    const heading = Array.from(document.querySelectorAll('h1, h2, h3, .card-title, .wizard-title'))
+      .map((el) => String(el.textContent || '').trim())
+      .find((text) => normalizeText(text).startsWith('postuler au poste de'));
+    if (!heading) return '';
+    return heading.replace(/^Postuler au poste de\s*:\s*/i, '').trim();
+  }
+
+  async function fetchMyPositioningsSnapshot() {
+    try {
+      const res = await fetch('/fr/mypositionings', { credentials: 'include' });
+      if (!res.ok) return null;
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const bodyText = normalizeText(doc.body?.innerText || doc.body?.textContent || '');
+      const countMatch = bodyText.match(/affichage de (\d+) elements sur (\d+)/);
+      const total = countMatch ? Number(countMatch[2] || countMatch[1] || 0) : 0;
+      const titles = Array.from(doc.querySelectorAll('td'))
+        .map((cell) => String(cell.textContent || '').trim())
+        .filter(Boolean)
+        .filter((text) => {
+          const norm = normalizeText(text);
+          return norm && !/^\d+$/.test(norm) && !['portail', 'site talents'].includes(norm);
+        });
+      return {
+        total,
+        titles,
+        titlesNormalized: titles.map((title) => normalizeText(title))
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function hasNewApplication(beforeSnapshot, afterSnapshot) {
+    const beforeTotal = Number(beforeSnapshot?.total || 0);
+    const afterTotal = Number(afterSnapshot?.total || 0);
+    return afterTotal > beforeTotal;
+  }
+
   async function submitApplication(profile) {
     const retries = Number(getSessionFlag('submit_retries') || '0');
     if (retries > MAX_SUBMIT_RETRIES) {
@@ -336,12 +380,19 @@
       await submitFailure(profile, 'Bouton POSTULER Bpifrance introuvable');
       return;
     }
+    const beforeSnapshot = await fetchMyPositioningsSnapshot();
+    if (beforeSnapshot) {
+      log(`📚 Bpifrance → Mes candidatures avant soumission: ${beforeSnapshot.total}`);
+    } else {
+      log('ℹ️ Bpifrance → snapshot Mes candidatures indisponible avant soumission');
+    }
+
     setSessionFlag('submit_retries', String(retries + 1));
     globalThis.__TALEOS_BPI_LAST_APPLY_RESPONSE__ = null;
     log(`➡️ Bpifrance → clic POSTULER (tentative ${retries + 1}/${MAX_SUBMIT_RETRIES + 1})`);
     submitBtn.click();
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 24; i++) {
       await sleep(500);
       const applyResponse = getApplyResponse();
       const mainAlert = String(applyResponse?.json?.formErrors?.mainAlert || '').trim();
@@ -372,6 +423,19 @@
         log('🎉 Bpifrance → confirmation de candidature détectée');
         await submitSuccess(profile);
         return;
+      }
+
+      if (i >= 5 && i % 4 === 1) {
+        const afterSnapshot = await fetchMyPositioningsSnapshot();
+        if (afterSnapshot) {
+          log(`📚 Bpifrance → Mes candidatures après soumission: ${afterSnapshot.total}`);
+          if (hasNewApplication(beforeSnapshot, afterSnapshot)) {
+            const title = getOfferTitle();
+            log(`🎉 Bpifrance → nouvelle candidature confirmée dans Mes candidatures${title ? ` (${title})` : ''}`);
+            await submitSuccess(profile);
+            return;
+          }
+        }
       }
     }
 

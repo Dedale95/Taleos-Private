@@ -1,13 +1,20 @@
 # Blueprint Bpifrance
 
 Date d'inspection live : `2026-04-29`
-Offre test : `https://talents.bpifrance.fr/opportunites/charge-d-investissement-senior-fonds-patient-autonome-f-h/?id=7464-51`
+Offres inspectées :
+
+- `7464-51` `Chargé d'investissement senior Patient autonome`
+- `9322-78` `Chargé d’opérations de financement immobilier`
+- `9467-05` `Chargé d'affaires cofinancement`
+- `9495-00` `Chargé de projets deeptech`
+- `9501-98` `INGÉNIEUR(E) DATA`
+- `9511-78` `Chargé de mission pôle digital et pôle retail`
 
 ## Flux confirmé
 
 1. Offre publique `talents.bpifrance.fr/opportunites/...`
 2. Bouton / lien `Postuler`
-3. Portail candidat `https://bpi.tzportal.io/fr/apply?job=7464-51&source=site-talents`
+3. Portail candidat `https://bpi.tzportal.io/fr/apply?job=<JOB_ID>&source=site-talents`
 4. Si compte existant non connecté : page login `https://bpi.tzportal.io//fr/login?...`
 5. Wizard candidature :
    - `1. Upload CV`
@@ -63,6 +70,7 @@ Upload réseau observé :
 - email : `#email`
 - téléphone : `#phone`
 - motivation : `#message`
+- recommandation / matricule optionnel : `#cooptedBy`
 - consentement obligatoire : `#consentement`
 - consentement vivier optionnel : `#optionnalConsentement`
 
@@ -75,13 +83,14 @@ formid=form_apply_agents
 formMode=ajax
 modulename=agents
 index=<dynamique>
-jobID=7464-51
+jobID=<JOB_ID>
 civility=m.
 firstName=Thibault
 lastName=Giraudet
 email=thibault.giraudet@outlook.com
 phone=0758953565
 message=
+cooptedBy=
 consentement=on
 ```
 
@@ -121,13 +130,35 @@ Important :
 - il ne faut donc **pas** considérer `#step3` comme un succès suffisant
 - il faut prioriser l'analyse de la réponse Ajax `POST /fr/a/apply`
 
+### Succès métier réel
+
+Succès confirmé en live :
+
+- de nouvelles lignes apparaissent dans `https://bpi.tzportal.io//fr/mypositionings`
+- constaté sur les offres `9467-05`, `9495-00` et `9501-98`
+
+Comportement serveur observé sur succès authentifié :
+
+- `POST /fr/a/apply` peut renvoyer un simple écho JSON du formulaire posté
+- il n'y a pas forcément de `successMessage` explicite dans la réponse HTTP
+- le signal métier le plus fiable côté portail est donc l'apparition d'une nouvelle candidature dans `Mes candidatures`
+
 ### Succès visuel
 
 Texte confirmé dans `#step3` :
 
 - `Votre candidature a bien été prise en compte`
 
-Mais ce texte seul n'est pas discriminant tant qu'on n'a pas vérifié l'absence de `formErrors` dans la réponse Ajax.
+Sélecteur confirmé :
+
+- `#step3 #submitMessage .alert-text`
+
+Important :
+
+- ce texte est déjà présent dans le HTML du wizard, dans l'étape 3 cachée
+- il faut donc vérifier que `#step3` est **visible / active**
+- en pratique, le filler doit croiser ce signal visuel avec l'absence de `formErrors`
+- en fallback robuste, il peut confirmer le succès via `Mes candidatures`
 
 ## Logs Taleos attendus
 
@@ -149,6 +180,7 @@ Champs pilotés :
 Champs non pilotés actuellement :
 
 - `Motivation`
+- `Recommandation / matricule` (`#cooptedBy`)
 - `Consentement vivier`
 
 ## Fichiers extension concernés
