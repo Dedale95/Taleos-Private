@@ -1886,7 +1886,12 @@ async function runTestConnection(msg) {
 
   const loginUrl = CONNECTION_TEST_URLS[bankId];
   if (!loginUrl || !email || !password || !firebaseUserId) {
-    return { success: false, message: 'Paramètres manquants' };
+    const missing = [];
+    if (!loginUrl) missing.push('URL de connexion');
+    if (!email) missing.push('email');
+    if (!password) missing.push('mot de passe');
+    if (!firebaseUserId) missing.push('session Taleos');
+    return { success: false, message: `Paramètres manquants: ${missing.join(', ')}` };
   }
 
   const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
