@@ -93,6 +93,9 @@
    - Validation:
      - `#C:pagePrincipale.C4:link`
      - submit backend `_FID_DoValidate`
+     - la page embarque une soumission JS explicite:
+       - `ScriptSubmit('ClientSideClick')` sur `C:pagePrincipale.C4:link`
+     - le formulaire final reste en `enctype="multipart/form-data"`
      - bouton reset `#C:pagePrincipale.C5:link`
      - lien reset backend `?_fid=DoReset`
      - lien abandon `#C:pagePrincipale.btnAbandon:link`
@@ -113,7 +116,11 @@
    - URL réelle confirmée: `/fr/message.html?message=0`
    - Texte clé:
      - `Accusé de réception`
-     - `Votre candidature à l'offre ... a été transmise ce jour`
+     - `... a été transmise ce jour`
+   - Note de capture:
+     - l'accès direct hors contexte de session retourne actuellement une variante générique de confirmation:
+       - `Votre candidature spontanée a été transmise ce jour`
+     - le wording exact après candidature offre semble dépendre du contexte/session serveur
 
 ## Spécificités importantes
 
@@ -124,6 +131,10 @@
   - champ fichier CV `Data_CvFile_File`
   - submit `_FID_DoUploadCv`
 - Après upload, le serveur peut préremplir des valeurs imparfaites issues du parsing CV (ex: téléphone). Le filler doit continuer à écraser explicitement les champs cibles avec les valeurs Taleos.
+- La validation finale ne semble pas entièrement reproductible par simple POST brut:
+  - le modèle interne `EN.AddNode(...)` peut être correct
+  - mais la page s'appuie aussi sur une soumission client-side `ScriptSubmit('ClientSideClick')`
+  - pour un test end-to-end strict, privilégier un vrai navigateur avec exécution JS complète
 - La certification finale doit synchroniser:
   - le checkbox visible
   - et le hidden booléen `Bool:Data_Certification=true`
