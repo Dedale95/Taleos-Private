@@ -474,9 +474,9 @@
 
   async function run() {
     await dismissCookieDialog();
-    showBanner();
     const pending = await getPending();
     if (!pending?.profile) return;
+    showBanner();
     const profile = pending.profile;
     const detected = blueprintApi?.detectPage ? blueprintApi.detectPage() : { key: 'unknown' };
     log(`🚀 Démarrage Crédit Mutuel sur ${detected.key} (${location.pathname})`);

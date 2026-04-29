@@ -2290,7 +2290,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     });
     scheduleApplyStuckWatchdog();
   } else if (routeAs === 'credit_mutuel') {
-    chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
     const createOpts = { url: offerUrl, active: false };
     if (taleosTabId) {
       try {
@@ -2306,7 +2306,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
       }, ms));
     }
-    chrome.storage.local.set({
+    await chrome.storage.local.set({
       taleos_pending_credit_mutuel: {
         profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'Crédit Mutuel', __offerUrl: offerUrl },
         offerUrl,
@@ -2318,7 +2318,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       },
       taleos_credit_mutuel_tab_id: tab.id
     });
-    scheduleApplyStuckWatchdog();
+    await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
     const otherCreateOpts = { url: offerUrl, active: false };
