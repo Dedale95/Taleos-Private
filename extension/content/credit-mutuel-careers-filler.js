@@ -99,9 +99,32 @@
     document.body?.insertBefore(banner, document.body.firstChild);
   }
 
-  function hideCookieBanner() {
+  async function dismissCookieDialog() {
     const overlay = document.getElementById('cookieLB');
     if (overlay) overlay.remove();
+
+    const text = normalizeText(document.body?.innerText || '');
+    if (!text.includes('ce site utilise des cookies')) return false;
+
+    const buttons = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]'));
+    const refuseBtn = buttons.find((el) => {
+      const label = normalizeText(
+        el.getAttribute?.('aria-label')
+        || el.textContent
+        || el.value
+        || ''
+      );
+      return label.includes('refuser les cookies') || label === 'refuser';
+    });
+
+    if (refuseBtn) {
+      log('🍪 Crédit Mutuel → fermeture du bandeau cookies');
+      refuseBtn.click();
+      await sleep(600);
+      return true;
+    }
+
+    return false;
   }
 
   async function getCurrentTabId() {
@@ -337,7 +360,7 @@
   }
 
   async function fillApplicationForm(profile) {
-    hideCookieBanner();
+    await dismissCookieDialog();
 
     if (String(document.getElementById('C:P5:F:0')?.value || '').toLowerCase() === 'true' && getSessionFlag('uploaded_cv') !== '1') {
       const resetHref = document.getElementById('C:pagePrincipale.C5:link')?.getAttribute('href');
@@ -435,7 +458,7 @@
   }
 
   async function run() {
-    hideCookieBanner();
+    await dismissCookieDialog();
     showBanner();
     const pending = await getPending();
     if (!pending?.profile) return;

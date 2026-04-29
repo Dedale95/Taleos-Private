@@ -2,6 +2,15 @@
 
 ## Flux confirmé en live
 
+0. `cookie_alert`
+   - Overlay navigateur/consentement visible sous forme d'`alertdialog`
+   - Texte: `Ce site utilise des cookies`
+   - Boutons observés:
+     - `Accepter les cookies`
+     - `Refuser les cookies`
+   - Point important:
+     - tant que ce bandeau est présent, il peut bloquer l'interaction avec la checkbox RGPD
+
 1. `public_offer`
    - URL type: `/fr/offre.html?annonce=...`
    - CTA principal: `#RHEC:C7:link`
@@ -12,10 +21,17 @@
    - Checkbox: `#C:pagePrincipale.cb1:DataEntry`
    - Hidden companion: `#C:pagePrincipale.cb1:DataEntry:cbhf`
    - Bouton: `#C:pagePrincipale.C:link`
+   - Comportement confirmé en live:
+     - après fermeture du bandeau cookies, la checkbox RGPD met bien le hidden companion à `true`
+     - le clic `Valider` mène à `/fr/candidature_annonce.html?_tabi=C&_pid=Candidature`
 
 3. `upload_cv`
+   - URL réelle confirmée: `/fr/candidature_annonce.html?_tabi=C&_pid=Candidature`
    - Input fichier: `#C:pagePrincipale.PostulerAvecMonCv2:DataEntry`
    - Submit fallback: `input[name="_FID_DoUploadCv"]`
+   - Bouton visible observé:
+     - `Joignez votre CV`
+     - libellé complet accessible: `Joignez votre CV Parcourir et ajouter une pièce jointe...`
 
 4. `application_form`
    - Identité:
@@ -51,6 +67,7 @@
 
 - Le flux ne passe pas par un compte utilisateur email / mot de passe.
 - Le CV charge un pré-remplissage serveur.
+- Le bandeau cookies doit être fermé avant la RGPD, sinon la progression peut sembler bloquée alors que les contrôles sont masqués/interceptés.
 - La certification finale doit synchroniser:
   - le checkbox visible
   - et le hidden booléen `Bool:Data_Certification=true`
