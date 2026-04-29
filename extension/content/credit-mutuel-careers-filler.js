@@ -11,6 +11,7 @@
   const MAX_PENDING_AGE = 10 * 60 * 1000;
   const MAX_SUBMIT_RETRIES = 2;
   const MAX_NAVIGATION_RETRIES = 2;
+  const FINAL_SUBMIT_WAIT_MS = 60 * 1000;
   const SESSION_PREFIX = 'taleos_cm_';
   let currentTabIdPromise = null;
 
@@ -460,6 +461,11 @@
     if (retries > MAX_SUBMIT_RETRIES) {
       await submitFailure(profile, 'Échec final Crédit Mutuel après plusieurs tentatives');
       return;
+    }
+    if (getSessionFlag('final_submit_waited') !== '1') {
+      setSessionFlag('final_submit_waited', '1');
+      log('⏳ Crédit Mutuel → attente 60s avant validation finale');
+      await sleep(FINAL_SUBMIT_WAIT_MS);
     }
     setSessionFlag('submit_retries', String(retries + 1));
     log(`➡️ Crédit Mutuel → clic Valider la candidature (tentative ${retries + 1}/${MAX_SUBMIT_RETRIES + 1})`);
