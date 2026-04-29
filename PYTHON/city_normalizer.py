@@ -47,6 +47,9 @@ CITY_MAPPING = {
     'polynesie francaise': 'Polynésie Française',
     'nouvelle-calédonie': 'Nouvelle-Calédonie',
     'nouvelle-caledonie': 'Nouvelle-Calédonie',
+    'new caledonia': 'Nouvelle-Calédonie',
+    'noumea': 'Nouméa',
+    'nouméa': 'Nouméa',
     
     # ========== AUTRES GRANDES VILLES FR ==========
     'lyon': 'Lyon',
@@ -88,6 +91,7 @@ CITY_MAPPING = {
     'barcelona': 'Barcelone',
     'amsterdam': 'Amsterdam',
     'brussels': 'Bruxelles',
+    'brussel': 'Bruxelles',
     'bruxelles': 'Bruxelles',
     'geneva': 'Genève',
     'geneve': 'Genève',
