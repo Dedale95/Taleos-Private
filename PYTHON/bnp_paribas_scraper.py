@@ -5,10 +5,13 @@ Pipeline optimisé pour scraper les offres d'emploi du groupe BNP Paribas.
 Utilise Playwright (async) + BeautifulSoup pour contourner les protections anti-bot.
 
 Robustesse :
-  - Redémarrage automatique du navigateur en cas de crash Playwright (EPIPE, "canceled")
-  - Circuit breaker : détecte les pannes de navigateur et relance proprement
-  - Reprise depuis la DB : les offres déjà sauvegardées ne sont jamais re-scrapées
-  - Concurrence réduite (8) pour éviter l'épuisement du process Node.js de Playwright
+  - Détection fine des crashes Playwright (EPIPE, "canceled", navigateur tué)
+  - navigate_with_retry ne réessaie PAS sur une erreur de crash (retour immédiat)
+  - Boucle de redémarrage navigateur : si un crash survient dans la phase détail,
+    le navigateur est relancé et le scraping reprend depuis la DB (offres déjà
+    sauvegardées ignorées → aucune perte de données)
+  - Sauvegarde immédiate en DB après chaque offre (commit unitaire)
+  - Séparation listing / détail : deux contextes navigateur indépendants
 """
 
 import asyncio
@@ -18,13 +21,13 @@ import re
 import time
 import sqlite3
 import json
+import random
 import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Set, Optional, Tuple
-from playwright.async_api import async_playwright, BrowserContext, Browser
+from playwright.async_api import async_playwright, BrowserContext, Browser, Page
 from bs4 import BeautifulSoup
 from tqdm.asyncio import tqdm
-from urllib.parse import urljoin
 from datetime import datetime
 
 try:
@@ -51,16 +54,9 @@ BASE_URL = "https://group.bnpparibas"
 SEARCH_URL = f"{BASE_URL}/emploi-carriere/toutes-offres-emploi"
 
 # Filtres par type de contrat : le site BNP expose une URL par type.
-# On scrape chaque filtre pour obtenir le type de contrat de façon fiable.
-# Ordre : types génériques d'abord (index bas = priorité basse dans la déduplication),
-# puis spécifiques (Graduate Programme, Job étudiant) pour que les doublons gardent
-# le type le plus précis.
-# L'entrée ("", None) à l'index 0 scrape le listing GLOBAL (toutes langues confondues,
-# 4739 offres sur le site) pour capturer les offres internationales qui n'apparaissent
-# sous aucun filtre nommé (type de contrat libellé en anglais : Permanent, Fixed-term…).
-# Le contract_type de ces offres supplémentaires est résolu via la page de détail.
+# Ordre : types génériques d'abord, puis spécifiques (Graduate Programme, Job étudiant)
+# pour que les doublons gardent le type le plus précis.
 CONTRACT_FILTERS = [
-    ("", None),       # listing global — index 0 (priorité la plus basse, surchargé par les filtres nommés)
     ("cdi", "CDI"),
     ("cdd", "CDD"),
     ("stage", "Stage"),
@@ -72,27 +68,10 @@ CONTRACT_FILTERS = [
 ]
 
 # ================= Config =================
-def _env_int(name: str, default: int, cap: int = 32) -> int:
-    """Surcharge CI via BNP_MAX_CONCURRENT_LISTING / BNP_MAX_CONCURRENT_DETAILS."""
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return max(1, min(int(raw), cap))
-    except ValueError:
-        return default
-
-
 class Config:
-    # Concurrence réduite à 8 pour éviter l'épuisement du process Node.js de Playwright
-    # (le crash EPIPE du matin venait de 18 pages simultanées qui se retrouvaient toutes
-    # en timeout au même moment)
-    MAX_CONCURRENT_LISTING = _env_int("BNP_MAX_CONCURRENT_LISTING", 8)
-    MAX_CONCURRENT_DETAILS = _env_int("BNP_MAX_CONCURRENT_DETAILS", 8)
-    NAV_MAX_RETRIES = _env_int("BNP_NAV_MAX_RETRIES", 3, cap=6)
-    NAV_BACKOFF_BASE_SEC = _env_int("BNP_NAV_BACKOFF_BASE_SEC", 5, cap=20)
-    NAV_BACKOFF_MAX_SEC = _env_int("BNP_NAV_BACKOFF_MAX_SEC", 20, cap=60)
-    PAGE_TIMEOUT = 25000   # 25 s (réduit de 30 s pour libérer plus vite les pages mortes)
+    MAX_CONCURRENT_LISTING = 8    # Pages de liste (réduit pour stabilité)
+    MAX_CONCURRENT_DETAILS = 5    # Pages détail (réduit pour éviter TargetClosedError/Timeout)
+    PAGE_TIMEOUT = 60000
     WAIT_TIMEOUT = 10000
     HEADLESS = True
     BASE_DIR = Path(__file__).parent
@@ -105,6 +84,14 @@ class Config:
         "image", "font", "media", "texttrack",
         "object", "beacon", "csp_report", "imageset"
     }
+
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
+    ]
 
 config = Config()
 
@@ -141,59 +128,6 @@ def normalize_contract_type(raw: str) -> Optional[str]:
     if cleaned_no_paren in CONTRACT_MAPPING:
         return CONTRACT_MAPPING[cleaned_no_paren]
     return raw.strip()
-
-
-# Patterns pour inférer le type de contrat depuis le titre de l'offre.
-_TITLE_CONTRACT_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # Stage / Internship
-    (re.compile(r'\binternship\b', re.I), 'Stage'),
-    (re.compile(r'\bstagiaire\b', re.I), 'Stage'),
-
-    # CDD — mentions en anglais
-    (re.compile(r'\btemp\b', re.I), 'CDD'),
-    (re.compile(r'\btemporary\b', re.I), 'CDD'),
-    (re.compile(r'\btemporary\s+contract\b', re.I), 'CDD'),
-    (re.compile(r'\bfixed[\s\-]term\b', re.I), 'CDD'),
-    (re.compile(r'\b\d+[\s\-]month\b', re.I), 'CDD'),
-    (re.compile(r'\bcontract\s+up\s+to\b', re.I), 'CDD'),
-
-    # CDD — mentions en français
-    (re.compile(r'\bcontrat\s+[àa]\s+dur[eé]e\s+d[eé]termin[eé]e\b', re.I), 'CDD'),
-    (re.compile(r'\bcontrat\s+dur[eé]e\s+d[eé]termin[eé]e\b', re.I), 'CDD'),
-    (re.compile(r'\b\d+\s*mois\b', re.I), 'CDD'),
-
-    # CDD — mentions en espagnol/portugais
-    (re.compile(r'\bcontrato\s+temporal\b', re.I), 'CDD'),
-    (re.compile(r'\bcontrato\s+a\s+prazo\b', re.I), 'CDD'),
-
-    # VIE
-    (re.compile(r'\bv\.?i\.?e\.?\b', re.I), 'VIE'),
-    (re.compile(r'\bvolontariat\s+international\b', re.I), 'VIE'),
-
-    # Alternance
-    (re.compile(r'\balternance\b', re.I), 'Alternance / Apprentissage'),
-    (re.compile(r'\balternant\b', re.I), 'Alternance / Apprentissage'),
-    (re.compile(r'\bapprentissage\b', re.I), 'Alternance / Apprentissage'),
-    (re.compile(r'\bapprentice\b', re.I), 'Alternance / Apprentissage'),
-]
-
-
-def infer_contract_type_from_title(title: str) -> Optional[str]:
-    """Infère le type de contrat depuis le titre de l'offre."""
-    if not title:
-        return None
-
-    parens = re.findall(r'\(([^)]+)\)', title)
-    for paren_text in parens:
-        for pattern, contract_type in _TITLE_CONTRACT_PATTERNS:
-            if pattern.search(paren_text):
-                return contract_type
-
-    for pattern, contract_type in _TITLE_CONTRACT_PATTERNS:
-        if pattern.search(title):
-            return contract_type
-
-    return None
 
 
 # =========================================================
@@ -246,7 +180,8 @@ class JobDatabase:
             return {row[0] for row in cursor.fetchall()}
 
     def get_jobs_in_db(self, urls: Set[str]) -> Set[str]:
-        """Retourne le sous-ensemble d'URLs déjà présentes en base (peu importe le statut)."""
+        """Retourne le sous-ensemble d'URLs déjà présentes en base (peu importe le statut).
+        Utilisé après un crash pour éviter de re-scraper les offres déjà sauvegardées."""
         if not urls:
             return set()
         with sqlite3.connect(self.db_path) as conn:
@@ -493,6 +428,9 @@ def extract_offer_field(soup: BeautifulSoup, css_class: str) -> Optional[str]:
 # =========================================================
 # PLAYWRIGHT CRASH DETECTION & BROWSER HELPERS
 # =========================================================
+# Marqueurs indiquant que le process Node.js de Playwright est mort.
+# Dans ce cas, réessayer sur la même page/contexte est inutile :
+# il faut relancer un navigateur complet.
 _BROWSER_CRASH_MARKERS = frozenset({
     "write epipe",
     "the operation was canceled",
@@ -506,7 +444,8 @@ _BROWSER_CRASH_MARKERS = frozenset({
 
 
 def _is_browser_crash(exc: Exception) -> bool:
-    """Détecte une panne Playwright (EPIPE Node.js, navigateur tué, contexte fermé)."""
+    """Détecte une panne Playwright (EPIPE Node.js, navigateur tué, contexte fermé).
+    Un crash n'est PAS récupérable par un simple retry : il faut relancer le navigateur."""
     msg = str(exc).lower()
     return any(marker in msg for marker in _BROWSER_CRASH_MARKERS)
 
@@ -527,11 +466,7 @@ async def _launch_browser(p) -> Browser:
 async def _setup_context(browser: Browser) -> BrowserContext:
     """Crée un contexte Playwright avec user-agent desktop et blocage des ressources lourdes."""
     context = await browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
+        user_agent=random.choice(config.USER_AGENTS),
         viewport={"width": 1920, "height": 1080},
     )
     await context.route(
@@ -543,8 +478,8 @@ async def _setup_context(browser: Browser) -> BrowserContext:
     return context
 
 
-async def _close_browser(context: Optional[BrowserContext], browser: Optional[Browser]):
-    """Ferme contexte et navigateur sans lever d'exception (post-crash)."""
+async def _close_browser_safe(context: Optional[BrowserContext], browser: Optional[Browser]):
+    """Ferme contexte + navigateur sans propager d'exception (appelé post-crash)."""
     for obj in (context, browser):
         if obj is not None:
             try:
@@ -556,29 +491,47 @@ async def _close_browser(context: Optional[BrowserContext], browser: Optional[Br
 # =========================================================
 # NAVIGATE WITH RETRY
 # =========================================================
-async def navigate_with_retry(page, url: str, max_retries: int = None):
-    """Navigate with retry and bounded backoff for transient CDN errors."""
-    max_retries = int(max_retries or config.NAV_MAX_RETRIES)
+async def navigate_with_retry(
+    page: Page, url: str, context: BrowserContext = None, max_retries: int = 4
+) -> bool:
+    """Navigate with retry and bounded backoff for transient CDN errors.
+
+    IMPORTANT : si l'erreur indique un crash Playwright (EPIPE, "browser closed"…),
+    la fonction retourne False IMMÉDIATEMENT sans attendre — réessayer sur un navigateur
+    mort serait inutile et bloquerait le thread des dizaines de secondes.
+    """
     for attempt in range(max_retries):
         try:
-            await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until="domcontentloaded")
+            if page.is_closed():
+                if context:
+                    logging.info(f"Re-opening closed page for {url}")
+                    page = await context.new_page()
+                else:
+                    return False
+
+            await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until="load")
             return True
+
         except Exception as e:
-            # Crash Playwright : inutile de réessayer sur la même page morte
+            # Crash navigateur → pas de retry possible, retour immédiat
             if _is_browser_crash(e):
-                raise
+                logging.warning(f"Browser crash détecté sur {url}: {e}")
+                return False
 
             error_str = str(e)
-            if "ERR_HTTP2" in error_str or "net::" in error_str or "timeout" in error_str.lower():
-                wait = min(config.NAV_BACKOFF_MAX_SEC, config.NAV_BACKOFF_BASE_SEC * (2 ** attempt))
+            if any(x in error_str.lower() for x in ["err_http2", "net::", "timeout"]):
+                # Backoff progressif : 8s, 16s, 32s, 60s max
+                wait = min(60, 8 * (2 ** attempt))
                 logging.warning(
                     f"Network error on {url} (attempt {attempt+1}/{max_retries}), "
-                    f"retrying in {wait}s..."
+                    f"retrying in {wait}s: {error_str}"
                 )
                 await asyncio.sleep(wait)
             else:
-                raise
-    raise Exception(f"Failed after {max_retries} retries: {url}")
+                logging.error(f"Unrecoverable error on {url}: {error_str}")
+                return False
+
+    return False
 
 
 def _get_listing_url(filter_slug: str, page_num: int) -> str:
@@ -588,13 +541,16 @@ def _get_listing_url(filter_slug: str, page_num: int) -> str:
     return f"{SEARCH_URL}?q=&page={page_num}" if page_num > 1 else f"{SEARCH_URL}?q="
 
 
+# =========================================================
+# GET TOTAL PAGES
+# =========================================================
 async def get_total_pages_for_filter(
     context: BrowserContext, filter_slug: str, *, cookie_banner_dismissed: bool = False
 ) -> int:
     """Retourne le nombre de pages pour un filtre contrat donné."""
     page = await context.new_page()
     url = _get_listing_url(filter_slug, 1)
-    await navigate_with_retry(page, url)
+    await navigate_with_retry(page, url, context=context)
 
     if not cookie_banner_dismissed:
         try:
@@ -637,24 +593,19 @@ async def fetch_listing_page(
     page_num: int,
     sem: asyncio.Semaphore,
 ) -> List[Dict]:
-    """Récupère les offres d'une page de liste."""
+    """Récupère les offres d'une page de liste. Le type de contrat vient du filtre URL (fiable)."""
     async with sem:
         page = await context.new_page()
         try:
             url = _get_listing_url(filter_slug, page_num)
-            await navigate_with_retry(page, url)
+            await navigate_with_retry(page, url, context=context)
             await asyncio.sleep(0.4)
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
 
             jobs = []
-            card_selector = (
-                "a.card-link[href*='/emploi-carriere/offre-emploi/'], "
-                "a.card-link[href*='/en/careers/job-offer/'], "
-                "a.card-link[href*='/en/emploi-carriere/offre-emploi/']"
-            )
-            for card in soup.select(card_selector):
+            for card in soup.select("a.card-link[href*='/emploi-carriere/offre-emploi/']"):
                 href = card.get("href", "")
                 job_url = BASE_URL + href if href.startswith('/') else href
 
@@ -689,12 +640,9 @@ async def fetch_listing_page(
 async def fetch_job_details(
     context: BrowserContext, job: Dict, sem: asyncio.Semaphore
 ) -> Dict:
-    """
-    Scrape la page de détail d'une offre.
-    Retourne le dict avec _crashed=True si le navigateur est mort pendant l'opération.
-    """
+    """Scrape la page de détail d'une offre.
+    Retourne le dict avec _crashed=True si le navigateur est mort pendant l'opération."""
     async with sem:
-        # ── Ouvrir la page ───────────────────────────────────────────────────
         page = None
         try:
             page = await context.new_page()
@@ -706,8 +654,16 @@ async def fetch_job_details(
             return job
 
         try:
-            await navigate_with_retry(page, job["job_url"])
-            await asyncio.sleep(0.4)
+            success = await navigate_with_retry(page, job["job_url"], context=context)
+            if not success:
+                # navigate_with_retry retourne False sur crash → propager le signal
+                if not page.is_closed():
+                    job['_crashed'] = False   # erreur réseau ordinaire, pas crash
+                else:
+                    job['_crashed'] = True    # page fermée = navigateur mort
+                return job
+
+            await asyncio.sleep(0.8)
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
@@ -717,17 +673,11 @@ async def fetch_job_details(
             if h1:
                 job["job_title"] = h1.get_text(strip=True)
 
-            # Contract type
+            # Contract type : priorité au type issu du filtre URL
             if not job.get("contract_type"):
                 ct_raw = extract_offer_field(soup, "offer-info-type")
                 if ct_raw:
                     job["contract_type"] = normalize_contract_type(ct_raw)
-
-            if not job.get("contract_type"):
-                inferred = infer_contract_type_from_title(job.get("job_title") or "")
-                if inferred:
-                    job["contract_type"] = inferred
-                    logging.debug(f"  Type inféré depuis titre : {inferred!r} ← {job.get('job_title')!r}")
 
             # Location
             loc_raw = extract_offer_field(soup, "offer-info-loc")
@@ -744,7 +694,7 @@ async def fetch_job_details(
             if ref_raw:
                 job["job_id"] = f"BNP_{ref_raw}"
 
-            # Date
+            # Date (Mise à jour le DD.MM.YYYY)
             date_el = soup.select_one("div.offer-date")
             if date_el:
                 date_match = re.search(r'(\d{2})\.(\d{2})\.(\d{4})', date_el.get_text())
@@ -812,9 +762,11 @@ async def fetch_job_details(
 
             # Experience level
             desc = job.get("job_description") or ""
-            job["experience_level"] = extract_experience_level(desc, job.get("contract_type"), job.get("job_title"))
+            job["experience_level"] = extract_experience_level(
+                desc, job.get("contract_type"), job.get("job_title")
+            )
 
-            # Job family
+            # Job family classification
             job["job_family"] = classify_job_family(
                 job.get("job_title", ""),
                 f"{metier_raw or ''} {job.get('job_description', '')}"
@@ -830,11 +782,12 @@ async def fetch_job_details(
             else:
                 logging.warning(f"Detail failed: {job.get('job_url')} ({e})")
         finally:
-            # Toujours tenter de fermer la page — même si le navigateur est mort
-            try:
-                await page.close()
-            except Exception:
-                pass
+            # Toujours tenter de fermer — même si le navigateur est mort
+            if page is not None:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
 
     return job
 
@@ -842,17 +795,35 @@ async def fetch_job_details(
 # =========================================================
 # DETAIL BATCH RUNNER
 # =========================================================
+def _finalize_job(job_data: Dict, db: JobDatabase):
+    """Normalise et sauvegarde immédiatement une offre en DB."""
+    if not job_data.get('location') and job_data.get('location_raw'):
+        job_data['location'] = normalize_location(job_data['location_raw'])
+    job_data.pop('location_raw', None)
+    job_data.pop('_crashed', None)
+
+    job_data.setdefault('company_name', 'BNP Paribas')
+    job_data.setdefault('status', 'Live')
+    job_data.setdefault('technical_skills', '[]')
+    job_data.setdefault('behavioral_skills', '[]')
+
+    if not job_data.get('publication_date'):
+        existing = db.get_existing_publication_date(job_data.get('job_url', ''))
+        job_data['publication_date'] = existing or datetime.now().strftime('%Y-%m-%d')
+
+    db.insert_or_update_job(job_data)
+
+
 async def _run_detail_batch(
     context: BrowserContext,
     jobs: List[Dict],
     db: JobDatabase,
 ) -> Tuple[List[str], bool]:
-    """
-    Scrape une liste d'offres en parallèle (concurrence limitée par config.MAX_CONCURRENT_DETAILS).
+    """Scrape un lot d'offres en parallèle.
 
     Retourne :
-      - completed_urls  : liste des URLs sauvegardées avec succès dans la DB
-      - had_crash       : True si au moins un crash Playwright a été détecté
+      - completed_urls : URLs sauvegardées avec succès
+      - had_crash      : True si au moins un crash Playwright a été détecté
     """
     sem = asyncio.Semaphore(config.MAX_CONCURRENT_DETAILS)
     tasks = [fetch_job_details(context, job, sem) for job in jobs]
@@ -874,22 +845,7 @@ async def _run_detail_batch(
             had_crash = True
             continue
 
-        # Normaliser et sauvegarder immédiatement (chaque offre est commitée dès qu'elle est prête)
-        if not job_data.get('location') and job_data.get('location_raw'):
-            job_data['location'] = normalize_location(job_data['location_raw'])
-        job_data.pop('location_raw', None)
-        job_data.pop('_crashed', None)
-
-        job_data.setdefault('company_name', 'BNP Paribas')
-        job_data.setdefault('status', 'Live')
-        job_data.setdefault('technical_skills', '[]')
-        job_data.setdefault('behavioral_skills', '[]')
-
-        if not job_data.get('publication_date'):
-            existing = db.get_existing_publication_date(job_data.get('job_url', ''))
-            job_data['publication_date'] = existing or datetime.now().strftime('%Y-%m-%d')
-
-        db.insert_or_update_job(job_data)
+        _finalize_job(job_data, db)
         completed_urls.append(job_data['job_url'])
 
     return completed_urls, had_crash
@@ -899,15 +855,13 @@ async def _run_detail_batch(
 # ROBUST DETAIL SCRAPING (avec redémarrage navigateur)
 # =========================================================
 async def scrape_details_robust(p, jobs: List[Dict], db: JobDatabase) -> int:
-    """
-    Scrape les détails des offres avec redémarrage automatique du navigateur en cas de
-    crash Playwright (EPIPE, "The operation was canceled", navigateur tué par OOM, etc.).
+    """Scrape les détails avec redémarrage automatique du navigateur en cas de crash.
 
     Stratégie :
-      1. Lance un navigateur, scrape un lot d'offres.
-      2. Si crash détecté → ferme proprement le navigateur, attend, relit la DB pour
-         savoir quelles offres ont déjà été sauvegardées, relance sur les restantes.
-      3. Répète jusqu'à config.MAX_BROWSER_RESTARTS fois ou jusqu'à épuisement de la liste.
+      1. Lance un navigateur, scrape un lot.
+      2. Si crash détecté → ferme proprement, attend, interroge la DB pour identifier
+         les offres déjà sauvegardées, relance sur les restantes.
+      3. Répète jusqu'à config.MAX_BROWSER_RESTARTS fois ou épuisement de la liste.
 
     Retourne le nombre total d'offres scrapées avec succès.
     """
@@ -919,15 +873,16 @@ async def scrape_details_robust(p, jobs: List[Dict], db: JobDatabase) -> int:
         if not remaining:
             break
 
-        # Après un crash : retirer les offres déjà sauvegardées (résistance aux doublons)
+        # Après un crash : retirer les offres déjà en DB (pas de double scraping)
         if attempt > 0:
             remaining_urls = {j['job_url'] for j in remaining}
             already_done = db.get_jobs_in_db(remaining_urls)
+            extra = len(already_done)
             remaining = [j for j in remaining if j['job_url'] not in already_done]
-            total_scraped += len(already_done)
+            total_scraped += extra
 
             if not remaining:
-                logging.info("✅ Toutes les offres ont été sauvegardées après crash+reprise.")
+                logging.info("✅ Toutes les offres sauvegardées après crash+reprise.")
                 break
 
             wait_sec = min(60, 15 * attempt)
@@ -956,7 +911,7 @@ async def scrape_details_robust(p, jobs: List[Dict], db: JobDatabase) -> int:
                 break
 
             logging.warning(
-                f"⚠️  Crash détecté ce tour : {len(completed_urls)} sauvegardées, "
+                f"⚠️  Crash ce tour : {len(completed_urls)} sauvegardées, "
                 f"{len(remaining) - len(completed_urls)} à refaire"
             )
 
@@ -964,12 +919,12 @@ async def scrape_details_robust(p, jobs: List[Dict], db: JobDatabase) -> int:
             logging.error(f"Erreur inattendue (tentative {attempt + 1}): {e}")
 
         finally:
-            await _close_browser(context, browser)
+            await _close_browser_safe(context, browser)
 
     else:
         logging.error(
             f"🔴 Limite de {config.MAX_BROWSER_RESTARTS} redémarrages atteinte. "
-            f"Des offres peuvent être manquantes."
+            "Certaines offres peuvent être manquantes."
         )
 
     return total_scraped
@@ -988,8 +943,7 @@ async def main():
     logging.info(f"Base de données initialisée: {config.DB_PATH}")
     logging.info(
         f"Concurrence — listing: {config.MAX_CONCURRENT_LISTING}, "
-        f"détails: {config.MAX_CONCURRENT_DETAILS}, "
-        f"timeout page: {config.PAGE_TIMEOUT // 1000}s"
+        f"détails: {config.MAX_CONCURRENT_DETAILS}"
     )
 
     async with async_playwright() as p:
@@ -997,7 +951,7 @@ async def main():
         # ── Étape 1 : Collecter tous les liens par type de contrat ─────────────
         logging.info("\n📋 ÉTAPE 1: Collection des liens par type de contrat")
 
-        # Navigateur dédié au listing (fermé avant le scraping des détails)
+        # Navigateur dédié au listing (fermé avant la phase détail pour libérer mémoire)
         listing_browser = await _launch_browser(p)
         listing_context = await _setup_context(listing_browser)
 
@@ -1006,19 +960,18 @@ async def main():
         cookie_done = False
 
         for idx, (filter_slug, contract_type) in enumerate(CONTRACT_FILTERS):
-            label = contract_type or "(global — toutes offres)"
             try:
                 total_pages = await get_total_pages_for_filter(
                     listing_context, filter_slug, cookie_banner_dismissed=cookie_done
                 )
                 cookie_done = True
-                logging.info(f"  {label}: {total_pages} pages")
+                logging.info(f"  {contract_type}: {total_pages} pages")
                 for pg in range(1, total_pages + 1):
                     page_tasks.append(
                         fetch_listing_page(listing_context, filter_slug, contract_type, idx, pg, sem_pages)
                     )
             except Exception as e:
-                logging.warning(f"  {label} ({filter_slug or 'no-filter'}): {e}")
+                logging.warning(f"  {contract_type} ({filter_slug}): {e}")
 
         all_jobs_basic = []
         for coro in tqdm(
@@ -1027,8 +980,8 @@ async def main():
             page_jobs = await coro
             all_jobs_basic.extend(page_jobs)
 
-        # Fermer le navigateur de listing avant la phase détail (libère mémoire)
-        await _close_browser(listing_context, listing_browser)
+        # Fermer le navigateur listing avant la phase détail
+        await _close_browser_safe(listing_context, listing_browser)
 
         # Dédupliquer par URL : garder le type le plus spécifique
         seen = {}
