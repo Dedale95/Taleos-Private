@@ -740,8 +740,19 @@ class CreditAgricoleJobPipeline:
         new_urls = all_current_links - existing_live_urls
         expired_urls = existing_live_urls - all_current_links
 
-        self.logger.info(f"✅ Nouvelles offres: {len(new_urls)}")
-        self.logger.info(f"❌ Offres expirées: {len(expired_urls)}")
+        retained_urls = all_current_links & existing_live_urls
+        self.logger.info(f"🔗 Liens actuellement détectés sur le site: {len(all_current_links)}")
+        self.logger.info(f"🗂️ Offres déjà Live en base avant run: {len(existing_live_urls)}")
+        self.logger.info(f"♻️ Offres conservées (toujours visibles): {len(retained_urls)}")
+        self.logger.info(f"✅ Nouvelles offres à scraper: {len(new_urls)}")
+        self.logger.info(f"❌ Offres marquées expirées: {len(expired_urls)}")
+
+        if all_current_links and len(existing_live_urls) > len(all_current_links):
+            drop = len(existing_live_urls) - len(all_current_links)
+            self.logger.warning(
+                f"⚠️ Le stock Live en base ({len(existing_live_urls)}) dépasse les liens détectés ({len(all_current_links)}). "
+                f"{drop} offres risquent d'être reclassées en expirées si le collecteur manque des pages."
+            )
 
         # Étape 3: Marquer les expirées
         if expired_urls:
@@ -791,7 +802,11 @@ class CreditAgricoleJobPipeline:
 
                     pbar.update(1)
 
-        self.logger.info(f"✓ Succès: {successful} | Échecs: {failed}")
+        self.logger.info(f"✓ Fiches détails insérées/mises à jour: {successful} | Échecs: {failed}")
+        self.logger.info(
+            "ℹ️ Ce compteur mesure uniquement les nouvelles URLs scrapées avec succès, "
+            "pas le stock final d'offres Live en base."
+        )
 
     def print_final_stats(self):
         """Affiche les statistiques finales"""
@@ -813,6 +828,10 @@ class CreditAgricoleJobPipeline:
             self.logger.info(f"  └─ Live (actives): {stats[1]}")
             self.logger.info(f"  └─ Expired (expirées): {stats[2]}")
             self.logger.info(f"  └─ Invalid (pages 404): {stats[3]}")
+            self.logger.info(
+                "  └─ Rappel: le compteur 'Succès' ci-dessus correspond aux nouvelles fiches scrapées, "
+                "pas au nombre d'offres visibles dans Taleos."
+            )
             self.logger.info("=" * 60)
 
 # ============================================================================
