@@ -10,6 +10,7 @@ on:
       - "landing_page_finance.html"
       - "scraped_jobs_live.json"
       - "scraped_jobs.json"
+      - "scraped_jobs_summary.json"
       - "scraped_jobs.csv"
       - ".github/workflows/publish-public-site.yml"
 
@@ -38,6 +39,7 @@ jobs:
           cp landing_page_finance.html public-repo/landing_page_finance.html
           cp HTML/scraped_jobs_live.json public-repo/scraped_jobs_live.json
           cp HTML/scraped_jobs.json public-repo/scraped_jobs.json
+          cp HTML/scraped_jobs_summary.json public-repo/scraped_jobs_summary.json
           cp scraped_jobs.csv public-repo/scraped_jobs.csv
 
       - name: Commit and push if changed
@@ -54,4 +56,3 @@ jobs:
           git add .
           git commit -m "chore: publish public site from private source"
           git push origin main
-
