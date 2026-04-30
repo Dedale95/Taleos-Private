@@ -484,13 +484,31 @@ async function fetchSocieteGeneraleCareerCount() {
 }
 
 async function fetchTaleosGroupCounts() {
-  const rawJson = await fetchText(TALEOS_PUBLIC_SUMMARY_URL);
-  const summary = JSON.parse(rawJson);
-  const groups = summary?.counts_by_group;
-  if (!groups || typeof groups !== "object") {
-    throw new Error("Résumé Taleos invalide");
+  try {
+    const rawJson = await fetchText(TALEOS_PUBLIC_SUMMARY_URL);
+    const summary = JSON.parse(rawJson);
+    const groups = summary?.counts_by_group;
+    if (!groups || typeof groups !== "object") {
+      throw new Error("Résumé Taleos invalide");
+    }
+    return new Map(Object.entries(groups).map(([key, value]) => [key, Number(value || 0)]));
+  } catch (error) {
+    const shouldFallback = String(error?.message || "").includes("404") || String(error?.message || "").includes("Résumé Taleos invalide");
+    if (!shouldFallback) throw error;
+
+    const rawJson = await fetchText("https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/scraped_jobs_live.json");
+    const jobs = JSON.parse(rawJson);
+    if (!Array.isArray(jobs)) {
+      throw new Error("Catalogue Taleos invalide");
+    }
+
+    const counts = new Map();
+    for (const job of jobs) {
+      const group = normalizeTaleosCompanyGroup(job?.company_name || job?.companyName || "");
+      counts.set(group, (counts.get(group) || 0) + 1);
+    }
+    return counts;
   }
-  return new Map(Object.entries(groups).map(([key, value]) => [key, Number(value || 0)]));
 }
 
 async function buildScrapingCoverageSnapshot() {
