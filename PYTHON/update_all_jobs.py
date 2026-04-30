@@ -209,6 +209,45 @@ def revalidate_live_offers_in_db(
         conn.close()
 
 
+def _print_db_live_expired_snapshot(title: str):
+    """Affiche un snapshot compact Live/Expired/Invalid par base pour diagnostiquer la consolidation."""
+    print() 
+    print("=" * 60)
+    print(title)
+    print("=" * 60)
+    print(f"   {'Entité':<22} │ {'Live':>6} │ {'Expired':>7} │ {'Invalid':>7}")
+    print("   " + "-" * 54)
+    for name, db_path in [
+        ("Crédit Agricole", CA_DB),
+        ("Société Générale", SG_DB),
+        ("Deloitte", DELOITTE_DB),
+        ("BNP Paribas", BNP_DB),
+        ("BPCE", BPCE_DB),
+        ("Bpifrance", BPIFRANCE_DB),
+        ("Crédit Mutuel", CREDIT_MUTUEL_DB),
+        ("ODDO BHF", ODDO_BHF_DB),
+        ("JP Morgan Chase", JP_MORGAN_DB),
+        ("Goldman Sachs", GOLDMAN_SACHS_DB),
+    ]:
+        if not db_path.exists() or not _db_has_jobs_table(db_path):
+            print(f"   {name:<22} │   ---  │    ---  │    ---  (base absente)")
+            continue
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute("""
+                SELECT 
+                    SUM(CASE WHEN status = 'Live' AND is_valid = 1 THEN 1 ELSE 0 END) as live,
+                    SUM(CASE WHEN status = 'Expired' THEN 1 ELSE 0 END) as expired,
+                    SUM(CASE WHEN is_valid = 0 THEN 1 ELSE 0 END) as invalid
+                FROM jobs
+            """).fetchone()
+        finally:
+            conn.close()
+        live, expired, invalid = (row[0] or 0), (row[1] or 0), (row[2] or 0)
+        print(f"   {name:<22} │ {live:>6} │ {expired:>7} │ {invalid:>7}")
+    print("=" * 60)
+
+
 def revalidate_live_offers_all_sources():
     """Passe globale de revalidation sur toutes les bases d'offres."""
     print("\n🔁 Revalidation globale des offres Live (HTTP + détection 404)...")
@@ -579,8 +618,12 @@ if __name__ == "__main__":
         if require_bnp_db:
             raise RuntimeError("Au moins un scraper a échoué en mode strict (TALEOS_REQUIRE_BNP_DB=1).")
 
+    # Diagnostic: état des bases téléchargées avant toute consolidation
+    _print_db_live_expired_snapshot("📦 SNAPSHOT DES BASES TÉLÉCHARGÉES (avant revalidation)")
+
     # 8. Revalidation globale des offres encore marquées Live
     revalidate_live_offers_all_sources()
+    _print_db_live_expired_snapshot("🧪 SNAPSHOT APRÈS REVALIDATION GLOBALE")
 
     # 9. Fusion des données depuis les bases SQLite
     merge_from_databases()
