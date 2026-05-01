@@ -51,7 +51,8 @@ const BANK_SCRIPT_MAP = {
   bnp_paribas: 'content/bnp-careers-filler.js',
   credit_mutuel: 'content/credit-mutuel-careers-filler.js',
   bpifrance: 'content/bpifrance-careers-filler.js',
-  jp_morgan: 'content/jp-morgan-careers-filler.js'
+  jp_morgan: 'content/jp-morgan-careers-filler.js',
+  goldman_sachs: 'content/goldman-sachs-careers-filler.js'
 };
 
 const PROJECT_ID = 'project-taleos';
@@ -74,6 +75,7 @@ const BNP_BLUEPRINT_SCRIPT = 'scripts/bnp_paribas_blueprint.js';
 const CREDIT_MUTUEL_BLUEPRINT_SCRIPT = 'scripts/credit_mutuel_blueprint.js';
 const BPIFRANCE_BLUEPRINT_SCRIPT = 'scripts/bpifrance_blueprint.js';
 const JP_MORGAN_BLUEPRINT_SCRIPT = 'scripts/jp_morgan_blueprint.js';
+const GOLDMAN_SACHS_BLUEPRINT_SCRIPT = 'scripts/goldman_sachs_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -107,6 +109,9 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'jp_morgan') {
     return injectFilesWithBanner([JP_MORGAN_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'goldman_sachs') {
+    return injectFilesWithBanner([GOLDMAN_SACHS_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
 }
 
@@ -120,6 +125,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'bnp_paribas') keys.push('taleos_pending_bnp', 'taleos_bnp_tab_id');
   if (bid === 'credit_mutuel') keys.push('taleos_pending_credit_mutuel', 'taleos_credit_mutuel_tab_id');
   if (bid === 'jp_morgan') keys.push('taleos_pending_jp_morgan', 'taleos_jp_morgan_tab_id');
+  if (bid === 'goldman_sachs') keys.push('taleos_pending_goldman_sachs', 'taleos_gs_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -414,6 +420,8 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_credit_mutuel_tab_id',
     'taleos_pending_jp_morgan',
     'taleos_jp_morgan_tab_id',
+    'taleos_pending_goldman_sachs',
+    'taleos_gs_tab_id',
     'taleos_pending_deloitte',
     'taleos_pending_offer',
     'taleos_ca_apply_tab_id'
@@ -693,7 +701,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     clearApplyStuckWatchdog();
     return;
   }
-  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan'];
+  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs'];
   for (const k of keys) {
     const ch = changes[k];
     if (ch && (ch.newValue === undefined || ch.newValue === null)) {
@@ -806,6 +814,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       'taleos_pending_bnp',
       'taleos_pending_credit_mutuel',
       'taleos_pending_jp_morgan',
+      'taleos_pending_goldman_sachs',
+      'taleos_gs_tab_id',
       'taleos_pending_deloitte',
       'taleos_pending_offer',
       'taleos_ca_candidature_pending',
@@ -832,6 +842,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (state.taleos_jp_morgan_tab_id === tabId || state.taleos_pending_jp_morgan?.tabId === tabId) {
       keysToRemove.add('taleos_pending_jp_morgan');
       keysToRemove.add('taleos_jp_morgan_tab_id');
+    }
+    if (state.taleos_gs_tab_id === tabId || state.taleos_pending_goldman_sachs?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_goldman_sachs');
+      keysToRemove.add('taleos_gs_tab_id');
     }
     if (state.taleos_ca_apply_tab_id === tabId || state.taleos_ca_candidature_pending?.tabId === tabId) {
       keysToRemove.add('taleos_pending_offer');
@@ -2495,6 +2509,38 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 180000);
     setTimeout(() => { injectBpifrance().catch(() => {}); }, 2500);
     await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'goldman_sachs') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    await chrome.storage.local.set({
+      taleos_pending_goldman_sachs: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: 'Goldman Sachs', __offerUrl: offerUrl },
+        offerUrl,
+        jobId,
+        jobTitle,
+        companyName: 'Goldman Sachs',
+        location: offerMeta?.location || '',
+        contractType: offerMeta?.contractType || '',
+        tabId: tab.id,
+        timestamp: Date.now()
+      },
+      taleos_gs_tab_id: tab.id
+    });
+    await scheduleApplyStuckWatchdog();
   } else if (routeAs === 'jp_morgan') {
     await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
     const createOpts = { url: offerUrl, active: false };
@@ -2856,7 +2902,7 @@ async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
   const normalizedBankId = String(bankId || '').toLowerCase().trim();
-  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan'].includes(normalizedBankId);
+  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
@@ -2971,7 +3017,17 @@ async function fetchProfile(uid, bankId, token) {
     sg_handicap: profile.sg_handicap || '',
     sg_handicap_accommodation: profile.sg_handicap_accommodation || '',
     jp_morgan_military_service: profile.jp_morgan_military_service || '',
-    jp_morgan_work_authorizations: Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : []
+    jp_morgan_work_authorizations: Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : [],
+    // Goldman Sachs — diversité & identité
+    gender: (profile.gender || '').trim(),
+    pronouns: (profile.pronouns || '').trim(),
+    work_authorization_type: Array.isArray(profile.work_authorization_type) ? profile.work_authorization_type : [],
+    gs_diversity_consent: (profile.gs_diversity_consent || '').trim(),
+    gs_transgender: (profile.gs_transgender || '').trim(),
+    gs_sexual_orientation: (profile.gs_sexual_orientation || '').trim(),
+    gs_race_ethnicity: (profile.gs_race_ethnicity || '').trim(),
+    gs_race_additional_origins: Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [],
+    gs_disability: (profile.gs_disability || '').trim()
   };
 }
 
@@ -3458,6 +3514,7 @@ function normalizeSite(site, offerUrl) {
   if (raw.includes('mutuel')) return 'credit_mutuel';
   if (raw.includes('bpifrance') || raw.includes('bpi')) return 'bpifrance';
   if (raw.includes('jp morgan') || raw.includes('jpmorgan') || raw.includes('jp_morgan')) return 'jp_morgan';
+  if (raw.includes('goldman') || raw.includes('goldman sachs') || raw.includes('goldman_sachs')) return 'goldman_sachs';
   if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
   if (raw.includes('bpce')) return 'bpce';
   if (raw.includes('deloitte')) return 'deloitte';
@@ -3466,6 +3523,7 @@ function normalizeSite(site, offerUrl) {
   if (url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
   if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
   if (url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
+  if (url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';

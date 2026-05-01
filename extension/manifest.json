@@ -23,6 +23,7 @@
   "host_permissions": [
     "https://*.taleos.co/*",
     "https://*.oraclecloud.com/*",
+    "https://higher.gs.com/*",
     "https://recrutement.bpce.fr/*",
     "https://*.bpce.fr/*",
     "https://*.recruitmentplatform.com/*",
@@ -79,6 +80,19 @@
         "content/taleos-injector.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://higher.gs.com/*",
+        "https://hdpc.fa.us2.oraclecloud.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/goldman_sachs_blueprint.js",
+        "content/goldman-sachs-careers-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [

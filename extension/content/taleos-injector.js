@@ -227,7 +227,8 @@
     if (url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
     if (url.includes('recrutement.creditmutuel.fr') || url.includes('creditmutuel.fr')) return 'credit_mutuel';
     if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
-    if (url.includes('higher.gs.com') || url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
+    if (url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
+    if (url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
     return 'credit_agricole'; // défaut
   }
 

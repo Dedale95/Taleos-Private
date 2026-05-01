@@ -110,6 +110,34 @@ def normalize_profile(profile_doc: dict, creds_doc: dict | None, bank_id: str = 
         "deloitte_old_office": profile.get("deloitte_old_office") or "",
         "deloitte_old_email": profile.get("deloitte_old_email") or "",
         "deloitte_country": profile.get("deloitte_country") or "",
+        # ── Genre & identité (générique, multi-banques) ────────────────────
+        # Valeurs : "Male" | "Female" | "Non-binary" | "Other" | "Prefer not to say"
+        "gender": profile.get("gender") or "",
+        # Valeurs : "He / Him" | "She / Her" | "They / Them" | "Other" | "Prefer Not To Say"
+        "pronouns": profile.get("pronouns") or "",
+        # ── Autorisation de travail – type (générique) ─────────────────────
+        # Liste de valeurs parmi :
+        #   "National" | "Lawful Permanent Resident"
+        #   "EEA/Swiss National applying to work in an EEA location/Switzerland"
+        #   "Another Visa or Work / Residence Permit"
+        "work_authorization_type": profile.get("work_authorization_type") or [],
+        # ── Diversité Goldman Sachs (préfixe gs_) ──────────────────────────
+        # Consentement usage données orientation / genre
+        # "I consent" | "I do not consent"
+        "gs_diversity_consent": profile.get("gs_diversity_consent") or "",
+        # "Yes" | "No" | "I prefer not to say"
+        "gs_transgender": profile.get("gs_transgender") or "",
+        # "Bisexual" | "Gay" | "Lesbian" | "Heterosexual/Straight" | "Other" | "Prefer not to say"
+        "gs_sexual_orientation": profile.get("gs_sexual_orientation") or "",
+        # "Two or more races" | "Arab" | "Asian - Bangladeshi" | "Asian - Chinese" | "Asian - Indian"
+        # | "Asian - Japanese" | "Asian - Korean" | "Asian - Other" | "Asian - Pakistani"
+        # | "Asian - Vietnamese" | "Black - African" | "Black - Caribbean" | "Black - Other"
+        # | "Hispanic or Latino" | "Other" | "Prefer not to say" | "White"
+        "gs_race_ethnicity": profile.get("gs_race_ethnicity") or "",
+        # Seulement si gs_race_ethnicity == "Two or more races" → liste de 2-3 origines
+        "gs_race_additional_origins": profile.get("gs_race_additional_origins") or [],
+        # "Yes" | "No" | "Prefer not to say"
+        "gs_disability": profile.get("gs_disability") or "",
     }
 
 
