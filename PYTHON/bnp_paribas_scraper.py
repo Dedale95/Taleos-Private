@@ -69,16 +69,24 @@ CONTRACT_FILTERS = [
 
 # ================= Config =================
 class Config:
-    MAX_CONCURRENT_LISTING = 8    # Pages de liste (réduit pour stabilité)
-    MAX_CONCURRENT_DETAILS = 5    # Pages détail (réduit pour éviter TargetClosedError/Timeout)
-    PAGE_TIMEOUT = 60000
-    WAIT_TIMEOUT = 10000
+    MAX_CONCURRENT_LISTING = 6    # Pages de liste
+    MAX_CONCURRENT_DETAILS = 4    # Pages détail (réduit pour stabilité)
+    PAGE_TIMEOUT = 20000          # 20 s — réduit (était 60 s) pour éviter de bloquer trop longtemps
+    WAIT_TIMEOUT = 8000
     HEADLESS = True
     BASE_DIR = Path(__file__).parent
     DB_PATH = BASE_DIR / "bnp_paribas_jobs.db"
     CSV_PATH = BASE_DIR / "bnp_paribas_jobs.csv"
     # Nombre maximum de redémarrages du navigateur sur crash Playwright
-    MAX_BROWSER_RESTARTS = 5
+    MAX_BROWSER_RESTARTS = 3
+    # ── Delta scraping ──────────────────────────────────────────────────────
+    # Nombre maximum d'offres dont on scrappe les DÉTAILS par run.
+    # But : même sur une DB vide, le job ne dépasse jamais ~80 min.
+    # Les offres en attente de détails sont visibles dans l'export
+    # (données listing : titre, localisation, contrat) et complétées
+    # au fil des runs suivants jusqu'à épuisement du backlog.
+    # Avec ~3 000 offres BNP et 400/run → backlog liquidé en ~8 runs.
+    MAX_DETAILS_PER_RUN = 400
 
     BLOCK_RESOURCES = {
         "image", "font", "media", "texttrack",
@@ -206,6 +214,76 @@ class JobDatabase:
             if first_seen:
                 return str(first_seen).strip()[:10]
             return None
+
+    def insert_listing_only(self, job: Dict):
+        """Insère ou réactive une offre avec les données minimales du listing (titre, lieu, contrat).
+        Les champs déjà renseignés (job_description, job_id…) ne sont JAMAIS écrasés.
+        But : rendre visible une nouvelle offre immédiatement, sans attendre le scraping détail."""
+        location = None
+        if job.get('location_raw'):
+            location = normalize_location(job['location_raw'])
+        elif job.get('location'):
+            location = job['location']
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO jobs (
+                    job_url, job_title, contract_type, location,
+                    status, company_name, is_valid
+                ) VALUES (?, ?, ?, ?, 'Live', 'BNP Paribas', 1)
+                ON CONFLICT(job_url) DO UPDATE SET
+                    job_title    = COALESCE(
+                                     NULLIF(TRIM(COALESCE(excluded.job_title, '')), ''),
+                                     jobs.job_title),
+                    contract_type= COALESCE(
+                                     NULLIF(TRIM(COALESCE(excluded.contract_type, '')), ''),
+                                     jobs.contract_type),
+                    location     = COALESCE(
+                                     NULLIF(TRIM(COALESCE(excluded.location, '')), ''),
+                                     jobs.location),
+                    status       = 'Live',
+                    last_updated = CURRENT_TIMESTAMP
+            """, (
+                job.get('job_url'),
+                job.get('job_title'),
+                job.get('contract_type'),
+                location,
+            ))
+            conn.commit()
+
+    def get_offers_without_details(self, limit: int) -> List[Dict]:
+        """Retourne jusqu'à `limit` offres Live sans job_description (backlog de détails).
+        Priorité : offres vues pour la première fois en dernier (nouvelles en premier)."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("""
+                SELECT job_url, job_title, contract_type, location
+                FROM jobs
+                WHERE status = 'Live'
+                  AND is_valid = 1
+                  AND (job_description IS NULL OR TRIM(job_description) = '')
+                ORDER BY first_seen DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+        return [
+            {
+                'job_url': r[0],
+                'job_title': r[1],
+                'contract_type': r[2],
+                'location': r[3],
+            }
+            for r in rows
+        ]
+
+    def count_offers_without_details(self) -> int:
+        """Compte le total d'offres Live sans job_description (backlog)."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) FROM jobs
+                WHERE status = 'Live'
+                  AND is_valid = 1
+                  AND (job_description IS NULL OR TRIM(job_description) = '')
+            """).fetchone()
+        return row[0] if row else 0
 
     def mark_as_expired(self, urls: Set[str]):
         if not urls:
@@ -492,7 +570,7 @@ async def _close_browser_safe(context: Optional[BrowserContext], browser: Option
 # NAVIGATE WITH RETRY
 # =========================================================
 async def navigate_with_retry(
-    page: Page, url: str, context: BrowserContext = None, max_retries: int = 4
+    page: Page, url: str, context: BrowserContext = None, max_retries: int = 2
 ) -> bool:
     """Navigate with retry and bounded backoff for transient CDN errors.
 
@@ -520,8 +598,8 @@ async def navigate_with_retry(
 
             error_str = str(e)
             if any(x in error_str.lower() for x in ["err_http2", "net::", "timeout"]):
-                # Backoff progressif : 8s, 16s, 32s, 60s max
-                wait = min(60, 8 * (2 ** attempt))
+                # Backoff court : 3 s, 6 s max (était 8-60 s → bloquait le pipeline)
+                wait = min(6, 3 * (2 ** attempt))
                 logging.warning(
                     f"Network error on {url} (attempt {attempt+1}/{max_retries}), "
                     f"retrying in {wait}s: {error_str}"
@@ -1001,11 +1079,12 @@ async def main():
         logging.info("\n🔍 ÉTAPE 2: Analyse des changements")
         existing_live_urls = db.get_live_urls()
 
-        new_urls = all_current_urls - existing_live_urls
-        expired_urls = existing_live_urls - all_current_urls
+        new_urls      = all_current_urls - existing_live_urls
+        expired_urls  = existing_live_urls - all_current_urls
 
-        logging.info(f"✅ Nouvelles offres: {len(new_urls)}")
+        logging.info(f"✅ Nouvelles offres (listing): {len(new_urls)}")
         logging.info(f"❌ Offres expirées: {len(expired_urls)}")
+        logging.info(f"🔄 Offres inchangées: {len(all_current_urls & existing_live_urls)}")
 
         # ── Étape 3 : Marquer les expirées ────────────────────────────────────
         if expired_urls:
@@ -1013,18 +1092,50 @@ async def main():
             db.mark_as_expired(expired_urls)
             logging.info(f"✓ {len(expired_urls)} offres marquées comme expirées")
 
-        # ── Étape 4 : Scraper les détails des nouvelles offres ─────────────────
+        # ── Étape 4 : Insérer IMMÉDIATEMENT toutes les nouvelles offres ────────
+        # On persiste les données listing (titre, lieu, contrat) en base pour que
+        # l'export les affiche dès ce run, même sans job_description.
+        # Les détails (description, compétences…) sont complétés dans l'étape suivante.
         if new_urls:
-            new_jobs = [j for j in unique_jobs if j["job_url"] in new_urls]
-            logging.info(f"\n🚀 ÉTAPE 4: Scraping de {len(new_jobs)} nouvelles offres")
+            new_jobs_listing = [j for j in unique_jobs if j["job_url"] in new_urls]
+            logging.info(f"\n💾 ÉTAPE 4: Insertion listing-only de {len(new_jobs_listing)} nouvelles offres")
+            for job in new_jobs_listing:
+                db.insert_listing_only(job)
+            logging.info(f"✓ {len(new_jobs_listing)} offres insérées (données listing)")
 
-            total_scraped = await scrape_details_robust(p, new_jobs, db)
-            logging.info(f"✓ {total_scraped} nouvelles offres scrapées au total")
+        # ── Étape 5 : Scraper les détails (backlog limité à MAX_DETAILS_PER_RUN) ─
+        # Cherche toutes les offres Live sans job_description (nouvelles + non complétées).
+        # Limite à MAX_DETAILS_PER_RUN pour garantir que le job CI ne dépasse pas le timeout.
+        # Les offres non traitées ce run seront complétées lors des runs suivants.
+        backlog_total    = db.count_offers_without_details()
+        offers_to_detail = db.get_offers_without_details(limit=config.MAX_DETAILS_PER_RUN)
+
+        if offers_to_detail:
+            logging.info(
+                f"\n🚀 ÉTAPE 5: Scraping détails — "
+                f"{len(offers_to_detail)}/{backlog_total} offres (cap={config.MAX_DETAILS_PER_RUN}/run)"
+            )
+            if backlog_total > config.MAX_DETAILS_PER_RUN:
+                logging.warning(
+                    f"⚠️  Backlog de {backlog_total} offres sans détails. "
+                    f"Ce run traite {len(offers_to_detail)} — "
+                    "les restantes seront complétées aux prochains runs."
+                )
+
+            total_scraped = await scrape_details_robust(p, offers_to_detail, db)
+            logging.info(f"✓ {total_scraped} offres complétées avec détails")
+
+            remaining_backlog = db.count_offers_without_details()
+            if remaining_backlog:
+                logging.info(
+                    f"📋 Backlog restant: {remaining_backlog} offres sans détails "
+                    "(traitées aux prochains runs)"
+                )
         else:
-            logging.info("\n✓ Aucune nouvelle offre à scraper")
+            logging.info("\n✓ Aucune offre en attente de détails")
 
-    # ── Étape 5 : Export CSV ──────────────────────────────────────────────────
-    logging.info("\n💾 ÉTAPE 5: Export vers CSV")
+    # ── Étape 6 : Export CSV ──────────────────────────────────────────────────
+    logging.info("\n💾 ÉTAPE 6: Export vers CSV")
     db.export_to_csv(config.CSV_PATH)
     logging.info(f"✓ CSV exporté: {config.CSV_PATH}")
 
