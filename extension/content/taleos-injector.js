@@ -227,6 +227,7 @@
     if (url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
     if (url.includes('recrutement.creditmutuel.fr') || url.includes('creditmutuel.fr')) return 'credit_mutuel';
     if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
+    if (url.includes('higher.gs.com') || url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
     return 'credit_agricole'; // défaut
   }
 
@@ -277,6 +278,7 @@
     if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
     if (raw.includes('mutuel')) return 'credit_mutuel';
     if (raw.includes('bpifrance') || raw.includes('bpi')) return 'bpifrance';
+    if (raw.includes('jp morgan') || raw.includes('jpmorgan') || raw.includes('jp_morgan')) return 'jp_morgan';
     if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
     if (raw.includes('bpce')) return 'bpce';
     if (raw.includes('deloitte')) return 'deloitte';
@@ -420,6 +422,9 @@
     }
     if (bankId === 'credit_agricole' && /société\s+générale|societe\s+generale|société\s+generale/i.test(companyName || '')) {
       bankId = 'societe_generale';
+    }
+    if ((bankId === 'credit_agricole' || !bankId) && /j\.?\s*p\.?\s*morgan|jp\s*morgan|jpmorgan/i.test(companyName || '')) {
+      bankId = 'jp_morgan';
     }
 
     if (!jobId) return;
