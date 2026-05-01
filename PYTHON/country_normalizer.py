@@ -296,6 +296,17 @@ def normalize_country(country_raw):
         'u.s.a': 'États-Unis',
         'corée': 'Corée du Sud',
         'corée du sud': 'Corée du Sud',
+        'viet nam': 'Vietnam',
+        'vietnam': 'Vietnam',
+        'turkiye': 'Turquie',
+        'türkiye': 'Turquie',
+        'israel': 'Israël',
+        'bahamas': 'Bahamas',
+        'panama': 'Panama',
+        'laos': 'Laos',
+        'kuwait': 'Koweït',
+        'peru': 'Pérou',
+        'qatar': 'Qatar',
     }
     
     # Vérifier les variantes d'abord
