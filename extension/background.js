@@ -2865,7 +2865,8 @@ async function fetchProfile(uid, bankId, token) {
     sg_eu_work_authorization: profile.sg_eu_work_authorization || '',
     sg_notice_period: profile.sg_notice_period || '',
     sg_handicap: profile.sg_handicap || '',
-    sg_handicap_accommodation: profile.sg_handicap_accommodation || ''
+    sg_handicap_accommodation: profile.sg_handicap_accommodation || '',
+    jp_morgan_military_service: profile.jp_morgan_military_service || ''
   };
 }
 
