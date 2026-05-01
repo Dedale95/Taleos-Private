@@ -32,15 +32,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # ⚠️  Les JSON de données (scraped_jobs_*.json) sont générés exclusivement
+          # par le CI public (update-job-offers.yml) et incluent toutes les sources
+          # (JP Morgan, Goldman Sachs…). On les PRÉSERVE depuis le dépôt public,
+          # sans jamais les écraser avec la version incomplète du dépôt privé.
+          mkdir -p /tmp/public-data
+          for f in \
+            HTML/scraped_jobs_live.json \
+            HTML/scraped_jobs.json \
+            HTML/scraped_jobs_full.json \
+            HTML/scraped_jobs_summary.json \
+            scraped_jobs_live.json \
+            scraped_jobs.json \
+            scraped_jobs_summary.json \
+            scraped_jobs.csv; do
+            [ -f "public-repo/$f" ] && cp "public-repo/$f" "/tmp/public-data/$(basename $f).bak" || true
+          done
+
           rm -rf public-repo/HTML
           cp -R HTML public-repo/HTML
 
           cp index.html public-repo/index.html
           cp landing_page_finance.html public-repo/landing_page_finance.html
-          cp HTML/scraped_jobs_live.json public-repo/scraped_jobs_live.json
-          cp HTML/scraped_jobs.json public-repo/scraped_jobs.json
-          cp HTML/scraped_jobs_summary.json public-repo/scraped_jobs_summary.json
-          cp scraped_jobs.csv public-repo/scraped_jobs.csv
+
+          # Restauration des fichiers de données protégés depuis le dépôt public
+          for f in \
+            HTML/scraped_jobs_live.json \
+            HTML/scraped_jobs.json \
+            HTML/scraped_jobs_full.json \
+            HTML/scraped_jobs_summary.json \
+            scraped_jobs_live.json \
+            scraped_jobs.json \
+            scraped_jobs_summary.json \
+            scraped_jobs.csv; do
+            bak="/tmp/public-data/$(basename $f).bak"
+            [ -f "$bak" ] && cp "$bak" "public-repo/$f" && echo "✅ Préservé: $f" || echo "ℹ️  Absent dans le dépôt public: $f"
+          done
 
       - name: Commit and push if changed
         shell: bash
