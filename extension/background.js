@@ -1909,6 +1909,19 @@ async function runTestConnection(msg) {
     return { success: true };
   }
 
+  // J.P. Morgan utilise un code OTP envoyé par email pendant la candidature.
+  if (bankId === 'jp_morgan') {
+    if (!email || !firebaseUserId) {
+      return { success: false, message: 'Email J.P. Morgan manquant.' };
+    }
+    const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+    if (!taleosIdToken) {
+      return { success: false, message: 'Vous devez être connecté à Taleos' };
+    }
+    await saveCareerConnectionToFirestore(firebaseUserId, taleosIdToken, bankId, bankName || 'J.P. Morgan', email, '');
+    return { success: true, message: 'Email J.P. Morgan enregistré. Le code OTP sera demandé pendant la candidature.' };
+  }
+
   const loginUrl = CONNECTION_TEST_URLS[bankId];
   if (!loginUrl || !email || !password || !firebaseUserId) {
     const missing = [];

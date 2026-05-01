@@ -1,6 +1,7 @@
 /**
  * Taleos - Script de test de connexion bancaire (injecté dans l'onglet)
- * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte, Bpifrance
+ * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte, Bpifrance.
+ * JP Morgan est géré côté background car aucune authentification par mot de passe n'est requise ici.
  */
 (function() {
   'use strict';
