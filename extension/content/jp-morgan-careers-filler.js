@@ -162,6 +162,25 @@
     return null;
   }
 
+  function findFieldByLabel(labelNeedle) {
+    const target = norm(labelNeedle);
+    const labels = Array.from(document.querySelectorAll('label, span, div')).filter((el) => {
+      const text = norm(el.textContent || '');
+      return text && text.includes(target);
+    });
+    for (const label of labels) {
+      const forId = label.getAttribute?.('for');
+      if (forId) {
+        const direct = document.getElementById(forId);
+        if (direct) return direct;
+      }
+      const root = label.closest('.oj-form-layout, .oj-flex-item, .oj-form, .oj-panel, .oj-flex, div');
+      const field = root?.querySelector?.('input, textarea, select, [role="combobox"] input');
+      if (field) return field;
+    }
+    return null;
+  }
+
   function findQuestionContainer(textNeedle) {
     const target = norm(textNeedle);
     const nodes = document.querySelectorAll('section, fieldset, .oj-form-layout, .oj-panel, .oj-flex, [data-testid], div');
@@ -291,6 +310,27 @@
     return '';
   }
 
+  function extractCountryFromLocation(locationValue) {
+    const raw = String(locationValue || '').trim();
+    if (!raw) return '';
+    const parts = raw.split('-').map((part) => part.trim()).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : raw;
+  }
+
+  function resolveJpMorganWorkAuth(profile, pending) {
+    const rows = Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : [];
+    const targetCountry = extractCountryFromLocation(pending?.location || '') || 'France';
+    const normCountry = norm(targetCountry);
+    const exact = rows.find((row) => norm(row?.country || '') === normCountry);
+    const fallback = rows.find((row) => norm(row?.country || '') === 'france') || rows[0] || null;
+    const selected = exact || fallback;
+    return {
+      country: targetCountry,
+      workAuthorized: selected?.work_authorized || 'Yes',
+      sponsorshipRequired: selected?.sponsorship_required || 'No'
+    };
+  }
+
   async function handleSuccess(pending) {
     if (state.successSent) return;
     const text = norm(document.body?.innerText || '');
@@ -390,21 +430,21 @@
     auditAndFill('Nom', findBySelectors(['input[id*="lastName" i]', 'input[name*="lastName" i]', 'input[aria-label*="Last Name" i]']), profile.lastname);
     auditAndFill('Email', findBySelectors(['input[id*="email" i]', 'input[name*="email" i]', 'input[aria-label*="Email" i]']), profile.email || profile.auth_email);
 
-    const phoneCcEl = findBySelectors(['input[aria-label*="Phone country code" i]', 'input[id*="countryCode" i]', 'input[id*="country-code" i]', '[role="combobox"][aria-label*="country code" i] input']);
+    const phoneCcEl = findFieldByLabel('Phone country code') || findBySelectors(['input[aria-label*="Phone country code" i]', 'input[id*="countryCode" i]', 'input[id*="country-code" i]', '[role="combobox"][aria-label*="country code" i] input']);
     const phoneNational = normalizeNationalPhoneDigits(profile['phone-number'] || profile.phone_number || '', profile.phone_country_code || '+33');
     auditAndFill('Indicatif pays', phoneCcEl, profile.phone_country_code || '+33');
     await pickVisibleOption(profile.phone_country_code || '+33');
-    auditAndFill('Téléphone', findBySelectors(['input[type="tel"]', 'input[aria-label*="Phone Number" i]', 'input[id*="phoneNumber" i]']), phoneNational);
+    auditAndFill('Téléphone', findFieldByLabel('Phone number') || findBySelectors(['input[type="tel"]', 'input[aria-label*="Phone Number" i]', 'input[id*="phoneNumber" i]']), phoneNational);
 
-    auditAndFill('Pays', findBySelectors(['input[aria-label*="Country" i]', 'input[id*="country" i]', '[role="combobox"][aria-label*="Country" i] input']), profile.country || 'France');
+    auditAndFill('Pays', findFieldByLabel('Country') || findBySelectors(['input[aria-label*="Country" i]', '[role="combobox"][aria-label*="Country" i] input']), profile.country || 'France');
     await pickVisibleOption(profile.country || 'France');
-    auditAndFill('Numéro', findBySelectors(['input[aria-label*="House Number" i]', 'input[id*="houseNumber" i]']), (profile.address || '').match(/^\s*(\d+[A-Za-z\-]*)/)?.[1] || '30');
-    auditAndFill('Rue', findBySelectors(['input[aria-label*="Street Name" i]', 'input[id*="streetName" i]']), (profile.address || '').replace(/^\s*\d+[A-Za-z\-]*\s+/, '') || 'rue des Garonnes');
-    auditAndFill('Code postal', findBySelectors(['input[aria-label*="Postal Code" i]', 'input[id*="postalCode" i]', '[role="combobox"][aria-label*="Postal Code" i] input']), profile.zipcode);
+    auditAndFill('Numéro', findFieldByLabel('House Number') || findBySelectors(['input[aria-label*="House Number" i]', 'input[id*="houseNumber" i]']), (profile.address || '').match(/^\s*(\d+[A-Za-z\-]*)/)?.[1] || '30');
+    auditAndFill('Rue', findFieldByLabel('Street Name') || findBySelectors(['input[aria-label*="Street Name" i]', 'input[id*="streetName" i]']), (profile.address || '').replace(/^\s*\d+[A-Za-z\-]*\s+/, '') || 'rue des Garonnes');
+    auditAndFill('Code postal', findFieldByLabel('Postal Code') || findBySelectors(['input[aria-label*="Postal Code" i]', 'input[id*="postalCode" i]', '[role="combobox"][aria-label*="Postal Code" i] input']), profile.zipcode);
     await sleep(300);
     await selectPostalSuggestion();
-    auditAndFill('Ville', findBySelectors(['input[aria-label*="City" i]', 'input[id*="city" i]', '[role="combobox"][aria-label*="City" i] input']), profile.city);
-    const departmentEl = findBySelectors(['input[aria-label*="Department" i]', 'input[aria-label*="State" i]', 'input[id*="region" i]', 'input[id*="department" i]']);
+    auditAndFill('Ville', findFieldByLabel('City') || findBySelectors(['input[aria-label*="City" i]', 'input[id*="city" i]', '[role="combobox"][aria-label*="City" i] input']), profile.city);
+    const departmentEl = findFieldByLabel('Department') || findFieldByLabel('State') || findBySelectors(['input[aria-label*="Department" i]', 'input[aria-label*="State" i]', 'input[id*="region" i]', 'input[id*="department" i]']);
     if (departmentEl) {
       log(`ℹ️ Département : formulaire='${getValue(departmentEl) || '(vide)'}' | Firebase='(piloté via code postal)' -> Skip`, 1);
     }
@@ -417,14 +457,15 @@
     }
   }
 
-  async function handleSection2() {
+  async function handleSection2(profile, pending) {
     ensureBanner(getBannerApi()?.getText() || '⏳ Automatisation Taleos en cours — Ne touchez à rien.');
     const report = blueprint?.getStructureReport?.('section_2');
     if (report) log(`Blueprint JP Morgan section 2: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
+    const workAuth = resolveJpMorganWorkAuth(profile, pending);
 
     auditAndSelectButton('At least 18 years of age', findQuestionContainer('at least 18 years of age'), 'Yes');
-    auditAndSelectButton('Legally authorized to work in this country', findQuestionContainer('legally authorized to work in this country'), 'Yes');
-    auditAndSelectButton('Require sponsorship', findQuestionContainer('require sponsorship'), 'No');
+    auditAndSelectButton('Legally authorized to work in this country', findQuestionContainer('legally authorized to work in this country'), workAuth.workAuthorized);
+    auditAndSelectButton('Require sponsorship', findQuestionContainer('require sponsorship'), workAuth.sponsorshipRequired);
 
     const nextBtn = findButtonByText('Next');
     if (nextBtn && !state.nextSection2) {
@@ -515,7 +556,7 @@
       if (detected.key === 'email') return handleEmailStep(profile);
       if (detected.key === 'pin') return handlePinStep();
       if (detected.key === 'section_1') return handleSection1(profile);
-      if (detected.key === 'section_2') return handleSection2();
+      if (detected.key === 'section_2') return handleSection2(profile, pending);
       if (detected.key === 'section_3') return handleSection3();
       if (detected.key === 'section_4') return handleSection4(profile);
       if (detected.key === 'offer') {

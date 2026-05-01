@@ -2519,6 +2519,8 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         jobId,
         jobTitle,
         companyName: companyName || 'J.P. Morgan',
+        location: offerMeta?.location || '',
+        contractType: offerMeta?.contractType || '',
         tabId: tab.id,
         timestamp: Date.now()
       },
@@ -2938,7 +2940,8 @@ async function fetchProfile(uid, bankId, token) {
     sg_notice_period: profile.sg_notice_period || '',
     sg_handicap: profile.sg_handicap || '',
     sg_handicap_accommodation: profile.sg_handicap_accommodation || '',
-    jp_morgan_military_service: profile.jp_morgan_military_service || ''
+    jp_morgan_military_service: profile.jp_morgan_military_service || '',
+    jp_morgan_work_authorizations: Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : []
   };
 }
 

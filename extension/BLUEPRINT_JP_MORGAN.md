@@ -62,6 +62,10 @@ Flux confirmé en live sur `jpmc.fa.oraclecloud.com` avec candidature réelle.
   - `lm_storage_path`, `lm_filename`
 - JP Morgan :
   - `jp_morgan_military_service`
+  - `jp_morgan_work_authorizations[]`
+    - `country`
+    - `work_authorized` (`Yes` / `No`)
+    - `sponsorship_required` (`Yes` / `No`)
 
 ## Confirmation métier capturée
 
@@ -83,3 +87,15 @@ Style Crédit Agricole :
 - `✅ Lettre de motivation : <filename> (Firebase)`
 - `🔐 JP Morgan → code email : 0/6 chiffre(s) saisi(s)`
 - `🚀 JP Morgan : clic final sur Submit`
+
+## Règle de réponse aux questions pays / visa
+
+- Taleos lit le pays de l’offre depuis la localisation remontée par l’offre (`Paris - France` -> `France`)
+- il cherche ensuite dans le profil JP Morgan une ligne pays correspondante
+- s’il trouve une ligne, il répond avec :
+  - `Are you legally authorized to work in this country?` -> `work_authorized`
+  - `Will you now or in the future require sponsorship...?` -> `sponsorship_required`
+- fallback actuel :
+  - ligne `France` si présente
+  - sinon première ligne configurée
+  - sinon `Yes / No`
