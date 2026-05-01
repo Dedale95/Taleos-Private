@@ -317,12 +317,22 @@
     return parts.length ? parts[parts.length - 1] : raw;
   }
 
+  const EUROPEAN_UNION_COUNTRIES = new Set([
+    'allemagne', 'autriche', 'belgique', 'bulgarie', 'chypre', 'croatie', 'danemark',
+    'espagne', 'estonie', 'finlande', 'france', 'grece', 'hongrie', 'irlande', 'italie',
+    'lettonie', 'lituanie', 'luxembourg', 'malte', 'pays-bas', 'pologne', 'portugal',
+    'republique tcheque', 'roumanie', 'slovaquie', 'slovenie', 'suede'
+  ]);
+
   function resolveJpMorganWorkAuth(profile, pending) {
     const rows = Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : [];
     const targetCountry = extractCountryFromLocation(pending?.location || '') || 'France';
     const normCountry = norm(targetCountry);
     const exact = rows.find((row) => norm(row?.country || '') === normCountry);
-    const fallback = rows.find((row) => norm(row?.country || '') === 'france') || rows[0] || null;
+    const euFallback = EUROPEAN_UNION_COUNTRIES.has(normCountry)
+      ? rows.find((row) => norm(row?.country || '') === 'union europeenne')
+      : null;
+    const fallback = euFallback || rows.find((row) => norm(row?.country || '') === 'france') || rows[0] || null;
     const selected = exact || fallback;
     return {
       country: targetCountry,

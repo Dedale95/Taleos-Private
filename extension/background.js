@@ -2759,6 +2759,34 @@ const PROFILE_FIELD_LABELS = {
   bpcePreferences: 'Préférences BPCE'
 };
 
+const EU_WORK_AUTH_LABEL = 'Union européenne';
+const EU_WORK_AUTH_FRENCH_COUNTRIES = new Set([
+  'Allemagne', 'Autriche', 'Belgique', 'Bulgarie', 'Chypre', 'Croatie', 'Danemark',
+  'Espagne', 'Estonie', 'Finlande', 'France', 'Grèce', 'Hongrie', 'Irlande', 'Italie',
+  'Lettonie', 'Lituanie', 'Luxembourg', 'Malte', 'Pays-Bas', 'Pologne', 'Portugal',
+  'République tchèque', 'Roumanie', 'Slovaquie', 'Slovénie', 'Suède'
+]);
+
+function deriveEuWorkAuthorizationFromProfile(profile) {
+  const direct = String(profile?.sg_eu_work_authorization || '').trim().toLowerCase();
+  if (direct === 'yes' || direct === 'no') return direct;
+  const rows = Array.isArray(profile?.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : [];
+  const normalizedRows = rows.filter(Boolean);
+  const euRow = normalizedRows.find((row) => String(row?.country || '').trim() === EU_WORK_AUTH_LABEL);
+  if (euRow) {
+    const value = String(euRow.work_authorized || '').trim();
+    if (value === 'Yes') return 'yes';
+    if (value === 'No') return 'no';
+  }
+  const legacyFranceRow = normalizedRows.find((row) => EU_WORK_AUTH_FRENCH_COUNTRIES.has(String(row?.country || '').trim()));
+  if (legacyFranceRow) {
+    const value = String(legacyFranceRow.work_authorized || '').trim();
+    if (value === 'Yes') return 'yes';
+    if (value === 'No') return 'no';
+  }
+  return '';
+}
+
 /** Vérifie si le profil utilisateur est complet (même logique que offres.html) */
 async function checkProfileCompletenessFromFirestore(bankId) {
   const { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
@@ -2767,6 +2795,7 @@ async function checkProfileCompletenessFromFirestore(bankId) {
   const profileRes = await fetch(`${base}/profiles/${taleosUserId}`, { headers: { Authorization: `Bearer ${taleosIdToken}` } });
   if (!profileRes.ok) return { complete: false, missingFields: ['Profil'] };
   const profile = parseFirestoreDoc(await profileRes.json());
+  const sgEuWorkAuthorization = deriveEuWorkAuthorizationFromProfile(profile);
   const isBpce = bankId === 'bpce' || (typeof bankId === 'string' && bankId.toLowerCase().includes('bpce'));
   const bpceHasContent = !!((profile.bpce_handicap || '').trim() || (profile.bpce_vivier_natixis || '').trim() || (profile.bpce_application_source || '').trim() || (profile.linkedin_url || '').trim() || profile.bpce_job_alerts);
   const required = {
@@ -2789,7 +2818,7 @@ async function checkProfileCompletenessFromFirestore(bankId) {
     institutionType: profile.institution_type,
     diplomaStatus: profile.diploma_status,
     deloitteWorked: profile.deloitte_worked === 'yes' || profile.deloitte_worked === 'no',
-    sg_eu_work_authorization: profile.sg_eu_work_authorization === 'yes' || profile.sg_eu_work_authorization === 'no',
+    sg_eu_work_authorization: sgEuWorkAuthorization === 'yes' || sgEuWorkAuthorization === 'no',
     sg_notice_period: ['none', '1_month', '2_months', '3_months', 'more_than_3_months'].includes(
       String(profile.sg_notice_period || '').trim()
     ),
@@ -2832,6 +2861,7 @@ async function fetchProfile(uid, bankId, token) {
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
   const profile = parseFirestoreDoc(await profileRes.json());
+  const sgEuWorkAuthorization = deriveEuWorkAuthorizationFromProfile(profile);
 
   let creds = null;
   const directRes = await fetch(`${base}/profiles/${uid}/career_connections/${bankId}`, { headers });
@@ -2936,7 +2966,7 @@ async function fetchProfile(uid, bankId, token) {
     bpce_job_alerts: !!profile.bpce_job_alerts,
     bpifrance_talent_pool: (profile.bpifrance_talent_pool || '').trim(),
     group_data_sharing_scope: (profile.group_data_sharing_scope || profile.bnp_data_sharing_scope || '').trim(),
-    sg_eu_work_authorization: profile.sg_eu_work_authorization || '',
+    sg_eu_work_authorization: sgEuWorkAuthorization,
     sg_notice_period: profile.sg_notice_period || '',
     sg_handicap: profile.sg_handicap || '',
     sg_handicap_accommodation: profile.sg_handicap_accommodation || '',
