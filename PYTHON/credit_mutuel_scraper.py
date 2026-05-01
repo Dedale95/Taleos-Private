@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-CRÉDIT MUTUEL - JOB SCRAPER
+CRÉDIT MUTUEL - JOB SCRAPER (v2)
 Extrait les offres d'emploi depuis recrutement.creditmutuel.fr
-Utilise Playwright pour le chargement progressif (Afficher plus) + requests pour les détails.
-Tags: famille de métier, expérience, localisation, type de contrat
+
+Architecture :
+  - Playwright pour la phase listing (clic "Plus de résultats" jusqu'au bout)
+  - requests + BeautifulSoup pour les détails (plus rapide, pas de JS nécessaire)
+  - Delta scraping : seules les nouvelles offres sont scrapées en détail ;
+    les offres disparues du listing sont marquées Expired immédiatement.
+  - Les nouvelles URLs sont insérées en DB avec les données listing
+    (titre extrait de l'URL + type de contrat si disponible) avant le
+    scraping détail — elles sont donc visibles dans l'export immédiatement.
 """
 
 import asyncio
@@ -11,12 +18,12 @@ import logging
 import re
 import sqlite3
 import json
+import time
 from pathlib import Path
 from typing import List, Dict, Set, Optional
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from tqdm.asyncio import tqdm
-from urllib.parse import urljoin
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -52,34 +59,26 @@ LISTING_URL = f"{BASE_URL}/fr/nos_offres.html"
 
 # ================= Config =================
 class Config:
-    MAX_LOAD_MORE_ROUNDS = 100  # Clics sur "Afficher plus" par page tc
-    PAGE_TIMEOUT = 45000
-    WAIT_AFTER_CLICK = 1.0
-    HEADLESS = True
+    # Listing Playwright
+    PAGE_TIMEOUT        = 60000   # 60 s pour la navigation initiale (JSF lent)
+    NETWORK_IDLE_TIMEOUT = 20000  # attente networkidle après chaque clic "plus"
+    WAIT_AFTER_NAV      = 3.0     # secondes après goto() pour que le JS JSF s'initialise
+    WAIT_AFTER_CLICK    = 2.0     # secondes de sécurité après chaque clic
+    MAX_LOAD_MORE_ROUNDS = 150    # max de clics "Plus de résultats"
+    MAX_STAGNANT_ROUNDS  = 5      # arrêt si N rounds consécutifs sans nouvelles URLs
+    HEADLESS            = True
+
+    # Détails requests
+    MAX_WORKERS      = 8          # parallélisme HTTP pour les détails
+    REQUEST_TIMEOUT  = 20         # secondes par requête
+    DETAIL_MAX_RETRY = 3
+
     BASE_DIR = Path(__file__).parent
-    DB_PATH = BASE_DIR / "credit_mutuel_jobs.db"
+    DB_PATH  = BASE_DIR / "credit_mutuel_jobs.db"
     CSV_PATH = BASE_DIR / "credit_mutuel_jobs.csv"
-    MAX_WORKERS = 10
-    REQUEST_TIMEOUT = 30
 
 config = Config()
 
-
-def extract_expected_offer_count(page_text: str) -> Optional[int]:
-    text = str(page_text or "").replace("\xa0", " ")
-    patterns = [
-        r'(\d+)\s+offres?\s+affich(?:e|é)es?\s+sur\s+(\d+)',
-        r'parmi\s+nos\s+(\d+)\s+offres',
-        r'(\d+)\s+offres?\s+correspondent',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if not match:
-            continue
-        if len(match.groups()) >= 2:
-            return int(match.group(2))
-        return int(match.group(1))
-    return None
 
 # ================= Contract type mapping =================
 CONTRACT_MAPPING = {
@@ -95,16 +94,20 @@ CONTRACT_MAPPING = {
     "reconversion professionnelle (cdi)": "CDI",
 }
 
-# Experience mapping (CM raw → Taleos format)
 EXPERIENCE_MAPPING = {
-    "débutant": "0 - 2 ans",
-    "debutant": "0 - 2 ans",
-    "junior": "0 - 2 ans",
-    "confirmé": "6 - 10 ans",
-    "confirme": "6 - 10 ans",
-    "senior": "11 ans et plus",
-    "expert": "11 ans et plus",
+    "débutant":  "0 - 2 ans",
+    "debutant":  "0 - 2 ans",
+    "junior":    "0 - 2 ans",
+    "confirmé":  "6 - 10 ans",
+    "confirme":  "6 - 10 ans",
+    "senior":    "11 ans et plus",
+    "expert":    "11 ans et plus",
 }
+
+ERROR_PATTERNS = [
+    'erreur de navigation', 'accusé de réception', 'accuse de reception',
+    'page not found', 'page introuvable',
+]
 
 
 def normalize_contract(raw: str) -> str:
@@ -117,33 +120,47 @@ def normalize_contract(raw: str) -> str:
 def normalize_experience(raw: str) -> Optional[str]:
     if not raw:
         return None
-    key = str(raw).strip().lower()
-    return EXPERIENCE_MAPPING.get(key)
+    return EXPERIENCE_MAPPING.get(str(raw).strip().lower())
 
 
 def normalize_location_cm(location_raw: str) -> str:
-    """
-    CM format: "LILLE (59)" ou "STRASBOURG (67)" ou "LUXEMBOURG (Luxembourg)"
-    Output: "Lille - France" ou "Luxembourg - Luxembourg"
-    """
+    """CM format: 'VILLE (XX)' → 'Ville - France' / 'Luxembourg - Luxembourg'."""
     if not location_raw or not str(location_raw).strip():
         return ""
     loc = str(location_raw).strip()
-    # Format: VILLE (XX) où XX = code département ou pays
     match = re.match(r'^(.+?)\s*\(([^)]+)\)\s*$', loc)
     if match:
         city_raw = match.group(1).strip()
         code = match.group(2).strip()
-        # Luxembourg comme pays
         if code.upper() == "LUXEMBOURG":
             return f"{normalize_city(city_raw) or city_raw} - Luxembourg"
-        # Code département français (01-95, 2A, 2B, 971-976)
         if re.match(r'^(0[1-9]|[1-8]\d|9[0-5]|2[AB]|97[1-6])$', code, re.I):
             city = normalize_city(city_raw) or city_raw
             return f"{city} - France"
-    # Fallback: utiliser tel quel avec France
     city = normalize_city(loc) or loc
     return f"{city} - France"
+
+
+def extract_expected_offer_count(page_text: str) -> Optional[int]:
+    text = str(page_text or "").replace("\xa0", " ")
+    patterns = [
+        r'(\d+)\s+offres?\s+affich(?:e|é)es?\s+sur\s+(\d+)',
+        r'parmi\s+nos\s+(\d+)\s+offres',
+        r'(\d[\d\s]*)\s+offres?\s+correspondent',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        if len(match.groups()) >= 2:
+            raw = match.group(2).replace(" ", "").replace("\xa0", "")
+        else:
+            raw = match.group(1).replace(" ", "").replace("\xa0", "")
+        try:
+            return int(raw)
+        except ValueError:
+            continue
+    return None
 
 
 # =========================================================
@@ -193,29 +210,39 @@ class JobDatabase:
             )
             return {row[0] for row in cursor.fetchall()}
 
-    def mark_error_pages_invalid(self) -> int:
-        """Marque is_valid=0 pour les jobs dont le titre/description indique une page d'erreur."""
-        error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable']
+    def count_without_details(self) -> int:
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT job_url, job_title, job_description FROM jobs WHERE is_valid = 1 AND (job_title IS NOT NULL OR job_description IS NOT NULL)"
-            )
-            def _norm(s):
-                return (s or '').lower().replace('\xa0', ' ')
-            to_invalidate = []
-            for row in cursor.fetchall():
-                title = _norm(row[1])
-                desc = _norm(row[2])
-                if any(p in title for p in error_patterns) or any(p in desc for p in error_patterns):
-                    to_invalidate.append(row[0])
-            if to_invalidate:
-                placeholders = ','.join('?' * len(to_invalidate))
-                conn.execute(f"""
-                    UPDATE jobs SET is_valid = 0, last_updated = CURRENT_TIMESTAMP
-                    WHERE job_url IN ({placeholders})
-                """, tuple(to_invalidate))
-                conn.commit()
-        return len(to_invalidate)
+            row = conn.execute("""
+                SELECT COUNT(*) FROM jobs
+                WHERE status = 'Live' AND is_valid = 1
+                  AND (job_description IS NULL OR TRIM(job_description) = '')
+            """).fetchone()
+        return row[0] if row else 0
+
+    def get_without_details(self, limit: int) -> List[str]:
+        """URLs Live sans job_description, par ordre d'arrivée décroissant (les plus récentes en premier)."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("""
+                SELECT job_url FROM jobs
+                WHERE status = 'Live' AND is_valid = 1
+                  AND (job_description IS NULL OR TRIM(job_description) = '')
+                ORDER BY first_seen DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+        return [r[0] for r in rows]
+
+    def insert_listing_only(self, job_url: str, job_id: str = "", company_name: str = "Crédit Mutuel"):
+        """Insère une offre avec les données minimales du listing (URL + ID).
+        Préserve les champs déjà renseignés si l'offre existe déjà."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO jobs (job_url, job_id, company_name, status, is_valid)
+                VALUES (?, ?, ?, 'Live', 1)
+                ON CONFLICT(job_url) DO UPDATE SET
+                    status       = 'Live',
+                    last_updated = CURRENT_TIMESTAMP
+            """, (job_url, job_id, company_name))
+            conn.commit()
 
     def mark_as_expired(self, urls: Set[str]):
         if not urls:
@@ -228,22 +255,43 @@ class JobDatabase:
             """, tuple(urls))
             conn.commit()
 
-    def insert_or_update_job(self, job: Dict):
+    def mark_error_pages_invalid(self) -> int:
         with sqlite3.connect(self.db_path) as conn:
-            is_valid = 1 if (job.get('job_id') or job.get('job_title') or job.get('job_description')) else 0
-            # Exclure les pages d'erreur (Erreur de navigation, Accusé de réception, etc.)
-            title_lower = (job.get('job_title') or '').lower().replace('\xa0', ' ')
-            desc_lower = (job.get('job_description') or '').lower().replace('\xa0', ' ')
-            error_patterns = ['erreur de navigation', 'accusé de réception', 'accuse de reception', 'page not found', 'page introuvable']
-            if any(err in title_lower for err in error_patterns) or any(err in desc_lower for err in error_patterns):
-                is_valid = 0
-            technical_skills = job.get('technical_skills') or '[]'
-            behavioral_skills = job.get('behavioral_skills') or '[]'
-            if isinstance(technical_skills, list):
-                technical_skills = json.dumps(technical_skills, ensure_ascii=False)
-            if isinstance(behavioral_skills, list):
-                behavioral_skills = json.dumps(behavioral_skills, ensure_ascii=False)
+            cursor = conn.execute(
+                "SELECT job_url, job_title, job_description FROM jobs "
+                "WHERE is_valid = 1 AND (job_title IS NOT NULL OR job_description IS NOT NULL)"
+            )
+            to_invalidate = []
+            for row in cursor.fetchall():
+                title = (row[1] or '').lower().replace('\xa0', ' ')
+                desc  = (row[2] or '').lower().replace('\xa0', ' ')
+                if any(p in title for p in ERROR_PATTERNS) or any(p in desc for p in ERROR_PATTERNS):
+                    to_invalidate.append(row[0])
+            if to_invalidate:
+                ph = ','.join('?' * len(to_invalidate))
+                conn.execute(
+                    f"UPDATE jobs SET is_valid = 0, last_updated = CURRENT_TIMESTAMP "
+                    f"WHERE job_url IN ({ph})",
+                    tuple(to_invalidate)
+                )
+                conn.commit()
+        return len(to_invalidate)
 
+    def insert_or_update_job(self, job: Dict):
+        is_valid = 1 if (job.get('job_id') or job.get('job_title') or job.get('job_description')) else 0
+        title_lower = (job.get('job_title') or '').lower().replace('\xa0', ' ')
+        desc_lower  = (job.get('job_description') or '').lower().replace('\xa0', ' ')
+        if any(e in title_lower for e in ERROR_PATTERNS) or any(e in desc_lower for e in ERROR_PATTERNS):
+            is_valid = 0
+
+        technical_skills  = job.get('technical_skills') or '[]'
+        behavioral_skills = job.get('behavioral_skills') or '[]'
+        if isinstance(technical_skills, list):
+            technical_skills  = json.dumps(technical_skills, ensure_ascii=False)
+        if isinstance(behavioral_skills, list):
+            behavioral_skills = json.dumps(behavioral_skills, ensure_ascii=False)
+
+        with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 INSERT INTO jobs (
                     job_url, job_id, job_title, contract_type, publication_date,
@@ -254,28 +302,21 @@ class JobDatabase:
                     scrape_attempts, is_valid, last_updated
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(job_url) DO UPDATE SET
-                    job_id = excluded.job_id,
-                    job_title = excluded.job_title,
-                    contract_type = excluded.contract_type,
-                    publication_date = excluded.publication_date,
-                    location = excluded.location,
-                    job_family = excluded.job_family,
-                    duration = excluded.duration,
-                    management_position = excluded.management_position,
-                    status = excluded.status,
-                    education_level = excluded.education_level,
-                    experience_level = excluded.experience_level,
-                    training_specialization = excluded.training_specialization,
-                    technical_skills = excluded.technical_skills,
-                    behavioral_skills = excluded.behavioral_skills,
-                    tools = excluded.tools,
-                    languages = excluded.languages,
-                    job_description = excluded.job_description,
-                    company_name = excluded.company_name,
+                    job_id            = excluded.job_id,
+                    job_title         = excluded.job_title,
+                    contract_type     = excluded.contract_type,
+                    publication_date  = excluded.publication_date,
+                    location          = excluded.location,
+                    job_family        = excluded.job_family,
+                    status            = excluded.status,
+                    education_level   = excluded.education_level,
+                    experience_level  = excluded.experience_level,
+                    job_description   = excluded.job_description,
+                    company_name      = excluded.company_name,
                     company_description = excluded.company_description,
-                    scrape_attempts = scrape_attempts + 1,
-                    is_valid = excluded.is_valid,
-                    last_updated = CURRENT_TIMESTAMP
+                    scrape_attempts   = scrape_attempts + 1,
+                    is_valid          = excluded.is_valid,
+                    last_updated      = CURRENT_TIMESTAMP
             """, (
                 job.get('job_url'), job.get('job_id'), job.get('job_title'),
                 job.get('contract_type'), job.get('publication_date'),
@@ -291,129 +332,215 @@ class JobDatabase:
 
 
 # =========================================================
-# COLLECT JOB URLS (Playwright - par type de contrat + load more)
+# LISTING — collecte des URLs (Playwright)
 # =========================================================
-async def _collect_urls_for_page(page, url: str) -> Set[str]:
-    """Charge une page, clique sur Plus de résultats jusqu'au total attendu, retourne les IDs."""
-    await page.goto(url, timeout=config.PAGE_TIMEOUT, wait_until='domcontentloaded')
-    await asyncio.sleep(2)
+_JS_GET_IDS = """
+() => {
+    const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
+    const s = new Set();
+    links.forEach(a => {
+        const m = a.href.match(/annonce=(\\d+)/);
+        if (m) s.add(m[1]);
+    });
+    return Array.from(s);
+}
+"""
+
+_LOAD_MORE_SELECTORS = [
+    'a[id*="plusDoffresAccessibilite:link"]',
+    'a[id*="plusDoffres"]',
+    'input[id*="plusDoffres"]',
+    'button[id*="plusDoffres"]',
+    # texte en fallback
+    'a:has-text("Plus de résultats")',
+    'button:has-text("Plus de résultats")',
+    'a:has-text("Afficher plus")',
+    'button:has-text("Afficher plus")',
+]
+
+
+async def _try_click_load_more(page) -> bool:
+    """Cherche et clique le bouton 'Plus de résultats'. Retourne True si cliqué."""
+    for sel in _LOAD_MORE_SELECTORS:
+        try:
+            btn = page.locator(sel).first
+            if await btn.count() == 0:
+                continue
+            # Vérifier que le bouton est visible (bounding box non nulle)
+            box = await btn.bounding_box()
+            if not box:
+                continue
+            await btn.scroll_into_view_if_needed()
+            await asyncio.sleep(0.3)
+            await btn.click(force=True)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+async def _clear_overlays(page):
+    """Supprime cookie banner et modals CM qui bloquent les clics."""
     await page.evaluate("""
         () => {
             document.getElementById('cookieLB')?.remove();
             document.getElementById('bg_modal_name')?.remove();
+            // Nettoyer tout élément de type overlay générique
+            document.querySelectorAll('[class*="modal"], [class*="overlay"], [id*="cookie"]')
+                .forEach(el => {
+                    if (el.style) {
+                        el.style.display = 'none';
+                        el.style.visibility = 'hidden';
+                    }
+                });
             document.body?.style?.setProperty('overflow', 'auto', 'important');
         }
     """)
-    await asyncio.sleep(0.3)
 
-    all_ids = set()
-    target_count = extract_expected_offer_count(await page.text_content("body"))
-    stagnant_rounds = 0
 
-    for round_idx in range(config.MAX_LOAD_MORE_ROUNDS):
-        ids = await page.evaluate("""
-            () => {
-                const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
-                const s = new Set();
-                links.forEach(a => {
-                    const m = a.href.match(/annonce=(\\d+)/);
-                    if (m) s.add(m[1]);
-                });
-                return Array.from(s);
-            }
-        """)
-        previous_count = len(all_ids)
-        all_ids.update(ids)
-        current_count = len(all_ids)
-        logging.info(f"Crédit Mutuel listing: {current_count} offres collectées"
-                     + (f" / {target_count}" if target_count else "")
-                     + f" (tour {round_idx + 1})")
+async def collect_all_job_ids() -> Set[str]:
+    """Collecte tous les IDs d'offres depuis le listing CM via Playwright.
 
-        if target_count and current_count >= target_count:
-            break
+    Stratégie :
+      1. Chargement de la page d'offres avec wait_until='networkidle'.
+      2. Suppression des overlays (cookie banner, modal).
+      3. Boucle : récupération des IDs visibles → clic 'Plus de résultats'
+         → attente networkidle → répétition jusqu'à atteindre le compte attendu
+         ou MAX_STAGNANT_ROUNDS consécutifs sans nouvelles URLs.
+    """
+    all_ids: Set[str] = set()
 
-        if current_count == previous_count:
-            stagnant_rounds += 1
-        else:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=config.HEADLESS)
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 900},
+        )
+        page = await context.new_page()
+
+        # Bloquer images/fonts pour accélérer
+        await context.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.resource_type in {"image", "font", "media"}
+            else route.continue_()
+        )
+
+        try:
+            logging.info(f"  Chargement listing CM: {LISTING_URL}")
+            await page.goto(LISTING_URL, timeout=config.PAGE_TIMEOUT, wait_until="networkidle")
+            await asyncio.sleep(config.WAIT_AFTER_NAV)
+            await _clear_overlays(page)
+
+            # Nombre attendu d'offres (affiché sur la page)
+            body_text = await page.text_content("body")
+            target_count = extract_expected_offer_count(body_text)
+            if target_count:
+                logging.info(f"  Cible annoncée par le site: {target_count} offres")
+            else:
+                logging.warning("  Nombre d'offres attendu introuvable dans la page")
+
             stagnant_rounds = 0
 
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await asyncio.sleep(0.2)
+            for round_idx in range(config.MAX_LOAD_MORE_ROUNDS):
+                ids = await page.evaluate(_JS_GET_IDS)
+                prev_count = len(all_ids)
+                all_ids.update(ids)
+                curr_count = len(all_ids)
 
-        clicked = False
-        previous_visible_count = len(ids)
-        try:
-            load_more = page.locator('a[id*="plusDoffresAccessibilite:link"]').first
-            if await load_more.count():
-                await load_more.scroll_into_view_if_needed()
-                await load_more.click(force=True)
-                clicked = True
-        except Exception:
-            clicked = False
+                logging.info(
+                    f"  Tour {round_idx + 1:3d}: {curr_count} IDs collectés"
+                    + (f" / {target_count}" if target_count else "")
+                )
 
-        if not clicked:
-            logging.warning("Crédit Mutuel listing: bouton 'Plus de résultats' introuvable avant d'atteindre le total attendu")
-            break
+                # Objectif atteint
+                if target_count and curr_count >= target_count:
+                    logging.info(f"  ✅ Objectif atteint ({curr_count}/{target_count})")
+                    break
 
-        try:
-            await page.wait_for_function(
-                """(previousVisibleCount) => {
-                    const links = document.querySelectorAll('a[href*="offre.html?annonce="]');
-                    return links.length > previousVisibleCount;
-                }""",
-                arg=previous_visible_count,
-                timeout=15000
-            )
-        except Exception:
-            await asyncio.sleep(config.WAIT_AFTER_CLICK)
+                # Stagnation
+                if curr_count == prev_count:
+                    stagnant_rounds += 1
+                    logging.warning(f"  Pas de progression ({stagnant_rounds}/{config.MAX_STAGNANT_ROUNDS})")
+                    if stagnant_rounds >= config.MAX_STAGNANT_ROUNDS:
+                        logging.warning(
+                            f"  ⚠️  Arrêt après {config.MAX_STAGNANT_ROUNDS} tours sans progression"
+                            + (f" ({curr_count}/{target_count})" if target_count else f" ({curr_count})")
+                        )
+                        break
+                else:
+                    stagnant_rounds = 0
 
-        if stagnant_rounds >= 3:
-            logging.warning(
-                "Crédit Mutuel listing: arrêt après 3 tours sans progression"
-                + (f" ({current_count}/{target_count})" if target_count else f" ({current_count})")
-            )
-            break
+                # Scroll + clic
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(0.5)
+                await _clear_overlays(page)  # Re-supprimer les overlays qui réapparaissent
 
+                ids_before_click = len(await page.evaluate(_JS_GET_IDS))
+                clicked = await _try_click_load_more(page)
+
+                if not clicked:
+                    # Bouton introuvable → fin du listing
+                    if target_count and curr_count < target_count:
+                        logging.warning(
+                            f"  ⚠️  Bouton 'Plus de résultats' introuvable — "
+                            f"seulement {curr_count}/{target_count} offres collectées"
+                        )
+                    else:
+                        logging.info("  Bouton 'Plus de résultats' absent → listing terminé")
+                    break
+
+                # Attente AJAX/networkidle après clic
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=config.NETWORK_IDLE_TIMEOUT)
+                except Exception:
+                    # Fallback : attendre que le nombre de liens augmente
+                    try:
+                        await page.wait_for_function(
+                            f"() => document.querySelectorAll('a[href*=\"offre.html?annonce=\"]').length > {ids_before_click}",
+                            timeout=10000,
+                        )
+                    except Exception:
+                        await asyncio.sleep(config.WAIT_AFTER_CLICK)
+
+        except Exception as e:
+            logging.error(f"Erreur listing CM: {e}")
+        finally:
+            await browser.close()
+
+    logging.info(f"  Total IDs collectés: {len(all_ids)}")
     return all_ids
 
 
-async def collect_all_job_urls() -> List[str]:
-    """Collecte toutes les URLs depuis le listing global CM."""
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=config.HEADLESS)
-        page = await browser.new_page()
-        all_ids = await _collect_urls_for_page(page, LISTING_URL)
-        logging.info(f"listing global: {len(all_ids)} offres collectees")
-
-        await browser.close()
-
-    urls = [f"{BASE_URL}/fr/offre.html?annonce={aid}" for aid in all_ids]
-    logging.info(f"Collecté {len(urls)} URLs d'offres (dédupliquées)")
-    return urls
-
-
 # =========================================================
-# SCRAPE JOB DETAIL (requests + BeautifulSoup)
+# DÉTAILS — scraping (requests + BeautifulSoup)
 # =========================================================
 def create_session() -> requests.Session:
     session = requests.Session()
-    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
     })
     return session
 
 
 def scrape_job_detail(url: str, session: requests.Session) -> Optional[Dict]:
-    """Scrape le détail d'une offre (table avec Type contrat, Métier, Localisation, etc.)."""
+    """Scrape le détail d'une offre via requests + BeautifulSoup."""
     try:
         r = session.get(url, timeout=config.REQUEST_TIMEOUT)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        job = {
+        job: Dict = {
             "job_url": url,
             "job_id": "",
             "job_title": "",
@@ -436,7 +563,7 @@ def scrape_job_detail(url: str, session: requests.Session) -> Optional[Dict]:
             "company_description": "",
         }
 
-        # Filiale depuis .rhec_detailoffre .ei_subtitle (CIC, Cofidis, Euro Information, etc.)
+        # Filiale (CIC, Cofidis, Euro Information…)
         company_el = soup.select_one(".rhec_detailoffre .ei_subtitle")
         if company_el:
             raw_company = company_el.get_text(strip=True)
@@ -453,7 +580,7 @@ def scrape_job_detail(url: str, session: requests.Session) -> Optional[Dict]:
         if h1:
             job["job_title"] = h1.get_text(strip=True)
 
-        # Tableau détail : label -> value (3 colonnes)
+        # Tableau détail : label → value (3 colonnes)
         for row in soup.select("table tr"):
             cells = row.find_all(["td", "th"])
             if len(cells) >= 3:
@@ -472,62 +599,84 @@ def scrape_job_detail(url: str, session: requests.Session) -> Optional[Dict]:
                 elif "niveau d'expérience" in label or "niveau d expérience" in label:
                     job["experience_level"] = normalize_experience(value) or value
                 elif "date de publication" in label:
-                    # DD/MM/YYYY -> YYYY-MM-DD
                     dm = re.search(r'(\d{2})/(\d{2})/(\d{4})', value)
                     if dm:
                         job["publication_date"] = f"{dm.group(3)}-{dm.group(2)}-{dm.group(1)}"
                     else:
                         job["publication_date"] = value
 
-        # Description : texte principal (éviter le bloc diversité en début)
+        # Description
         main_content = soup.select_one("main, .content, article, [role='main']") or soup
         desc_parts = []
-        for p in main_content.find_all(["p", "div"], recursive=True):
-            text = p.get_text(strip=True)
+        for p_el in main_content.find_all(["p", "div"], recursive=True):
+            text = p_el.get_text(strip=True)
             if text and len(text) > 50 and "diversité" not in text.lower()[:100]:
-                if "mission" in text.lower() or "vous " in text.lower() or "nous " in text.lower():
+                if any(kw in text.lower() for kw in ("mission", "vous ", "nous ", "votre ", "notre ")):
                     desc_parts.append(text)
         if desc_parts:
             job["job_description"] = "\n\n".join(desc_parts[:15])
         if not job["job_description"]:
             job["job_description"] = main_content.get_text(separator="\n", strip=True)[:15000]
 
-        # Fallback job_family si vide
+        # Fallback job_family
         if not job["job_family"]:
-            job["job_family"] = classify_job_family(
-                job.get("job_title", ""),
-                job.get("job_description", "")
-            )
+            job["job_family"] = classify_job_family(job.get("job_title", ""), job.get("job_description", ""))
 
-        # Fallback experience_level si vide
+        # Fallback experience_level
         if not job["experience_level"]:
             job["experience_level"] = extract_experience_level(
                 job.get("job_description", ""),
                 job.get("contract_type"),
-                job.get("job_title")
+                job.get("job_title"),
             )
 
         return job
+
     except Exception as e:
         logging.warning(f"Erreur scraping {url}: {e}")
         return None
 
 
-def scrape_job_detail_with_retries(url: str, session: requests.Session, max_attempts: int = 3) -> Optional[Dict]:
-    last_error = None
-    for attempt in range(1, max_attempts + 1):
+def scrape_detail_with_retries(url: str, session: requests.Session) -> Optional[Dict]:
+    for attempt in range(1, config.DETAIL_MAX_RETRY + 1):
         job = scrape_job_detail(url, session)
         if job:
             return job
-        last_error = f"tentative {attempt}/{max_attempts}"
-    logging.warning(f"Échec définitif détail Crédit Mutuel {url} ({last_error})")
+        if attempt < config.DETAIL_MAX_RETRY:
+            time.sleep(1)
+    logging.warning(f"Échec définitif Crédit Mutuel: {url}")
     return None
+
+
+def scrape_details_parallel(urls: List[str], session: requests.Session) -> List[Dict]:
+    """Scrape les détails en parallèle avec ThreadPoolExecutor."""
+    results: List[Dict] = []
+    failed: List[str] = []
+
+    with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
+        futures = {executor.submit(scrape_detail_with_retries, u, session): u for u in urls}
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Détails CM"):
+            job = future.result()
+            if job:
+                results.append(job)
+            else:
+                failed.append(futures[future])
+
+    if failed:
+        logging.warning(f"  {len(failed)} URLs en échec — nouvelle tentative séquentielle")
+        for url in failed:
+            job = scrape_job_detail(url, session)
+            if job:
+                results.append(job)
+
+    return results
 
 
 # =========================================================
 # MAIN PIPELINE
 # =========================================================
 async def main_async():
+    start = time.time()
     db = JobDatabase(config.DB_PATH)
     session = create_session()
 
@@ -535,51 +684,92 @@ async def main_async():
     logging.info("CRÉDIT MUTUEL - DÉBUT DU SCRAPING")
     logging.info("=" * 60)
 
-    # 0. Marquer les pages d'erreur déjà en base comme invalides
+    # ── 0. Nettoyage : pages d'erreur précédemment scrapées ───────────────
     n_invalid = db.mark_error_pages_invalid()
     if n_invalid:
-        logging.info(f"🧹 {n_invalid} offres (Erreur de navigation / Accusé de réception) marquées invalides")
+        logging.info(f"🧹 {n_invalid} offres (pages d'erreur) marquées invalides")
 
-    # 1. Collecter les URLs
-    logging.info("Étape 1: Collecte des URLs...")
-    urls = await collect_all_job_urls()
-    if not urls:
-        logging.error("Aucune URL collectée")
+    # ── 1. Collecte des IDs depuis le listing ──────────────────────────────
+    logging.info("\n📋 ÉTAPE 1: Collecte des IDs via le listing CM")
+    all_ids = await collect_all_job_ids()
+    if not all_ids:
+        logging.error("❌ Aucun ID collecté — arrêt")
         return
 
-    # 2. Déterminer les expirées
+    # Construire les URLs à partir des IDs
+    all_current_urls = {
+        f"{BASE_URL}/fr/offre.html?annonce={aid}" for aid in all_ids
+    }
+    logging.info(f"  Total URLs: {len(all_current_urls)}")
+
+    # ── 2. Analyse delta : nouvelles / expirées ────────────────────────────
+    logging.info("\n🔍 ÉTAPE 2: Analyse delta")
     existing_live = db.get_live_urls()
-    current_set = set(urls)
-    expired = existing_live - current_set
-    if expired:
-        db.mark_as_expired(expired)
-        logging.info(f"Marquées expirées: {len(expired)}")
+    new_urls      = all_current_urls - existing_live
+    expired_urls  = existing_live - all_current_urls
+    unchanged     = existing_live & all_current_urls
 
-    # 3. Scraper les détails (parallèle avec requests)
-    logging.info("Étape 2: Scraping des détails...")
-    jobs = []
-    failed_urls = []
-    with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as executor:
-        futures = {executor.submit(scrape_job_detail_with_retries, u, session): u for u in urls}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Offres"):
-            job = future.result()
-            if job:
-                jobs.append(job)
-            else:
-                failed_urls.append(futures[future])
+    logging.info(f"  ✅ Nouvelles:  {len(new_urls)}")
+    logging.info(f"  ❌ Expirées:   {len(expired_urls)}")
+    logging.info(f"  🔄 Inchangées: {len(unchanged)}")
 
-    if failed_urls:
-        logging.warning(f"Crédit Mutuel: {len(failed_urls)} détails ratés au premier passage, nouvelle tentative séquentielle")
-        for url in failed_urls:
-            job = scrape_job_detail_with_retries(url, session, max_attempts=2)
-            if job:
-                jobs.append(job)
+    # ── 3. Expirer les offres disparues du listing ─────────────────────────
+    if expired_urls:
+        logging.info(f"\n⏳ ÉTAPE 3: Marquage de {len(expired_urls)} offres expirées")
+        db.mark_as_expired(expired_urls)
 
-    # 4. Sauvegarder
-    for job in jobs:
-        db.insert_or_update_job(job)
+    # ── 4. Insérer IMMÉDIATEMENT les nouvelles offres (listing-only) ───────
+    if new_urls:
+        logging.info(f"\n💾 ÉTAPE 4: Insertion listing-only de {len(new_urls)} nouvelles offres")
+        for url in new_urls:
+            m = re.search(r'annonce=(\d+)', url)
+            job_id = f"CM_{m.group(1)}" if m else ""
+            db.insert_listing_only(url, job_id)
+        logging.info(f"  ✓ {len(new_urls)} offres insérées (visibles dans l'export)")
 
-    logging.info(f"Terminé: {len(jobs)} offres traitées sur {len(urls)} URLs collectées")
+    # ── 5. Scraping des détails (toutes les offres sans description) ───────
+    # Pas de cap artificiel ici : CM a ~900 offres max, requests est rapide.
+    # ~900 offres à 8 workers avec 20 s timeout max = < 5 min en général.
+    backlog_count = db.count_without_details()
+
+    if backlog_count == 0:
+        logging.info("\n✓ Toutes les offres ont déjà leurs détails")
+    else:
+        urls_to_detail = db.get_without_details(limit=backlog_count)
+        logging.info(f"\n🚀 ÉTAPE 5: Scraping détails de {len(urls_to_detail)} offres")
+
+        jobs_scraped = scrape_details_parallel(urls_to_detail, session)
+
+        # Sauvegarder
+        saved = 0
+        for job in jobs_scraped:
+            db.insert_or_update_job(job)
+            saved += 1
+
+        remaining = db.count_without_details()
+        logging.info(f"  ✓ {saved} offres complétées")
+        if remaining:
+            logging.info(f"  📋 {remaining} offres toujours sans détails (next run)")
+
+    # ── Statistiques finales ───────────────────────────────────────────────
+    with sqlite3.connect(config.DB_PATH) as conn:
+        stats = conn.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'Live'    AND is_valid = 1 THEN 1 ELSE 0 END) as live,
+                SUM(CASE WHEN status = 'Expired'                  THEN 1 ELSE 0 END) as expired,
+                SUM(CASE WHEN is_valid = 0                        THEN 1 ELSE 0 END) as invalid
+            FROM jobs
+        """).fetchone()
+
+    elapsed = time.time() - start
+    logging.info("\n" + "=" * 60)
+    logging.info("📊 STATISTIQUES FINALES")
+    logging.info("=" * 60)
+    logging.info(f"  Live (actives) : {stats[1]}")
+    logging.info(f"  Expirées       : {stats[2]}")
+    logging.info(f"  Invalides      : {stats[3]}")
+    logging.info(f"  Durée          : {elapsed:.1f}s")
     logging.info("=" * 60)
 
 
