@@ -82,6 +82,18 @@
     },
     {
       "matches": [
+        "https://jpmc.fa.oraclecloud.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/jp_morgan_blueprint.js",
+        "content/jp-morgan-careers-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "https://*.fa.em2.oraclecloud.com/*",
         "https://*.oraclecloud.com/*"
       ],

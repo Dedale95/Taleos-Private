@@ -50,7 +50,8 @@ const BANK_SCRIPT_MAP = {
   bpce: 'content/bpce-careers-filler.js',
   bnp_paribas: 'content/bnp-careers-filler.js',
   credit_mutuel: 'content/credit-mutuel-careers-filler.js',
-  bpifrance: 'content/bpifrance-careers-filler.js'
+  bpifrance: 'content/bpifrance-careers-filler.js',
+  jp_morgan: 'content/jp-morgan-careers-filler.js'
 };
 
 const PROJECT_ID = 'project-taleos';
@@ -72,6 +73,7 @@ const DELOITTE_BLUEPRINT_SCRIPT = 'scripts/deloitte_blueprint.js';
 const BNP_BLUEPRINT_SCRIPT = 'scripts/bnp_paribas_blueprint.js';
 const CREDIT_MUTUEL_BLUEPRINT_SCRIPT = 'scripts/credit_mutuel_blueprint.js';
 const BPIFRANCE_BLUEPRINT_SCRIPT = 'scripts/bpifrance_blueprint.js';
+const JP_MORGAN_BLUEPRINT_SCRIPT = 'scripts/jp_morgan_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -102,6 +104,9 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'bpifrance') {
     return injectFilesWithBanner([BPIFRANCE_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'jp_morgan') {
+    return injectFilesWithBanner([JP_MORGAN_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
 }
 
@@ -114,6 +119,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'bpce') keys.push('taleos_pending_bpce', 'taleos_bpce_tab_id');
   if (bid === 'bnp_paribas') keys.push('taleos_pending_bnp', 'taleos_bnp_tab_id');
   if (bid === 'credit_mutuel') keys.push('taleos_pending_credit_mutuel', 'taleos_credit_mutuel_tab_id');
+  if (bid === 'jp_morgan') keys.push('taleos_pending_jp_morgan', 'taleos_jp_morgan_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -406,6 +412,8 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_bnp_tab_id',
     'taleos_pending_credit_mutuel',
     'taleos_credit_mutuel_tab_id',
+    'taleos_pending_jp_morgan',
+    'taleos_jp_morgan_tab_id',
     'taleos_pending_deloitte',
     'taleos_pending_offer',
     'taleos_ca_apply_tab_id'
@@ -460,6 +468,17 @@ async function resolveTabAndMetaForStuckReport() {
         bankId: 'credit_mutuel',
         jobId: s.taleos_pending_credit_mutuel.jobId || '',
         offerUrl: s.taleos_pending_credit_mutuel.offerUrl || ''
+      };
+    }
+  }
+  if (s.taleos_pending_jp_morgan && s.taleos_jp_morgan_tab_id) {
+    const tab = await chrome.tabs.get(s.taleos_jp_morgan_tab_id).catch(() => null);
+    if (tab?.id) {
+      return {
+        tabId: tab.id,
+        bankId: 'jp_morgan',
+        jobId: s.taleos_pending_jp_morgan.jobId || '',
+        offerUrl: s.taleos_pending_jp_morgan.offerUrl || ''
       };
     }
   }
@@ -674,7 +693,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     clearApplyStuckWatchdog();
     return;
   }
-  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp'];
+  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan'];
   for (const k of keys) {
     const ch = changes[k];
     if (ch && (ch.newValue === undefined || ch.newValue === null)) {
@@ -780,11 +799,13 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       'taleos_bpce_tab_id',
       'taleos_bnp_tab_id',
       'taleos_credit_mutuel_tab_id',
+      'taleos_jp_morgan_tab_id',
       'taleos_ca_apply_tab_id',
       'taleos_pending_sg',
       'taleos_pending_bpce',
       'taleos_pending_bnp',
       'taleos_pending_credit_mutuel',
+      'taleos_pending_jp_morgan',
       'taleos_pending_deloitte',
       'taleos_pending_offer',
       'taleos_ca_candidature_pending',
@@ -807,6 +828,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (state.taleos_credit_mutuel_tab_id === tabId || state.taleos_pending_credit_mutuel?.tabId === tabId) {
       keysToRemove.add('taleos_pending_credit_mutuel');
       keysToRemove.add('taleos_credit_mutuel_tab_id');
+    }
+    if (state.taleos_jp_morgan_tab_id === tabId || state.taleos_pending_jp_morgan?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_jp_morgan');
+      keysToRemove.add('taleos_jp_morgan_tab_id');
     }
     if (state.taleos_ca_apply_tab_id === tabId || state.taleos_ca_candidature_pending?.tabId === tabId) {
       keysToRemove.add('taleos_pending_offer');
@@ -2024,6 +2049,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'credit_agricole' || url.includes('groupecreditagricole.jobs')) return 'ca';
   if (bid === 'credit_mutuel' || url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
   if (bid === 'bpifrance' || url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
+  if (bid === 'jp_morgan' || bid.includes('jp morgan') || bid.includes('jpmorgan') || url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
   if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
@@ -2171,7 +2197,10 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   }
 
   const routeAs = computeLegacyRouteAs(bankId, offerUrl);
-  const scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, bankId) ? bankId : 'credit_agricole';
+  const normalizedBankKey = normalizeSite(bankId, offerUrl);
+  const scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, normalizedBankKey)
+    ? normalizedBankKey
+    : (Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, bankId) ? bankId : 'credit_agricole');
   const scriptPath = BANK_SCRIPT_MAP[scriptKey] || BANK_SCRIPT_MAP.credit_agricole;
   const pilotExec = buildLocalPilotExecution(scriptKey, scriptPath);
   await persistLastPilot(pilotExec, { bankId, jobId, jobTitle, routeAs, offerUrl, scriptKey });
@@ -2452,6 +2481,36 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     chrome.tabs.onUpdated.addListener(listener);
     setTimeout(() => chrome.tabs.onUpdated.removeListener(listener), 180000);
     setTimeout(() => { injectBpifrance().catch(() => {}); }, 2500);
+    await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'jp_morgan') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    await chrome.storage.local.set({
+      taleos_pending_jp_morgan: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'J.P. Morgan', __offerUrl: offerUrl },
+        offerUrl,
+        jobId,
+        jobTitle,
+        companyName: companyName || 'J.P. Morgan',
+        tabId: tab.id,
+        timestamp: Date.now()
+      },
+      taleos_jp_morgan_tab_id: tab.id
+    });
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
@@ -2753,7 +2812,7 @@ async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
   const normalizedBankId = String(bankId || '').toLowerCase().trim();
-  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance'].includes(normalizedBankId);
+  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
@@ -3352,6 +3411,7 @@ function normalizeSite(site, offerUrl) {
   if (raw.includes('credit') || raw.includes('agricole')) return 'credit_agricole';
   if (raw.includes('mutuel')) return 'credit_mutuel';
   if (raw.includes('bpifrance') || raw.includes('bpi')) return 'bpifrance';
+  if (raw.includes('jp morgan') || raw.includes('jpmorgan') || raw.includes('jp_morgan')) return 'jp_morgan';
   if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
   if (raw.includes('bpce')) return 'bpce';
   if (raw.includes('deloitte')) return 'deloitte';
@@ -3359,6 +3419,7 @@ function normalizeSite(site, offerUrl) {
   if (url.includes('groupecreditagricole.jobs')) return 'credit_agricole';
   if (url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
   if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
+  if (url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';
