@@ -140,6 +140,15 @@ CITY_TO_COUNTRY = {
     'beijing': 'Chine',
     'séoul': 'Corée du Sud',
     'seoul': 'Corée du Sud',
+    'tel aviv': 'Israël',
+    'riyadh': 'Arabie Saoudite',
+    'doha': 'Qatar',
+    'nassau': 'Bahamas',
+    'panama city': 'Panama',
+    'panama': 'Panama',
+    'kuwait city': 'Koweït',
+    'kuwait': 'Koweït',
+    'lima': 'Pérou',
     'kuala lumpur': 'Malaisie',
     'bangkok': 'Thaïlande',
     'hanoï': 'Vietnam',
@@ -277,6 +286,8 @@ def normalize_country(country_raw):
     # Cas particuliers avant découpe sur virgule
     # Ex: \"Korea, Republic Of\" → Corée du Sud
     if 'korea' in country_clean:
+        return 'Corée du Sud'
+    if country_clean == 'republic of':
         return 'Corée du Sud'
     # Villes qui ne sont pas des pays (ex: Grandcamp Maisy) → France
     if country_clean == 'grandcamp maisy':
