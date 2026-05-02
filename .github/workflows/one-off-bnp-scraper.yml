@@ -34,10 +34,26 @@ jobs:
           playwright install-deps chromium
           playwright install-deps firefox
 
+      # Restaurer la DB du run précédent (delta scraping — backlog de détails)
+      - name: Restaurer le cache DB BNP
+        uses: actions/cache/restore@v4
+        with:
+          path: PYTHON/bnp_paribas_jobs.db
+          key: bnp-db-${{ github.run_id }}
+          restore-keys: |
+            bnp-db-
+
       - name: Scraper BNP Paribas uniquement
         run: cd PYTHON && python bnp_paribas_scraper.py
         env:
           PYTHONUNBUFFERED: 1
+
+      # Sauvegarder la DB mise à jour pour le prochain run
+      - name: Sauvegarder le cache DB BNP
+        uses: actions/cache/save@v4
+        with:
+          path: PYTHON/bnp_paribas_jobs.db
+          key: bnp-db-${{ github.run_id }}
 
       - name: Fusion BNP dans le JSON existant
         run: cd PYTHON && python merge_bnp_into_json.py

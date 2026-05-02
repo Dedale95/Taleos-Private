@@ -122,9 +122,29 @@ jobs:
           playwright install-deps chromium
           playwright install-deps firefox
 
+      # ── Cache DB entre runs (delta scraping BNP) ──────────────────────────
+      # Seul BNP a un backlog de détails qui se résorbe sur plusieurs runs.
+      # Le cache persiste la DB SQLite d'un run au suivant pour éviter de
+      # re-scraper les mêmes 600 offres indéfiniment.
+      - name: Restaurer le cache DB (BNP uniquement)
+        if: matrix.key == 'bnp_paribas'
+        uses: actions/cache/restore@v4
+        with:
+          path: PYTHON/${{ matrix.db_file }}
+          key: bnp-db-${{ github.run_id }}
+          restore-keys: |
+            bnp-db-
+
       - name: Exécuter le scraper
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
         run: python "PYTHON/${{ matrix.script }}"
+
+      - name: Sauvegarder le cache DB (BNP uniquement)
+        if: matrix.key == 'bnp_paribas'
+        uses: actions/cache/save@v4
+        with:
+          path: PYTHON/${{ matrix.db_file }}
+          key: bnp-db-${{ github.run_id }}
 
       - name: Vérifier la base générée
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
