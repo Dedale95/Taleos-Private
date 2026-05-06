@@ -61,7 +61,7 @@
       emailSel: '#username, input[name="username"]',
       passwordSel: '#password, input[name="password"]',
       submitSel: '#login, button[type="submit"][name="login"], form#submitForm button[type="submit"]',
-      cookieSel: null,
+      cookieSel: '#cookies-reject-all-button, button[data-component="secondary-button"][id="cookies-reject-all-button"]',
       successCheck: (url, content) => {
         const html = (document.body?.innerHTML || '').toLowerCase();
         return !/\/fr_fr\/parcours\/login\b/i.test(url) ||
@@ -71,7 +71,9 @@
       failureCheck: (url, content) => {
         const errorBox = document.querySelector('#liveLoginErrorsContainer');
         const errorText = (errorBox?.textContent || '').trim();
-        return !!errorText || /incorrect|invalide|erreur|invalid|failed/i.test(content);
+        return !!errorText ||
+          /il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité\./i.test(content) ||
+          /incorrect|invalide|erreur|invalid|failed/i.test(content);
       }
     }
   };
@@ -148,7 +150,10 @@
       if (bankId === 'axa') {
         const errorBox = document.querySelector('#liveLoginErrorsContainer');
         const errorText = (errorBox?.textContent || '').trim();
-        return { success: false, message: errorText || 'Identifiants AXA incorrects' };
+        return {
+          success: false,
+          message: errorText || "Il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité."
+        };
       }
       return { success: false, message: 'Email ou mot de passe incorrect.' };
     }
