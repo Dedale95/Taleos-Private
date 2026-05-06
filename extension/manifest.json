@@ -35,6 +35,7 @@
     "https://recrutement.creditmutuel.fr/*",
     "https://talents.bpifrance.fr/*",
     "https://bpi.tzportal.io/*",
+    "https://candidature-recrutement.axa.fr/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",

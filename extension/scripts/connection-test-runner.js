@@ -1,6 +1,6 @@
 /**
  * Taleos - Script de test de connexion bancaire (injecté dans l'onglet)
- * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte, Bpifrance.
+ * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte, Bpifrance, AXA.
  * JP Morgan est géré côté background car aucune authentification par mot de passe n'est requise ici.
  */
 (function() {
@@ -55,6 +55,24 @@
       cookieSel: null,
       successCheck: (url, content) => /\/fr\/myaccount\b|se déconnecter|mon profil/i.test(url + content),
       failureCheck: (url, content) => /mot de passe incorrect|identifiants incorrects|se connecter/i.test(content)
+    },
+    axa: {
+      loginUrl: 'https://candidature-recrutement.axa.fr/fr_FR/parcours/Login',
+      emailSel: '#username, input[name="username"]',
+      passwordSel: '#password, input[name="password"]',
+      submitSel: '#login, button[type="submit"][name="login"], form#submitForm button[type="submit"]',
+      cookieSel: null,
+      successCheck: (url, content) => {
+        const html = (document.body?.innerHTML || '').toLowerCase();
+        return !/\/fr_fr\/parcours\/login\b/i.test(url) ||
+          /déconnexion|logout|mon profil|mes candidatures/i.test(content) ||
+          /candidate-menu|profile|myaccount|logout/i.test(html);
+      },
+      failureCheck: (url, content) => {
+        const errorBox = document.querySelector('#liveLoginErrorsContainer');
+        const errorText = (errorBox?.textContent || '').trim();
+        return !!errorText || /incorrect|invalide|erreur|invalid|failed/i.test(content);
+      }
     }
   };
 
@@ -126,6 +144,11 @@
       }
       if (bankId === 'bpifrance') {
         return { success: false, message: 'Identifiants Bpifrance incorrects' };
+      }
+      if (bankId === 'axa') {
+        const errorBox = document.querySelector('#liveLoginErrorsContainer');
+        const errorText = (errorBox?.textContent || '').trim();
+        return { success: false, message: errorText || 'Identifiants AXA incorrects' };
       }
       return { success: false, message: 'Email ou mot de passe incorrect.' };
     }
