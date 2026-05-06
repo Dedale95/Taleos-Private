@@ -1937,7 +1937,7 @@ async function runTestConnection(msg) {
     return { success: true, message: 'Email J.P. Morgan enregistré. Le code OTP sera demandé pendant la candidature.' };
   }
 
-  const loginUrl = CONNECTION_TEST_URLS[bankId];
+  const loginUrl = CONNECTION_TEST_URLS[bankId] || String(msg.loginUrl || '').trim();
   if (!loginUrl || !email || !password || !firebaseUserId) {
     const missing = [];
     if (!loginUrl) missing.push('URL de connexion');

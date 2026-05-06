@@ -620,7 +620,8 @@
       email: d.email,
       password: d.password || '',
       firebaseUserId: d.firebaseUserId,
-      bankName: d.bankName
+      bankName: d.bankName,
+      loginUrl: d.loginUrl || ''
     }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
         detail: res || {}
