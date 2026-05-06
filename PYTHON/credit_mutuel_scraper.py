@@ -60,12 +60,13 @@ LISTING_URL = f"{BASE_URL}/fr/nos_offres.html"
 # ================= Config =================
 class Config:
     # Listing Playwright
-    PAGE_TIMEOUT        = 60000   # 60 s pour la navigation initiale (JSF lent)
-    NETWORK_IDLE_TIMEOUT = 20000  # attente networkidle après chaque clic "plus"
-    WAIT_AFTER_NAV      = 3.0     # secondes après goto() pour que le JS JSF s'initialise
-    WAIT_AFTER_CLICK    = 2.0     # secondes de sécurité après chaque clic
-    MAX_LOAD_MORE_ROUNDS = 150    # max de clics "Plus de résultats"
-    MAX_STAGNANT_ROUNDS  = 5      # arrêt si N rounds consécutifs sans nouvelles URLs
+    PAGE_TIMEOUT        = 60000   # 60 s pour la navigation initiale
+    NETWORK_IDLE_TIMEOUT = 20000  # (conservé pour compatibilité, non utilisé dans la boucle)
+    WAIT_AFTER_NAV      = 4.0     # secondes après goto() pour que le JS s'initialise
+    WAIT_AFTER_CLICK    = 5.0     # secondes de sécurité après clic (fallback ultime)
+    WAIT_NEW_LINKS      = 25000   # ms max pour détecter de nouveaux liens après clic
+    MAX_LOAD_MORE_ROUNDS = 200    # max de clics "Plus de résultats"
+    MAX_STAGNANT_ROUNDS  = 3      # arrêt si N rounds consécutifs sans nouvelles URLs
     HEADLESS            = True
 
     # Détails requests
@@ -436,9 +437,21 @@ async def collect_all_job_ids() -> Set[str]:
             await asyncio.sleep(config.WAIT_AFTER_NAV)
             await _clear_overlays(page)
 
-            # Nombre attendu d'offres (affiché sur la page)
-            body_text = await page.text_content("body")
-            target_count = extract_expected_offer_count(body_text)
+            # Nombre attendu d'offres : d'abord via le champ caché Data_NbOffresChargees
+            # (plus fiable que le texte visible), sinon fallback texte.
+            target_count = await page.evaluate("""
+                () => {
+                    const el = document.querySelector('input[name="Data_NbOffresChargees"]');
+                    if (el) {
+                        const n = parseInt(el.value, 10);
+                        if (!isNaN(n) && n > 0) return n;
+                    }
+                    return null;
+                }
+            """)
+            if not target_count:
+                body_text = await page.text_content("body")
+                target_count = extract_expected_offer_count(body_text)
             if target_count:
                 logging.info(f"  Cible annoncée par le site: {target_count} offres")
             else:
@@ -494,18 +507,18 @@ async def collect_all_job_ids() -> Set[str]:
                         logging.info("  Bouton 'Plus de résultats' absent → listing terminé")
                     break
 
-                # Attente AJAX/networkidle après clic
+                # ── Attente après clic : on attend que de nouveaux liens apparaissent.
+                # On évite networkidle (le site a des analytics permanentes qui empêchent
+                # networkidle de se stabiliser rapidement en CI headless).
                 try:
-                    await page.wait_for_load_state("networkidle", timeout=config.NETWORK_IDLE_TIMEOUT)
+                    await page.wait_for_function(
+                        f"() => document.querySelectorAll('a[href*=\"offre.html?annonce=\"]').length > {ids_before_click}",
+                        timeout=config.WAIT_NEW_LINKS,
+                    )
                 except Exception:
-                    # Fallback : attendre que le nombre de liens augmente
-                    try:
-                        await page.wait_for_function(
-                            f"() => document.querySelectorAll('a[href*=\"offre.html?annonce=\"]').length > {ids_before_click}",
-                            timeout=10000,
-                        )
-                    except Exception:
-                        await asyncio.sleep(config.WAIT_AFTER_CLICK)
+                    # Le AJAX n'a pas répondu dans le délai : on attend un peu plus
+                    # puis on retente le clic au prochain tour (stagnation détectée).
+                    await asyncio.sleep(config.WAIT_AFTER_CLICK)
 
         except Exception as e:
             logging.error(f"Erreur listing CM: {e}")
