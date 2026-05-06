@@ -58,10 +58,10 @@
     },
     axa: {
       loginUrl: 'https://careers.axa.com/careers-home/auth/1/verify-login-type',
-      emailSel: 'input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]',
-      passwordSel: 'input[type="password"], input[name*="password" i], input[id*="password" i]',
+      emailSel: 'input[formcontrolname="email"], input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]',
+      passwordSel: 'input[formcontrolname="password"], input[type="password"], input[name*="password" i], input[id*="password" i]',
       submitSel: 'button[type="submit"], input[type="submit"], button',
-      cookieSel: null,
+      cookieSel: '#onetrust-reject-all-handler, .onetrust-close-btn-handler.banner-close-button, #onetrust-accept-btn-handler',
       successCheck: (url, content) => {
         const html = (document.body?.innerHTML || '').toLowerCase();
         const hasErrorAlert = !!document.querySelector('[data-component="login-error-alert"], .alert--error, [role="alert"]');
@@ -127,7 +127,7 @@
         const passEl = qs(cfg.passwordSel);
         if (phaseAwareEmailStep()) {
           const emailEl = qs(cfg.emailSel);
-          const submitEmailBtn = findVisibleByText(cfg.submitSel, /submit|continuer|continue|suivant|next/i) || qs(cfg.submitSel);
+          const submitEmailBtn = findVisibleByText(cfg.submitSel, /submit|continuer|continue|suivant|next/i) || qs('button[type="submit"]');
           if (!emailEl || !submitEmailBtn) {
             return { done: false, error: 'Étape email AXA introuvable' };
           }
@@ -224,13 +224,13 @@
       return { done: false, error: 'Bouton Connexion non trouvé' };
     }
     if (bankId === 'axa') {
-      const trustLaterBtn = findVisibleByText('button, a, [role="button"]', /me rappeler plus tard|pas sur cet appareil/i);
-      if (trustLaterBtn) {
-        trustLaterBtn.click();
-        return { done: true, submitted: true, successHint: true };
-      }
+        const trustLaterBtn = findVisibleByText('button, a, [role="button"]', /me rappeler plus tard|pas sur cet appareil/i);
+        if (trustLaterBtn) {
+          trustLaterBtn.click();
+          return { done: true, submitted: true, successHint: true };
+        }
       if (phase === 1) {
-        const emailEl = document.querySelector('input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]');
+        const emailEl = document.querySelector('input[formcontrolname="email"], input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]');
         if (emailEl && !document.querySelector('input[type="password"]')) {
           return fillAndSubmit(bankId, email, password);
         }
@@ -251,8 +251,8 @@
   };
 
   function phaseAwareEmailStep() {
-    const emailEl = document.querySelector('input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]');
-    const passEl = document.querySelector('input[type="password"]');
+    const emailEl = document.querySelector('input[formcontrolname="email"], input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]');
+    const passEl = document.querySelector('input[formcontrolname="password"], input[type="password"]');
     return !!emailEl && !passEl;
   }
 
