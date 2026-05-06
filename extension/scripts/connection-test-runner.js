@@ -64,13 +64,19 @@
       cookieSel: '#cookies-reject-all-button, button[data-component="secondary-button"][id="cookies-reject-all-button"]',
       successCheck: (url, content) => {
         const html = (document.body?.innerHTML || '').toLowerCase();
-        return !/\/fr_fr\/parcours\/login\b/i.test(url) ||
+        const hasErrorAlert = !!document.querySelector('[data-component="login-error-alert"], #liveLoginErrorsContainer .alert--error');
+        const stillOnLogin = /\/fr_fr\/parcours\/login\b/i.test(url);
+        const hasLoginForm = !!document.querySelector('#submitForm, #username, #password, #login');
+        return !hasErrorAlert && (
           /déconnexion|logout|mon profil|mes candidatures/i.test(content) ||
-          /candidate-menu|profile|myaccount|logout/i.test(html);
+          /candidate-menu|myaccount|logout/i.test(html) ||
+          (!stillOnLogin && !hasLoginForm)
+        );
       },
       failureCheck: (url, content) => {
+        const errorAlert = document.querySelector('[data-component="login-error-alert"], #liveLoginErrorsContainer .alert--error');
         const errorBox = document.querySelector('#liveLoginErrorsContainer');
-        const errorText = (errorBox?.textContent || '').trim();
+        const errorText = ((errorAlert?.textContent || '') + ' ' + (errorBox?.textContent || '')).trim();
         return !!errorText ||
           /il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité\./i.test(content) ||
           /incorrect|invalide|erreur|invalid|failed/i.test(content);
@@ -131,9 +137,6 @@
     const url = (window.location?.href || '').toLowerCase();
     const content = (document.body?.innerText || document.body?.innerHTML || '').toLowerCase();
 
-    if (cfg.successCheck(url, content)) {
-      return { success: true, message: 'Connexion réussie' };
-    }
     if (cfg.failureCheck(url, content)) {
       if (bankId === 'bnp_paribas' && /il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité\./i.test(document.body?.innerText || '')) {
         return { success: false, message: "Il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité." };
@@ -156,6 +159,9 @@
         };
       }
       return { success: false, message: 'Email ou mot de passe incorrect.' };
+    }
+    if (cfg.successCheck(url, content)) {
+      return { success: true, message: 'Connexion réussie' };
     }
 
     return null;
