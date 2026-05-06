@@ -36,6 +36,7 @@
     "https://talents.bpifrance.fr/*",
     "https://bpi.tzportal.io/*",
     "https://candidature-recrutement.axa.fr/*",
+    "https://careers.axa.com/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",

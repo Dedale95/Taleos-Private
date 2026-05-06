@@ -57,32 +57,41 @@
       failureCheck: (url, content) => /mot de passe incorrect|identifiants incorrects|se connecter/i.test(content)
     },
     axa: {
-      loginUrl: 'https://candidature-recrutement.axa.fr/fr_FR/parcours/Login',
-      emailSel: '#username, input[name="username"]',
-      passwordSel: '#password, input[name="password"]',
-      submitSel: '#login, button[type="submit"][name="login"], form#submitForm button[type="submit"]',
-      cookieSel: '#cookies-reject-all-button, button[data-component="secondary-button"][id="cookies-reject-all-button"]',
+      loginUrl: 'https://careers.axa.com/careers-home/auth/1/verify-login-type',
+      emailSel: 'input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]',
+      passwordSel: 'input[type="password"], input[name*="password" i], input[id*="password" i]',
+      submitSel: 'button[type="submit"], input[type="submit"], button',
+      cookieSel: null,
       successCheck: (url, content) => {
         const html = (document.body?.innerHTML || '').toLowerCase();
-        const hasErrorAlert = !!document.querySelector('[data-component="login-error-alert"], #liveLoginErrorsContainer .alert--error');
-        const stillOnLogin = /\/fr_fr\/parcours\/login\b/i.test(url);
-        const hasLoginForm = !!document.querySelector('#submitForm, #username, #password, #login');
+        const hasErrorAlert = !!document.querySelector('[data-component="login-error-alert"], .alert--error, [role="alert"]');
+        const trustDeviceText = /se connecter plus rapidement sur cet appareil/i.test(document.body?.innerText || '');
+        const hasLoginForm = !!document.querySelector('input[type="password"], input[type="email"], input[name*="email" i], input[name*="username" i]');
         return !hasErrorAlert && (
-          /déconnexion|logout|mon profil|mes candidatures/i.test(content) ||
-          /candidate-menu|myaccount|logout/i.test(html) ||
-          (!stillOnLogin && !hasLoginForm)
+          trustDeviceText ||
+          /logout|déconnexion|my applications|candidate home|candidate profile|job alerts|account settings/i.test(content) ||
+          /logout|candidate-home|myprofile|my-applications|account-settings/i.test(html) ||
+          (!/verify-login-type|login/i.test(url) && !hasLoginForm)
         );
       },
       failureCheck: (url, content) => {
-        const errorAlert = document.querySelector('[data-component="login-error-alert"], #liveLoginErrorsContainer .alert--error');
-        const errorBox = document.querySelector('#liveLoginErrorsContainer');
-        const errorText = ((errorAlert?.textContent || '') + ' ' + (errorBox?.textContent || '')).trim();
+        const errorAlert = document.querySelector('[data-component="login-error-alert"], .alert--error, [role="alert"]');
+        const errorText = (errorAlert?.textContent || '').trim();
         return !!errorText ||
-          /il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité\./i.test(content) ||
+          /nom d'utilisateur ou mot de passe incorrect/i.test(content) ||
           /incorrect|invalide|erreur|invalid|failed/i.test(content);
       }
     }
   };
+
+  function findVisibleByText(selectors, regex) {
+    const nodes = Array.from(document.querySelectorAll(selectors));
+    return nodes.find((el) => {
+      const text = String(el.textContent || el.value || '').trim();
+      const visible = !!(el.offsetParent !== null || el.getClientRects?.().length);
+      return visible && regex.test(text);
+    }) || null;
+  }
 
   function fillAndSubmit(bankId, email, password) {
     const cfg = CONFIG[bankId];
@@ -102,10 +111,46 @@
 
     try {
       if (cfg.cookieSel) {
-        const cookieBtn = document.querySelector(cfg.cookieSel);
+        const cookieBtn = qs(cfg.cookieSel);
         if (cookieBtn && cookieBtn.offsetParent !== null) {
           cookieBtn.click();
         }
+      }
+
+      if (bankId === 'axa') {
+        const trustLaterBtn = findVisibleByText('button, a, [role="button"]', /me rappeler plus tard|pas sur cet appareil/i);
+        if (trustLaterBtn) {
+          trustLaterBtn.click();
+          return { done: true, submitted: true, successHint: true };
+        }
+
+        const passEl = qs(cfg.passwordSel);
+        if (phaseAwareEmailStep()) {
+          const emailEl = qs(cfg.emailSel);
+          const submitEmailBtn = findVisibleByText(cfg.submitSel, /submit|continuer|continue|suivant|next/i) || qs(cfg.submitSel);
+          if (!emailEl || !submitEmailBtn) {
+            return { done: false, error: 'Étape email AXA introuvable' };
+          }
+          emailEl.value = email;
+          emailEl.dispatchEvent(new Event('input', { bubbles: true }));
+          emailEl.dispatchEvent(new Event('change', { bubbles: true }));
+          submitEmailBtn.click();
+          return { done: true, submitted: true, needPhase2: true };
+        }
+
+        if (passEl) {
+          const submitPasswordBtn = findVisibleByText(cfg.submitSel, /se connecter|sign in|log in|connexion/i) || qs(cfg.submitSel);
+          if (!submitPasswordBtn) {
+            return { done: false, error: 'Bouton mot de passe AXA introuvable' };
+          }
+          passEl.value = password;
+          passEl.dispatchEvent(new Event('input', { bubbles: true }));
+          passEl.dispatchEvent(new Event('change', { bubbles: true }));
+          submitPasswordBtn.click();
+          return { done: true, submitted: true };
+        }
+
+        return { done: false, error: 'Formulaire AXA introuvable' };
       }
 
       const emailEl = qs(cfg.emailSel);
@@ -151,11 +196,11 @@
         return { success: false, message: 'Identifiants Bpifrance incorrects' };
       }
       if (bankId === 'axa') {
-        const errorBox = document.querySelector('#liveLoginErrorsContainer');
+        const errorBox = document.querySelector('[data-component="login-error-alert"], .alert--error, [role="alert"]');
         const errorText = (errorBox?.textContent || '').trim();
         return {
           success: false,
-          message: errorText || "Il se peut que le nom d'utilisateur ou le mot de passe soit incorrect, ou que l'accès soit limité."
+          message: errorText || "Nom d'utilisateur ou mot de passe incorrect"
         };
       }
       return { success: false, message: 'Email ou mot de passe incorrect.' };
@@ -178,6 +223,23 @@
       }
       return { done: false, error: 'Bouton Connexion non trouvé' };
     }
+    if (bankId === 'axa') {
+      const trustLaterBtn = findVisibleByText('button, a, [role="button"]', /me rappeler plus tard|pas sur cet appareil/i);
+      if (trustLaterBtn) {
+        trustLaterBtn.click();
+        return { done: true, submitted: true, successHint: true };
+      }
+      if (phase === 1) {
+        const emailEl = document.querySelector('input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]');
+        if (emailEl && !document.querySelector('input[type="password"]')) {
+          return fillAndSubmit(bankId, email, password);
+        }
+        return { done: true, phase: 1, needPhase2: true };
+      }
+      if (phase === 2) {
+        return fillAndSubmit(bankId, email, password);
+      }
+    }
     if (!bankId || !email || !password) {
       const missing = [];
       if (!bankId) missing.push('bankId');
@@ -187,6 +249,12 @@
     }
     return fillAndSubmit(bankId, email, password);
   };
+
+  function phaseAwareEmailStep() {
+    const emailEl = document.querySelector('input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="username" i], input[id*="username" i]');
+    const passEl = document.querySelector('input[type="password"]');
+    return !!emailEl && !passEl;
+  }
 
   window.__taleosConnectionTestCheck = function() {
     const params = window.__taleosConnectionTestParams || {};

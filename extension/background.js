@@ -1600,7 +1600,7 @@ const CONNECTION_TEST_URLS = {
   societe_generale: 'https://socgen.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=fr-FR&redirectionURI=https%3A%2F%2Fsocgen.taleo.net%2Fcareersection%2Fsgcareers%2Fprofile.ftl%3Flang%3Dfr-FR%26src%3DCWS-1%26pcid%3Dmjlsx8hz6i4vn92z&TARGET=https%3A%2F%2Fsocgen.taleo.net%2Fcareersection%2Fsgcareers%2Fprofile.ftl%3Flang%3Dfr-FR%26src%3DCWS-1%26pcid%3Dmjlsx8hz6i4vn92z',
   deloitte: 'https://fina.wd103.myworkdayjobs.com/fr-FR/DeloitteRecrute',
   bpifrance: 'https://bpi.tzportal.io//fr/login',
-  axa: 'https://candidature-recrutement.axa.fr/fr_FR/parcours/Login'
+  axa: 'https://careers.axa.com/careers-home/auth/1/verify-login-type'
 };
 
 async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, email, passwordEncoded) {
@@ -2021,7 +2021,28 @@ async function runTestConnection(msg) {
       }
     }
 
-    const fillRes = await runFill(bankId === 'deloitte' ? 2 : 0);
+    if (bankId === 'axa') {
+      const r1 = await runFill(1);
+      if (r1?.[0]?.result?.needPhase2) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['scripts/connection-test-runner.js']
+          });
+        } catch (_) {}
+      }
+      const r2 = await runFill(2);
+      if (r2?.[0]?.result?.error && !r2?.[0]?.result?.submitted) {
+        await chrome.tabs.remove(tabId).catch(() => {});
+        chrome.storage.local.remove('taleos_connection_test');
+        await restoreTaleosTabIfNeeded();
+        return { success: false, message: r2[0].result.error };
+      }
+      await new Promise(r => setTimeout(r, 7000));
+    }
+
+    const fillRes = bankId === 'axa' ? null : await runFill(bankId === 'deloitte' ? 2 : 0);
     if (fillRes?.[0]?.result?.error && !fillRes[0].result?.submitted) {
       await chrome.tabs.remove(tabId).catch(() => {});
       chrome.storage.local.remove('taleos_connection_test');
@@ -2029,7 +2050,9 @@ async function runTestConnection(msg) {
       return { success: false, message: fillRes[0].result.error };
     }
 
-    await new Promise(r => setTimeout(r, 8000));
+    if (bankId !== 'axa') {
+      await new Promise(r => setTimeout(r, 8000));
+    }
 
     try {
       await chrome.scripting.executeScript({
