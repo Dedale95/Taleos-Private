@@ -1,17 +1,30 @@
 {
-  "generated_at": "2026-05-06T08:16:00.663747+00:00",
-  "total_jobs": 20500,
+  "generated_at": "2026-05-07T08:29:49.709192+00:00",
+  "total_jobs": 20545,
   "counts_by_group": {
-    "J.P. Morgan": 7546,
-    "Groupe BNP Paribas": 4718,
-    "Groupe BPCE": 2437,
-    "Groupe Crédit Agricole": 1926,
-    "Groupe Société Générale": 1576,
-    "Goldman Sachs": 1452,
-    "Deloitte": 401,
-    "Bpifrance": 217,
-    "ODDO BHF": 211,
+    "J.P. Morgan": 7545,
+    "Groupe BNP Paribas": 4748,
+    "Groupe BPCE": 2427,
+    "Groupe Crédit Agricole": 1937,
+    "Groupe Société Générale": 1610,
+    "Goldman Sachs": 1445,
+    "Deloitte": 398,
+    "ODDO BHF": 212,
+    "Bpifrance": 207,
     "Groupe Crédit Mutuel": 15,
     "Non spécifié": 1
+  },
+  "freshness_by_group": {
+    "Bpifrance": "2026-05-07 07:48:22",
+    "Deloitte": "2026-05-07 07:42:43",
+    "Goldman Sachs": "2026-05-07 07:55:48",
+    "Groupe BNP Paribas": "2026-05-07 08:02:42",
+    "Groupe BPCE": "2026-05-07 07:45:14",
+    "Groupe Crédit Agricole": "2026-05-07 07:45:15",
+    "Groupe Crédit Mutuel": "2026-05-07 07:52:01",
+    "Groupe Société Générale": "2026-05-07 07:54:01",
+    "J.P. Morgan": "2026-05-07 07:55:04",
+    "Non spécifié": "2026-05-01 07:31:17",
+    "ODDO BHF": "2026-05-07 07:56:50"
   }
 }
