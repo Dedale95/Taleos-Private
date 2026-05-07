@@ -37,6 +37,7 @@ on:
           - oddo_bhf
           - jp_morgan
           - goldman_sachs
+          - axa
 
 jobs:
   scrape:
@@ -98,6 +99,11 @@ jobs:
             script: goldman_sachs_scraper.py
             db_file: goldman_sachs_jobs.db
             timeout_minutes: 30
+          - name: AXA
+            key: axa
+            script: axa_scraper.py
+            db_file: axa_jobs.db
+            timeout_minutes: 15
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
@@ -122,22 +128,29 @@ jobs:
           playwright install-deps chromium
           playwright install-deps firefox
 
-      # ── Persistance DB inter-runs (delta scraping) ───────────────────────────
-      # Restaure la base SQLite du run précédent afin que le scraper ne scrape
-      # que les NOUVELLES offres (delta) plutôt que la totalité (~3 000 offres/jour).
-      # Sans cache : premier run complet (~90 min pour BNP) ; avec cache : ~5 min/jour.
-      - name: Restaurer la base SQLite (cache inter-runs)
-        id: cache-db-restore
+      # ── Cache DB entre runs (delta scraping BNP) ──────────────────────────
+      # Seul BNP a un backlog de détails qui se résorbe sur plusieurs runs.
+      # Le cache persiste la DB SQLite d'un run au suivant pour éviter de
+      # re-scraper les mêmes 600 offres indéfiniment.
+      - name: Restaurer le cache DB (BNP uniquement)
+        if: matrix.key == 'bnp_paribas'
         uses: actions/cache/restore@v4
         with:
           path: PYTHON/${{ matrix.db_file }}
-          key: scraper-db-${{ matrix.key }}-${{ github.run_id }}
+          key: bnp-db-${{ github.run_id }}
           restore-keys: |
-            scraper-db-${{ matrix.key }}-
+            bnp-db-
 
       - name: Exécuter le scraper
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
         run: python "PYTHON/${{ matrix.script }}"
+
+      - name: Sauvegarder le cache DB (BNP uniquement)
+        if: matrix.key == 'bnp_paribas'
+        uses: actions/cache/save@v4
+        with:
+          path: PYTHON/${{ matrix.db_file }}
+          key: bnp-db-${{ github.run_id }}
 
       - name: Vérifier la base générée
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
@@ -151,16 +164,6 @@ jobs:
           name: db-${{ matrix.key }}
           path: PYTHON/${{ matrix.db_file }}
           if-no-files-found: error
-
-      # Sauvegarde la base (même si le scraper a planté à mi-chemin) pour que
-      # le run suivant puisse reprendre là où il s'est arrêté.
-      - name: Sauvegarder la base SQLite en cache
-        if: always()
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: PYTHON/${{ matrix.db_file }}
-          key: scraper-db-${{ matrix.key }}-${{ github.run_id }}
 
   consolidate:
     name: Consolidation + export
@@ -196,6 +199,32 @@ jobs:
           pattern: db-*
           merge-multiple: true
           path: PYTHON
+
+      - name: Diagnostiquer les bases téléchargées
+        run: |
+          echo "📁 Fichiers .db présents après download-artifact"
+          find PYTHON -maxdepth 2 -name "*_jobs.db" -print -exec ls -lh {} \;
+          echo
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          base = Path('PYTHON')
+          dbs = sorted(base.glob('*_jobs.db'))
+          for db in dbs:
+              try:
+                  conn = sqlite3.connect(db)
+                  row = conn.execute("""
+                      SELECT
+                        SUM(CASE WHEN status='Live' AND is_valid=1 THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN status='Expired' THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN is_valid=0 THEN 1 ELSE 0 END)
+                      FROM jobs
+                  """).fetchone()
+                  conn.close()
+                  print(f"{db.name}: Live={row[0] or 0} Expired={row[1] or 0} Invalid={row[2] or 0}")
+              except Exception as exc:
+                  print(f"{db.name}: ERREUR {exc}")
+          PY
 
       - name: Consolider (revalidation + merge + export JSON)
         run: |
