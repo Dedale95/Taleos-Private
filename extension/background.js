@@ -2185,10 +2185,11 @@ async function persistLastPilot(exec, meta) {
 }
 
 async function injectAutomationTab(tabId, profile, scriptPath, pilotExec, bankId = '') {
+  const target = bankId === 'axa' ? { tabId, allFrames: true } : { tabId };
   if (pilotExec.useRemote && pilotExec.remoteSource) {
-    await chrome.scripting.executeScript({ target: { tabId }, files: injectFilesWithBanner(['scripts/remote-loader.js']) });
+    await chrome.scripting.executeScript({ target, files: injectFilesWithBanner(['scripts/remote-loader.js']) });
     await chrome.scripting.executeScript({
-      target: { tabId },
+      target,
       func: (payload) => {
         if (window.__taleosInjectRemote) window.__taleosInjectRemote(payload.source, payload.data);
       },
@@ -2196,9 +2197,9 @@ async function injectAutomationTab(tabId, profile, scriptPath, pilotExec, bankId
     });
     return;
   }
-  await chrome.scripting.executeScript({ target: { tabId }, files: injectBankFiles(bankId, [scriptPath]) });
+  await chrome.scripting.executeScript({ target, files: injectBankFiles(bankId, [scriptPath]) });
   await chrome.scripting.executeScript({
-    target: { tabId },
+    target,
     func: (data) => { if (window.__taleosRun) window.__taleosRun(data); },
     args: [profile]
   });

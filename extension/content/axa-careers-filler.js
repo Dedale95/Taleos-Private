@@ -79,13 +79,38 @@
     document.body?.appendChild(banner);
   }
 
+  function getIframeSrc() {
+    return document.querySelector('#icims_content_iframe[src], iframe[src*="in_iframe=1"]')?.src || '';
+  }
+
+  function rejectCookiesIfVisible() {
+    const rejectButton = document.querySelector('#onetrust-reject-all-handler');
+    if (visible(rejectButton)) {
+      log('🍪 AXA : rejet du bandeau cookies');
+      rejectButton.click();
+      return true;
+    }
+    const continueWithoutAccepting = Array.from(document.querySelectorAll('button, input[type="submit"]')).find((el) => {
+      const label = (el.value || textValue(el)).toLowerCase();
+      return /continuer sans accepter|continue without accepting/.test(label);
+    });
+    if (visible(continueWithoutAccepting)) {
+      log('🍪 AXA : poursuite sans accepter les cookies');
+      continueWithoutAccepting.click();
+      return true;
+    }
+    return false;
+  }
+
   function detectPage() {
     const url = window.location.href;
     const host = window.location.hostname;
     const path = window.location.pathname;
+    const iframeSrc = getIframeSrc();
 
     if (host.includes('careers.axa.com') && /\/careers-home\/jobs\/\d+/i.test(path)) return 'public_job';
     if (host.includes('careers-fr-axa.icims.com') && /\/jobs\/\d+\/login$/i.test(path) && !url.includes('loginOnly=1')) return 'wrapper_login';
+    if (host.includes('careers-fr-axa.icims.com') && iframeSrc && !url.includes('in_iframe=1')) return 'apply_wrapper';
     const visiblePassword = Array.from(document.querySelectorAll('input[type="password"], input[name="password"], input[name="passwd"]')).some(visible);
     const visibleUsername = Array.from(document.querySelectorAll('#username, input[name="username"], input[type="email"]')).some(visible);
     if (host.includes('login.icims.eu') && visiblePassword) return 'password_step';
@@ -94,8 +119,8 @@
     if (host.includes('careers-fr-axa.icims.com') && document.querySelector('#enterEmailForm, input#email[name="css_loginName"]')) return 'email_step';
     if (host.includes('careers-fr-axa.icims.com') && document.querySelector('input[type="password"]')) return 'password_step';
     if (document.body && document.body.innerText && document.body.innerText.includes(SUCCESS_TEXT)) return 'success';
-    if (host.includes('careers-fr-axa.icims.com') && (
-      document.querySelector('input[name*="firstname" i], input[id*="firstName" i], input[name*="lastname" i], select[name*="Q383" i], select[name*="Q389" i], input[name*="desiredsalary" i], input[name*="salary" i]')
+    if (host.includes('careers-fr-axa.icims.com') && url.includes('in_iframe=1') && (
+      document.querySelector('#PortalProfileFields.Resume_Button, #PersonProfileFields.FirstName, #PersonProfileFields.RegulatoryCountry, #cp_form_submit_i, select[id^="Q"], select[name*="Q" i], input[name*="salary" i]')
     )) return 'candidate_form';
     return 'unknown';
   }
@@ -175,8 +200,8 @@
   }
 
   async function handleWrapperLogin() {
-    const iframe = document.querySelector('#icims_content_iframe[src]');
-    if (!iframe?.src) {
+    const iframeSrc = getIframeSrc();
+    if (!iframeSrc) {
       const loginOnlyUrl = window.location.href.includes('loginOnly=1')
         ? window.location.href
         : window.location.href.replace(/\/login(?:\?.*)?$/i, (m) => m.includes('?') ? `${m}&loginOnly=1&in_iframe=1` : '/login?loginOnly=1&in_iframe=1');
@@ -186,7 +211,22 @@
     }
     showBanner('AXA → ouverture du vrai formulaire de candidature…');
     log(`🔗 AXA → redirection vers l’iframe iCIMS réelle`);
-    window.location.replace(iframe.src);
+    window.location.replace(iframeSrc);
+  }
+
+  async function handleApplyWrapper() {
+    if (rejectCookiesIfVisible()) {
+      setTimeout(() => runAutomation({}), 900);
+      return;
+    }
+    const iframeSrc = getIframeSrc();
+    if (!iframeSrc) {
+      log('⚠️ AXA : wrapper de candidature détecté mais iframe introuvable');
+      return;
+    }
+    showBanner('AXA → ouverture du formulaire iCIMS…');
+    log('🔗 AXA → redirection vers la frame iCIMS du formulaire / succès');
+    window.location.replace(iframeSrc);
   }
 
   async function handleIdentifierStep(profile) {
@@ -278,24 +318,60 @@
   }
 
   async function handleCandidateForm(profile) {
+    rejectCookiesIfVisible();
     showBanner('AXA → formulaire candidat détecté. Relecture recommandée avant envoi.', 'success');
     log('🚀 AXA → formulaire candidat détecté');
-    log('🧾 AXA → audit détaillé Firebase vs formulaire (pré-mapping minimal)');
+    log('🧾 AXA → audit détaillé Firebase vs formulaire (step 1 AXA)');
 
-    const firstName = document.querySelector('input[name*="firstname" i], input[id*="firstName" i]');
-    const lastName = document.querySelector('input[name*="lastname" i], input[id*="lastName" i]');
-    const email = document.querySelector('input[type="email"], input[name*="email" i]');
-    const phone = document.querySelector('input[type="tel"], input[name*="phone" i]');
+    const resumeButton = document.querySelector('#PortalProfileFields.Resume_Button');
+    const firstName = document.querySelector('#PersonProfileFields.FirstName, input[name*="firstname" i], input[id*="firstName" i]');
+    const lastName = document.querySelector('#PersonProfileFields.LastName, input[name*="lastname" i], input[id*="lastName" i]');
+    const preferredName = document.querySelector('#rcf2010');
+    const email = document.querySelector('#PersonProfileFields.Email, input[type="email"], input[name*="email" i]');
+    const loginEmail = document.querySelector('#PersonProfileFields.Login');
+    const addressCountry = document.querySelector('#618035_PersonProfileFields.AddressCountry');
+    const addressState = document.querySelector('#618035_PersonProfileFields.AddressState');
+    const city = document.querySelector('#618035_PersonProfileFields.AddressCity');
+    const zip = document.querySelector('#618035_PersonProfileFields.AddressZip');
+    const phone = document.querySelector('#634773_PersonProfileFields.PhoneNumber, input[type="tel"], input[name*="phone" i]');
+    const coverLetterLabel = document.querySelector('#15561079_PersonProfileFields.rcf2051');
+    const coverLetterButton = document.querySelector('#15561079_PersonProfileFields.rcf2052_Button');
+    const regulatoryCountry = document.querySelector('#PersonProfileFields.RegulatoryCountry');
+    const source = document.querySelector('#rcf3048');
+    const sourceOther = document.querySelector('#rcf3049');
+    const aiConsent = document.querySelector('#rcf3339');
 
+    if (resumeButton) {
+      const currentResume = document.querySelector('#PortalProfileFields.Resume_FileName')?.value || '(introuvable)';
+      log(`   ℹ️ CV AXA : pièce actuellement visible='${currentResume}'`);
+    } else {
+      log('   ⚠️ CV AXA : bloc CV introuvable');
+    }
     compareAndFillField('Prénom', firstName, profile.firstname || '');
     compareAndFillField('Nom', lastName, profile.lastname || '');
+    compareAndFillField('Nom d’usage', preferredName, profile.lastname || '');
     compareAndFillField('Email', email, profile.email || profile.auth_email || '');
+    compareAndFillField('Confirmation email', loginEmail, profile.email || profile.auth_email || '');
+    if (addressCountry) compareAndFillSelect('Pays', addressCountry, { firebase: 'France', value: 'France', labelIncludes: 'france' });
+    if (addressState) log(`   ℹ️ Département : formulaire='${textValue(addressState.options?.[addressState.selectedIndex]) || '(vide)'}' | Firebase='piloté via code postal' -> Skip`);
+    compareAndFillField('Ville', city, profile.city || profile.ville || '');
+    compareAndFillField('Code postal', zip, profile.postal_code || profile.zip_code || profile.zip || '');
     compareAndFillField('Téléphone', phone, profile['phone-number'] || profile.phone_number || '');
+    if (coverLetterLabel) log(`   ℹ️ Document supplémentaire : type='${coverLetterLabel.value || '(vide)'}'`);
+    if (coverLetterButton) log(`   ℹ️ Lettre de motivation AXA : action visible='${coverLetterButton.textContent?.trim() || coverLetterButton.value || ''}'`);
+    if (regulatoryCountry) compareAndFillSelect('Pays du poste', regulatoryCountry, { firebase: 'France', value: 'France', labelIncludes: 'france' });
+    if (source) compareAndFillSelect('Source de candidature', source, { firebase: 'AXA CAREER SITE', value: '31437', labelIncludes: 'axa career site' });
+    if (sourceOther) compareAndFillSelect('Précision source', sourceOther, { firebase: 'Non applicable', value: '36717', labelIncludes: 'non applicable' });
+    if (aiConsent) compareAndFillSelect('Consentement IA', aiConsent, { firebase: describeConsent(profile).firebase, value: '36716', labelIncludes: 'accepter' });
 
     const finalSubmit = Array.from(document.querySelectorAll('button, input[type="submit"]')).find((el) => {
       const label = (el.value || textValue(el)).toLowerCase();
       return /envoyer|submit|postuler/.test(label);
     });
+    const nextStep = document.querySelector('#cp_form_submit_i');
+    if (nextStep) {
+      log('⏸️ AXA : étape 1 prête. Bouton "Mettre à jour le profil" détecté, arrêt volontaire avant passage à l’étape suivante.');
+    }
     if (finalSubmit) {
       log('⏸️ AXA : bouton de soumission finale détecté, mais la soumission reste manuelle pour validation utilisateur');
     }
@@ -331,6 +407,7 @@
       return;
     }
     if (page === 'wrapper_login') return handleWrapperLogin();
+    if (page === 'apply_wrapper') return handleApplyWrapper();
     if (page === 'identifier_step') return handleIdentifierStep(profile);
     if (page === 'email_step') return handleEmailStep(profile);
     if (page === 'password_step') return handlePasswordStep(profile);

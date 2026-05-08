@@ -43,11 +43,18 @@
       selectorsAny: ['input[type="password"]', 'button[type="submit"]'],
       textPatterns: TEXT.loginPassword
     },
+    apply_wrapper: {
+      label: 'Wrapper iCIMS AXA',
+      hostIncludes: ['careers-fr-axa.icims.com'],
+      pathMatches: [/\/job\?mode=submit_apply/, /\/candidate\?.*mobile=false/],
+      selectorsAny: ['#icims_content_iframe', 'iframe[src*="in_iframe=1"]'],
+      textPatterns: ['politique de confidentialite', 'informations legales']
+    },
     profile: {
       label: 'Profil du candidat',
       hostIncludes: ['careers-fr-axa.icims.com'],
-      pathMatches: [/\/candidate/, /mode=apply/],
-      selectorsAny: ['input[id="PortalProfileFields.Resume_File"]', 'input[id="cp_form_submit_i"]', 'input[id$="PersonProfileFields.PhoneNumber"]'],
+      pathMatches: [/\/candidate/, /mode=apply/, /in_iframe=1/],
+      selectorsAny: ['#PortalProfileFields.Resume_Button', '#PersonProfileFields.FirstName', '#cp_form_submit_i', '#634773_PersonProfileFields.PhoneNumber'],
       textPatterns: TEXT.profile
     },
     questions: {

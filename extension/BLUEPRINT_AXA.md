@@ -2,6 +2,38 @@
 
 Flux confirmé en live sur `careers.axa.com` et `careers-fr-axa.icims.com`, avec candidature réelle soumise sur l'offre `4271`.
 
+## Complément live du 8 mai 2026 sur l'offre `15538`
+
+Inspection refaite en direct sur :
+
+- `https://careers-fr-axa.icims.com/jobs/15538/login`
+
+Séquence observée avec un vrai navigateur scripté :
+
+1. `https://careers-fr-axa.icims.com/jobs/15538/login?loginOnly=1&in_iframe=1`
+2. redirection JS vers `https://login.icims.eu/u/login/identifier?...`
+3. `Continue`
+4. `https://login.icims.eu/u/login/password?...`
+5. `LOG IN`
+6. redirection vers wrapper AXA :
+   - `/job?mode=submit_apply...`
+7. iframe interne réelle :
+   - `/job?mode=submit_apply&in_iframe=1...`
+
+Point clé confirmé :
+
+- après login, AXA ne reste pas toujours sur `/candidate?...`
+- certaines offres ou sessions retombent directement sur le wrapper `/job?mode=submit_apply`
+- ce wrapper doit être traité comme une page intermédiaire et relayer vers `#icims_content_iframe`
+
+Autre point clé confirmé :
+
+- sur cette offre précise, le compte testé est déjà au statut soumis
+- le message métier visible dans l’iframe est :
+  - `Votre candidature a bien été transmise. Merci d'avoir postulé.`
+- avec le complément :
+  - `Votre candidature pour ce poste a été transmise`
+
 ## Pages
 
 - `offer_public`
