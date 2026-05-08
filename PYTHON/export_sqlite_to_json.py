@@ -3,13 +3,16 @@
 Script pour exporter les données SQLite vers JSON
 Utilisé par les fichiers HTML pour charger les données.
 
-IMPORTANT - Distinction Live / Expirées :
-- scraped_jobs.json et scraped_jobs_live.json : UNIQUEMENT offres Live (pour le site Taleos)
-- scraped_jobs_full.json : Live + Expired (pour mes-candidatures / référence)
+IMPORTANT - Fichiers produits :
+- scraped_jobs_live.json (HTML/ + racine) : UNIQUEMENT offres Live (pour le site Taleos)
+  → job_description tronquée à 5 000 caractères pour rester sous la limite GitHub de 100 MB.
+- scraped_jobs_full.json (HTML/) : Live + Expired sans job_description (pour mes-candidatures).
+- scraped_jobs.json : SUPPRIMÉ — était redondant avec scraped_jobs_live.json et dépassait 100 MB.
+
 Le site affiche le nombre d'offres live, pas live+expirées.
 
 Recherche par mots-clés :
-- La colonne job_description contient le TEXTE COMPLET de l'offre (jusqu'à ~25k caractères).
+- La colonne job_description contient le TEXTE de l'offre (tronqué à 5 000 caractères dans l'export).
 - Ce texte est exporté dans le JSON et utilisé UNIQUEMENT pour la recherche par mots-clés
   dans offres.html et filtres.html (filtre "Recherche par mots-clés").
 - Il n'est PAS affiché sur les vignettes / cartes d'offres (titre, lieu, contrat, famille, etc. uniquement).
@@ -30,8 +33,6 @@ from credit_mutuel_company_mapping import normalize_company_name as normalize_cm
 PYTHON_DIR = Path(__file__).parent
 HTML_DIR = PYTHON_DIR.parent / "HTML"
 ROOT_DIR = PYTHON_DIR.parent
-OUTPUT_JSON = HTML_DIR / "scraped_jobs.json"
-
 # Chemins des bases de données SQLite
 CA_DB = PYTHON_DIR / "credit_agricole_jobs.db"
 SG_DB = PYTHON_DIR / "societe_generale_jobs.db"
@@ -488,13 +489,17 @@ def main():
     print("=" * 80)
     print(f"Date : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
-    
+
+    # Limite la longueur des descriptions dans le JSON live pour rester sous la limite
+    # GitHub de 100 MB. 5 000 caractères suffisent pour la recherche par mots-clés.
+    JOB_DESC_MAX_LEN = 5_000
+
     all_jobs = []
-    
+
     # Marques BNP (pour préserver si BNP_DB absent en local)
     BNP_PATTERNS = ['bnp paribas', 'arval', 'bgl bnp', 'bnl', 'teb', 'hello bank',
                     'banque commerciale en france', 'nickel', 'alfred berg']
-    
+
     sources_info = [
         ("Crédit Agricole", CA_DB),
         ("Société Générale", SG_DB),
@@ -567,21 +572,23 @@ def main():
         all_jobs.extend(bnp_jobs_preserved)
     
     if all_jobs:
-        # Sauvegarder en JSON (version complète)
-        write_json(OUTPUT_JSON, all_jobs, pretty=False)
-        write_json(ROOT_DIR / "scraped_jobs.json", all_jobs, pretty=False)
-        
-        print()
-        print(f"✅ Export terminé : {len(all_jobs)} offres Live sauvegardées dans {OUTPUT_JSON.name}")
-        print(f"   (Les offres expirées sont exclues du site - voir scraped_jobs_full.json pour référence)")
-        
-        # Créer une version allégée avec seulement les offres Live (pour GitHub Pages)
-        live_jobs = [job for job in all_jobs if job.get('status') == 'Live']
+        # Tronquer job_description pour rester sous la limite GitHub de 100 MB.
+        # 5 000 caractères par offre suffisent pour la recherche par mots-clés.
+        for job in all_jobs:
+            if job.get('job_description') and len(job['job_description']) > JOB_DESC_MAX_LEN:
+                job['job_description'] = job['job_description'][:JOB_DESC_MAX_LEN]
+
+        # Toutes les offres lues sont déjà Live (live_only=True). On écrit directement
+        # scraped_jobs_live.json. scraped_jobs.json est abandonné (redondant, non utilisé
+        # par le front-end, et faisait dépasser la limite de 100 MB de GitHub).
         OUTPUT_JSON_LIVE = HTML_DIR / "scraped_jobs_live.json"
-        write_json(OUTPUT_JSON_LIVE, live_jobs, pretty=False)
-        write_json(ROOT_DIR / "scraped_jobs_live.json", live_jobs, pretty=False)
-        
-        print(f"✅ Version allégée créée : {len(live_jobs)} offres Live dans {OUTPUT_JSON_LIVE.name}")
+        write_json(OUTPUT_JSON_LIVE, all_jobs, pretty=False)
+        write_json(ROOT_DIR / "scraped_jobs_live.json", all_jobs, pretty=False)
+
+        live_count = len(all_jobs)
+        live_json_size_mb = OUTPUT_JSON_LIVE.stat().st_size / (1024 * 1024) if OUTPUT_JSON_LIVE.exists() else 0
+        print()
+        print(f"✅ Export terminé : {live_count} offres Live dans {OUTPUT_JSON_LIVE.name} ({live_json_size_mb:.1f} MB)")
         
         # Version complète (Live + Expired) pour mes-candidatures / référence
         all_jobs_full = []

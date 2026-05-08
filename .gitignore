@@ -1,6 +1,10 @@
 # Bases de données SQLite
 *.db
 
+# Fichiers JSON générés redondants (scraped_jobs_live.json fait office de référence)
+scraped_jobs.json
+HTML/scraped_jobs.json
+
 # Fichiers CSV générés
 *.csv
 
