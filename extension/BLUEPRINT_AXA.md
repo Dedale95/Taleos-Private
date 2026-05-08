@@ -34,6 +34,28 @@ Autre point clé confirmé :
 - avec le complément :
   - `Votre candidature pour ce poste a été transmise`
 
+## Cas d’échec confirmé sur l’offre `16638`
+
+Testé en live sur :
+
+- `https://careers.axa.com/careers-home/jobs/16638?lang=en-us`
+
+Constat :
+
+- la route iCIMS standard
+  - `https://careers-fr-axa.icims.com/jobs/16638/login`
+- ainsi que
+  - `https://careers-fr-axa.icims.com/jobs/16638/login?loginOnly=1&in_iframe=1`
+
+renvoient un `410` et une redirection vers :
+
+- `https://careers.axa.com/jobs?lang=fr-FR`
+
+Conséquence :
+
+- cette offre n’expose pas, au moment du test, un flux de candidature iCIMS exploitable comme `15538`
+- le filler AXA doit reconnaître ce cas et s’arrêter avec un message clair, sans boucle ni faux positif
+
 ## Pages
 
 - `offer_public`

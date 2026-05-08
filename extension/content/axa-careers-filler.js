@@ -19,6 +19,11 @@
   const BANNER_ID = 'taleos-axa-automation-banner';
   const SUCCESS_TEXT = 'Votre candidature a bien été transmise. Merci d\'avoir postulé.';
   const STEP_GUARD_PREFIX = 'taleos_axa_step_guard:';
+  const APPLY_ROUTE_UNAVAILABLE_TEXTS = [
+    '403 forbidden',
+    '410',
+    'this page no longer exists'
+  ];
 
   function log(message) {
     console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos AXA] ${message}`);
@@ -109,6 +114,7 @@
     const iframeSrc = getIframeSrc();
 
     if (host.includes('careers.axa.com') && /\/careers-home\/jobs\/\d+/i.test(path)) return 'public_job';
+    if (host.includes('careers.axa.com') && /\/jobs$/i.test(path)) return 'jobs_index';
     if (host.includes('careers-fr-axa.icims.com') && /\/jobs\/\d+\/login$/i.test(path) && !url.includes('loginOnly=1')) return 'wrapper_login';
     if (host.includes('careers-fr-axa.icims.com') && iframeSrc && !url.includes('in_iframe=1')) return 'apply_wrapper';
     const visiblePassword = Array.from(document.querySelectorAll('input[type="password"], input[name="password"], input[name="passwd"]')).some(visible);
@@ -119,6 +125,11 @@
     if (host.includes('careers-fr-axa.icims.com') && document.querySelector('#enterEmailForm, input#email[name="css_loginName"]')) return 'email_step';
     if (host.includes('careers-fr-axa.icims.com') && document.querySelector('input[type="password"]')) return 'password_step';
     if (document.body && document.body.innerText && document.body.innerText.includes(SUCCESS_TEXT)) return 'success';
+    const normalizedText = (document.body?.innerText || '').toLowerCase();
+    if (
+      (host.includes('careers.axa.com') || host.includes('careers-fr-axa.icims.com')) &&
+      APPLY_ROUTE_UNAVAILABLE_TEXTS.some((snippet) => normalizedText.includes(snippet))
+    ) return 'apply_unavailable';
     if (host.includes('careers-fr-axa.icims.com') && url.includes('in_iframe=1') && (
       document.querySelector('#PortalProfileFields.Resume_Button, #PersonProfileFields.FirstName, #PersonProfileFields.RegulatoryCountry, #cp_form_submit_i, select[id^="Q"], select[name*="Q" i], input[name*="salary" i]')
     )) return 'candidate_form';
@@ -392,6 +403,11 @@
     }).catch(() => {});
   }
 
+  async function handleApplyUnavailable() {
+    showBanner('AXA → cette offre ne fournit pas de route de candidature exploitable pour le moment.');
+    log('⛔ AXA : route de candidature indisponible ou expirée (403/410/redirect liste jobs)');
+  }
+
   async function runAutomation(profile) {
     const page = detectPage();
     log(`🚀 Démarrage AXA sur ${page} (${window.location.pathname}${window.location.search})`);
@@ -406,6 +422,7 @@
       }
       return;
     }
+    if (page === 'jobs_index' || page === 'apply_unavailable') return handleApplyUnavailable();
     if (page === 'wrapper_login') return handleWrapperLogin();
     if (page === 'apply_wrapper') return handleApplyWrapper();
     if (page === 'identifier_step') return handleIdentifierStep(profile);
