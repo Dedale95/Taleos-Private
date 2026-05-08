@@ -15,14 +15,19 @@ HTML_SUMMARY = HTML_DIR / "scraped_jobs_summary.json"
 
 
 def load_jobs():
-    candidates = []
+    # Priorité absolue aux fichiers locaux fraîchement générés par export_sqlite_to_json.py.
+    # On ne consulte le remote que si aucun fichier local n'existe (ex : exécution hors CI).
     for path in (HTML_LIVE_JSON, LIVE_JSON):
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                candidates.append(data)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list) and data:
+                    return data
+            except Exception:
+                continue
 
+    # Fallback remote (utile en local sans run préalable)
     public_head_sha = None
     try:
         out = subprocess.check_output(
@@ -50,15 +55,12 @@ def load_jobs():
         try:
             with urlopen(url, timeout=60) as r:
                 data = json.load(r)
-            if isinstance(data, list):
-                candidates.append(data)
+            if isinstance(data, list) and data:
+                return data
         except Exception:
             continue
 
-    if not candidates:
-        raise FileNotFoundError("scraped_jobs_live.json introuvable")
-
-    return max(candidates, key=len)
+    raise FileNotFoundError("scraped_jobs_live.json introuvable")
 
 
 def is_axa(name: str) -> bool:
