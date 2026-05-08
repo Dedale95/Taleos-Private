@@ -38,6 +38,7 @@ on:
           - jp_morgan
           - goldman_sachs
           - axa
+          - la_banque_postale
 
 jobs:
   scrape:
@@ -116,6 +117,12 @@ jobs:
             script: axa_scraper.py
             db_file: axa_jobs.db
             timeout_minutes: 15
+            playwright_browser: ""
+          - name: La Banque Postale
+            key: la_banque_postale
+            script: la_banque_postale_scraper.py
+            db_file: la_banque_postale_jobs.db
+            timeout_minutes: 60
             playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

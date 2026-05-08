@@ -44,6 +44,7 @@ ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 JP_MORGAN_DB = PYTHON_DIR / "jp_morgan_jobs.db"
 GOLDMAN_SACHS_DB = PYTHON_DIR / "goldman_sachs_jobs.db"
 AXA_DB           = PYTHON_DIR / "axa_jobs.db"
+LBP_DB           = PYTHON_DIR / "la_banque_postale_jobs.db"
 
 # Slug par source → nom de fichier JSON généré (ajouter ici pour chaque nouvelle banque)
 SOURCE_SLUG_MAP = {
@@ -58,6 +59,7 @@ SOURCE_SLUG_MAP = {
     "JP Morgan Chase":  "jp_morgan",
     "Goldman Sachs":    "goldman_sachs",
     "AXA":              "axa",
+    "La Banque Postale": "la_banque_postale",
 }
 
 
@@ -515,6 +517,7 @@ def main():
         ("JP Morgan Chase",  JP_MORGAN_DB),
         ("Goldman Sachs",    GOLDMAN_SACHS_DB),
         ("AXA",              AXA_DB),
+        ("La Banque Postale", LBP_DB),
     ]
 
     # ── Préservation BNP si la base est absente ────────────────────────────────
