@@ -1445,6 +1445,12 @@
                             <option value="more_than_3_months">Plus de 3 mois</option>
                         </select>
                     </div>
+
+                    <div class="form-group">
+                        <label for="salaryExpectations">Prétentions salariales <span style="color:#888;font-weight:400;font-size:0.85em">(facultatif)</span></label>
+                        <input type="text" id="salaryExpectations" name="salaryExpectations" placeholder="Ex. 70000 EUR brut annuel, 65k€, 4200€ net/mois…">
+                        <small style="display: block; margin-top: 6px; color: #666; font-size: 0.85rem;">Champ libre réutilisé par les formulaires qui demandent vos attentes salariales.</small>
+                    </div>
                 </div>
                 </div>
 
@@ -3010,6 +3016,11 @@
                     availableFromInput.dispatchEvent(new Event('change'));
                 }, 100);
             }
+
+            const salaryExpectationsInput = document.getElementById('salaryExpectations');
+            if (salaryExpectationsInput && profile.salary_expectations) {
+                salaryExpectationsInput.value = profile.salary_expectations;
+            }
         }
 
         // Fonction pour charger les continents sélectionnés
@@ -4011,6 +4022,7 @@
                 contract_type: document.getElementById('contractType').value,
                 available_from: availableFrom, // Format jj/mm/yyyy
                 available_from_raw: availableFromRaw || (availableFromInput ? availableFromInput.value : ''), // Format YYYY-MM-DD pour le stockage
+                salary_expectations: document.getElementById('salaryExpectations')?.value?.trim() || '',
                 continents: selectedContinents, // Array des continents sélectionnés
                 preferred_countries: selectedCountries, // Array des pays sélectionnés
                 regions: selectedRegions, // Array des régions sélectionnées
