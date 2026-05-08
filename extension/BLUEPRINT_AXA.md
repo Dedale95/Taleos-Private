@@ -253,9 +253,10 @@ Champs confirmés :
 - `input#Q181`
   - question :
     - `What are your salary expectations?`
-  - point de vigilance :
-    - aucune donnée Firebase normalisée observée aujourd’hui pour ce champ
-    - nécessite une réponse explicite côté profil Taleos ou une revue manuelle avant le futur clic final automatique
+  - mapping Taleos :
+    - champ libre `salary_expectations`
+  - exemple de valeur :
+    - `70000 EUR brut annuel`
 
 ## Step 3 — Évaluations
 
