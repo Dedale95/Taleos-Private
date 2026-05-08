@@ -2109,7 +2109,7 @@
                 const title = cleanJobTitle(job.job_title || 'Sans titre');
                 const company = job.company_name || 'Entreprise non specifiee';
                 const location = job.location || 'Lieu non specifie';
-                const url = job.job_url || '#';
+                const url = normalizeOfferUrl(job) || '#';
                 return `
                     <div class="section-job-item">
                         <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
@@ -2788,84 +2788,144 @@
         /**
          * Charge les données depuis le fichier JSON (exporté depuis SQLite)
          */
-        // ── Chargement des offres (index + fichiers par source en parallèle) ───
-        const JSON_BASE_URLS = [
-            '',
-            'HTML/',
-            'https://dedale95.github.io/Taleos-Public/HTML/',
-            'https://dedale95.github.io/Taleos-Public/',
-            'https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/HTML/',
-            'https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/',
-        ];
-
-        async function fetchAllJobsRaw() {
-            const cacheBust = `v=${Date.now()}`;
-            const cb = (url) => url.includes('?') ? `${url}&${cacheBust}` : `${url}?${cacheBust}`;
-            const tryFetch = async (url, timeout = 20000) => {
-                try {
-                    const ctrl = new AbortController();
-                    const tid = setTimeout(() => ctrl.abort(), timeout);
-                    const res = await fetch(cb(url), {
-                        signal: ctrl.signal,
-                        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
-                    });
-                    clearTimeout(tid);
-                    return res.ok ? res : null;
-                } catch { return null; }
-            };
-
-            // 1. Chercher l'index puis charger tous les fichiers source en parallèle
-            for (const base of JSON_BASE_URLS) {
-                const res = await tryFetch(base + 'scraped_jobs_index.json', 10000);
-                if (!res) continue;
-                try {
-                    const index = await res.json();
-                    if (!Array.isArray(index) || !index.length) continue;
-                    console.log(`📋 Index trouvé (${index.length} sources) depuis ${base || '.'}`);
-                    const results = await Promise.allSettled(
-                        index.map(entry =>
-                            tryFetch(base + entry.file, 30000)
-                                .then(r => r ? r.json() : [])
-                                .catch(() => [])
-                        )
-                    );
-                    const jobs = results
-                        .filter(r => r.status === 'fulfilled')
-                        .flatMap(r => Array.isArray(r.value) ? r.value : []);
-                    if (jobs.length > 0) {
-                        console.log(`✅ ${jobs.length} offres chargées en parallèle depuis ${index.length} fichiers`);
-                        return jobs;
-                    }
-                } catch { continue; }
-            }
-
-            // 2. Fallback : scraped_jobs_live.json (ancien format ou slim)
-            for (const base of JSON_BASE_URLS) {
-                const res = await tryFetch(base + 'scraped_jobs_live.json', 30000);
-                if (!res) continue;
-                try {
-                    const data = await res.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                        console.log(`✅ ${data.length} offres depuis ${base}scraped_jobs_live.json (fallback)`);
-                        return data;
-                    }
-                } catch { continue; }
-            }
-            return null;
-        }
-
         async function loadJobs() {
+            // Afficher un message de chargement
             const container = document.getElementById('jobsContainer');
             if (container) {
-                container.innerHTML = '<div class="no-results"><h3>⏳ Chargement des offres...</h3><p>Veuillez patienter…</p></div>';
+                container.innerHTML = '<div class="no-results"><h3>⏳ Chargement des offres...</h3><p>Veuillez patienter pendant le chargement des données (2301 offres, ~7.2MB).</p><p style="margin-top: 10px; font-size: 0.9rem; color: #666;">⏱️ Cela peut prendre 10-30 secondes selon votre connexion...</p></div>';
             }
+            
+            // Vérifier si on est en mode file:// (fichier ouvert directement)
             const isFileProtocol = window.location.protocol === 'file:';
             if (isFileProtocol) {
-                console.warn('⚠️ Fichier ouvert via file:// - Les requêtes fetch peuvent être bloquées.');
+                console.warn('⚠️ Fichier ouvert via file:// - Les requêtes fetch peuvent être bloquées. Utilisez un serveur local.');
             }
-
-            let data = await fetchAllJobsRaw();
-            let loadedPath = 'scraped_jobs_index.json';
+            
+            // Essayer plusieurs chemins possibles pour le fichier JSON
+            // PRIORITÉ : scraped_jobs_live.json (uniquement offres Live, pas les expirées)
+            // On n'affiche jamais les offres expirées
+            const currentPath = window.location.pathname;
+            const currentHref = window.location.href;
+            const isInHTMLFolder = currentPath.includes('/HTML/') || currentPath.includes('HTML/') || 
+                                   currentHref.includes('/HTML/') || currentHref.includes('HTML/');
+            
+            // Construire les chemins selon l'emplacement du fichier HTML.
+            // On privilégie toujours les fichiers publiés sur GitHub Pages et les chemins relatifs,
+            // car raw.githubusercontent.com peut rester bloqué sur un ancien snapshot pendant plusieurs minutes.
+            const cacheBust = `v=${Date.now()}`;
+            const withCacheBust = (path) => {
+                if (!path || path.startsWith('file:')) return path;
+                return path.includes('?') ? `${path}&${cacheBust}` : `${path}?${cacheBust}`;
+            };
+            let possiblePaths;
+            if (isFileProtocol) {
+                possiblePaths = [
+                    'scraped_jobs_live.json',
+                    './scraped_jobs_live.json',
+                    'HTML/scraped_jobs_live.json',
+                    './HTML/scraped_jobs_live.json',
+                    'https://dedale95.github.io/Taleos-Public/HTML/scraped_jobs_live.json',
+                    'https://dedale95.github.io/Taleos-Public/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/HTML/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/scraped_jobs_live.json'
+                ];
+            } else {
+                possiblePaths = [
+                    'scraped_jobs_live.json',
+                    './scraped_jobs_live.json',
+                    'HTML/scraped_jobs_live.json',
+                    './HTML/scraped_jobs_live.json',
+                    'https://dedale95.github.io/Taleos-Public/HTML/scraped_jobs_live.json',
+                    'https://dedale95.github.io/Taleos-Public/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/HTML/scraped_jobs_live.json',
+                    'https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/scraped_jobs_live.json'
+                ];
+            }
+            
+            let data = null;
+            let loadedPath = null;
+            let lastError = null;
+            
+            for (const rawPath of possiblePaths) {
+                try {
+                    const path = withCacheBust(rawPath);
+                    console.log(`🔄 Tentative de chargement depuis : ${path}`);
+                    
+                    // Créer un AbortController pour timeout (30 secondes)
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 30000);
+                    
+                    try {
+                        const response = await fetch(path, { 
+                            signal: controller.signal,
+                            headers: {
+                                'Accept': 'application/json',
+                                'Cache-Control': 'no-cache'
+                            }
+                        });
+                        
+                        clearTimeout(timeoutId);
+                        
+                        if (response.ok) {
+                            try {
+                                // Le fichier est volumineux (7.5MB), afficher un message de progression
+                                const jobsContainer = document.getElementById('jobsContainer');
+                                if (jobsContainer && path.includes('github')) {
+                                    jobsContainer.innerHTML = '<div class="no-results"><h3>⏳ Téléchargement en cours...</h3><p>Chargement depuis GitHub (7.2MB, 2301 offres), veuillez patienter...</p><p style="margin-top: 10px; font-size: 0.9rem; color: #666;">Cela peut prendre 10-30 secondes selon votre connexion.</p></div>';
+                                }
+                                
+                                console.log(`📥 Téléchargement du JSON depuis ${path}...`);
+                                const jsonText = await response.text();
+                                console.log(`📦 JSON téléchargé (${(jsonText.length / 1024 / 1024).toFixed(2)}MB), parsing en cours...`);
+                                
+                                try {
+                                    data = JSON.parse(jsonText);
+                                    console.log(`✅ JSON parsé avec succès : ${Array.isArray(data) ? 'tableau' : 'objet'}`);
+                                    
+                                    if (data && Array.isArray(data) && data.length > 0) {
+                                        const beforeCount = data.length;
+                                        const statusLive = (s) => String(s || '').toLowerCase().trim() === 'live';
+                                        data = data.filter(job => job && statusLive(job.status));
+                                        if (beforeCount > data.length) {
+                                            console.log(`📋 Filtrage : ${beforeCount - data.length} offres expirées exclues → ${data.length} offres live`);
+                                        }
+                                        loadedPath = path;
+                                        console.log(`✅ Fichier JSON chargé depuis : ${path} (${data.length} offres live)`);
+                                        break;
+                                    } else {
+                                        console.warn(`⚠️ Fichier JSON vide ou invalide pour : ${path}`, {
+                                            isArray: Array.isArray(data),
+                                            length: data ? data.length : 0,
+                                            type: typeof data
+                                        });
+                                    }
+                                } catch (parseError) {
+                                    console.error(`⚠️ Erreur de parsing JSON pour ${path}:`, parseError);
+                                    console.error(`Premiers caractères du JSON:`, jsonText.substring(0, 500));
+                                }
+                            } catch (parseError) {
+                                console.error(`⚠️ Erreur lors du traitement de ${path}:`, parseError);
+                            }
+                        } else {
+                            console.log(`⚠️ Réponse non OK (${response.status}) pour : ${path}`);
+                        }
+                    } catch (fetchError) {
+                        clearTimeout(timeoutId);
+                        if (fetchError.name === 'AbortError') {
+                            console.log(`⏱️ Timeout (30s) pour : ${path}`);
+                            lastError = new Error('Timeout: Le fichier est trop volumineux ou la connexion est lente');
+                        } else {
+                            throw fetchError;
+                        }
+                    }
+                } catch (error) {
+                    lastError = error;
+                    // Ne pas afficher les erreurs CORS pour file:// car c'est attendu
+                    if (!isFileProtocol || (!error.message.includes('CORS') && !error.message.includes('Failed to fetch'))) {
+                        console.log(`⚠️ Erreur lors du chargement depuis ${path}:`, error.message);
+                    }
+                }
+            }
             
             if (!data) {
                 console.error('❌ Impossible de charger le fichier JSON depuis aucun des chemins testés');
@@ -2905,7 +2965,12 @@
                                 <h3>😕 Erreur</h3>
                                 <p>Impossible de charger les offres.</p>
                                 <p><strong>Note :</strong> Assurez-vous d'avoir exécuté <code>export_sqlite_to_json.py</code> pour générer le fichier JSON depuis les bases SQLite.</p>
-                                <p>Vérifiez que le pipeline GitHub Actions a bien tourné.</p>
+                                <details style="margin-top: 20px; text-align: left;">
+                                    <summary style="cursor: pointer; font-weight: bold; margin-bottom: 10px;">Chemins testés :</summary>
+                                    <ul style="margin-left: 20px; margin-top: 10px;">
+                                        ${possiblePaths.map(p => `<li>${p}</li>`).join('')}
+                                    </ul>
+                                </details>
                                 <p style="margin-top: 20px; font-size: 0.9rem; color: #666;">
                                     Si vous venez de mettre à jour le fichier sur GitHub, attendez quelques minutes que GitHub Pages se mette à jour.
                                 </p>
@@ -2914,7 +2979,7 @@
                     }
                     container.innerHTML = errorMessage;
                 }
-                throw new Error('Impossible de charger le fichier JSON depuis aucune source.');
+                throw new Error(`Impossible de charger le fichier JSON depuis aucun des chemins : ${possiblePaths.join(', ')}`);
             }
             
             try {
@@ -3298,21 +3363,6 @@
             } else {
                 companyGroupCMExpanded = localStorage.getItem('companyGroupCMExpanded') === 'true';
             }
-            if (restoredFilters?.companyGroupAXAExpanded !== undefined) {
-                companyGroupAXAExpanded = restoredFilters.companyGroupAXAExpanded;
-            } else {
-                companyGroupAXAExpanded = localStorage.getItem('companyGroupAXAExpanded') === 'true';
-            }
-            if (restoredFilters?.companyGroupLBPExpanded !== undefined) {
-                companyGroupLBPExpanded = restoredFilters.companyGroupLBPExpanded;
-            } else {
-                companyGroupLBPExpanded = localStorage.getItem('companyGroupLBPExpanded') === 'true';
-            }
-            if (restoredFilters?.companyGroupAllianzExpanded !== undefined) {
-                companyGroupAllianzExpanded = restoredFilters.companyGroupAllianzExpanded;
-            } else {
-                companyGroupAllianzExpanded = localStorage.getItem('companyGroupAllianzExpanded') === 'true';
-            }
             if (restoredFilters?.familyGroupExpanded) {
                 restoreFamilyGroupExpanded(restoredFilters.familyGroupExpanded);
             }
@@ -3573,9 +3623,6 @@
         const CREDIT_AGRICOLE_GROUP_KEY = '__CA_GROUP__';
         const BPCE_GROUP_KEY = '__BPCE_GROUP__';
         const BNP_PARIBAS_GROUP_KEY = '__BNP_GROUP__';
-        const AXA_GROUP_KEY = '__AXA_GROUP__';
-        const LBP_GROUP_KEY = '__LBP_GROUP__';
-        const ALLIANZ_GROUP_KEY = '__ALLIANZ_GROUP__';
         const FAMILY_GROUPS = {
             'Contrôle et Risques': ['Risques / Contrôles permanents', 'Conformité / Sécurité financière', 'Inspection / Audit'],
             'Finance et Analyse': ['Finances / Comptabilité / Contrôle de gestion', 'Analyse financière et économique'],
@@ -3598,9 +3645,6 @@
         let companyGroupBPCEExpanded = false;
         let companyGroupBNPExpanded = false;
         let companyGroupCMExpanded = false;
-        let companyGroupAXAExpanded = false;
-        let companyGroupLBPExpanded = false;
-        let companyGroupAllianzExpanded = false;
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -3641,24 +3685,6 @@
             ];
             return cmPatterns.some(s => n.includes(s)) || /^ccm\s/.test(n) || /\sccm$/.test(n);
         }
-        function isAXABrand(name) {
-            if (!name || typeof name !== 'string') return false;
-            const n = name.toLowerCase();
-            return n.startsWith('axa') || n.includes('gie axa') || n.includes('direct assurance') ||
-                n.includes('juridica') || n.includes('mutuelle saint-christophe');
-        }
-        function isLaBanquePostaleBrand(name) {
-            if (!name || typeof name !== 'string') return false;
-            const n = name.toLowerCase();
-            return n.includes('banque postale') ||
-                ['bedl', 'kkbb', 'sofiap', 'vivier', 'easybourse', 'filbanque'].some(s => n === s || n.startsWith(s + ' ') || n.startsWith(s + ' -'));
-        }
-        function isAllianzBrand(name) {
-            if (!name || typeof name !== 'string') return false;
-            const n = name.toLowerCase();
-            return n.startsWith('allianz') || n.includes('allianz') ||
-                n.includes('agcs') || n.includes('euler hermes');
-        }
 
         function getSelectedFamilies() {
             const container = document.getElementById('familyFilter');
@@ -3696,18 +3722,6 @@
                 const bnpBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-bnp-brand]')).map(cb => cb.value);
                 result = result.filter(v => v !== BNP_PARIBAS_GROUP_KEY).concat(bnpBrands);
             }
-            if (checked.includes(AXA_GROUP_KEY)) {
-                const axaBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-axa-brand]')).map(cb => cb.value);
-                result = result.filter(v => v !== AXA_GROUP_KEY).concat(axaBrands);
-            }
-            if (checked.includes(LBP_GROUP_KEY)) {
-                const lbpBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-lbp-brand]')).map(cb => cb.value);
-                result = result.filter(v => v !== LBP_GROUP_KEY).concat(lbpBrands);
-            }
-            if (checked.includes(ALLIANZ_GROUP_KEY)) {
-                const allianzBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-allianz-brand]')).map(cb => cb.value);
-                result = result.filter(v => v !== ALLIANZ_GROUP_KEY).concat(allianzBrands);
-            }
             return [...new Set(result)];
         }
 
@@ -3718,26 +3732,17 @@
             const prevBPCE = container.querySelector('.company-group-children[data-group="bpce"]');
             const prevBNP = container.querySelector('.company-group-children[data-group="bnp"]');
             const prevCM = container.querySelector('.company-group-children[data-group="cm"]');
-            const prevAXA = container.querySelector('.company-group-children[data-group="axa"]');
-            const prevLBP = container.querySelector('.company-group-children[data-group="lbp"]');
-            const prevAllianz = container.querySelector('.company-group-children[data-group="allianz"]');
             if (prevCA) companyGroupCAExpanded = prevCA.classList.contains('visible');
             if (prevBPCE) companyGroupBPCEExpanded = prevBPCE.classList.contains('visible');
             if (prevBNP) companyGroupBNPExpanded = prevBNP.classList.contains('visible');
             if (prevCM) companyGroupCMExpanded = prevCM.classList.contains('visible');
-            if (prevAXA) companyGroupAXAExpanded = prevAXA.classList.contains('visible');
-            if (prevLBP) companyGroupLBPExpanded = prevLBP.classList.contains('visible');
-            if (prevAllianz) companyGroupAllianzExpanded = prevAllianz.classList.contains('visible');
             container.innerHTML = '';
 
             const caSubs = companies.filter(c => isCreditAgricoleSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const bpceBrands = companies.filter(c => isBPCEBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const bnpBrands = companies.filter(c => isBNPParibasBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const cmSubs = companies.filter(c => isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const axaBrands = companies.filter(c => isAXABrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const lbpBrands = companies.filter(c => isLaBanquePostaleBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const allianzBrands = companies.filter(c => isAllianzBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const others = companies.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c) && !isAXABrand(c) && !isLaBanquePostaleBrand(c) && !isAllianzBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const others = companies.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
 
             const renderedBpceBrands = bpceBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0 && !checkedValues.has(c)));
             const bpceGroupChecked = checkedValues.has(BPCE_GROUP_KEY) || (renderedBpceBrands.length > 0 && renderedBpceBrands.every(c => checkedValues.has(c)));
@@ -4054,264 +4059,6 @@
                     cb.value = c;
                     cb.setAttribute('data-cm-subsidiary', '1');
                     cb.checked = checkedValues.has(c) || cmGroupChecked;
-                    cb.disabled = disabled;
-                    childCheckboxes.push(cb);
-                    label.appendChild(cb);
-                    const sp = document.createElement('span');
-                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
-                    label.appendChild(sp);
-                    if (disabled) label.classList.add('disabled');
-                    childrenDiv.appendChild(label);
-                });
-                childCheckboxes.forEach(cb => {
-                    cb.onchange = () => {
-                        groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                        updateActiveFiltersBadge();
-                        applyFilters();
-                    };
-                });
-                groupDiv.addEventListener('click', (e) => {
-                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
-                    if (groupLabel.contains(e.target)) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                    groupCb.checked = !allChecked;
-                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
-                });
-                container.appendChild(childrenDiv);
-            }
-
-            const renderedLbpBrands = lbpBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0 && !checkedValues.has(c)));
-            const lbpGroupChecked = checkedValues.has(LBP_GROUP_KEY) || (renderedLbpBrands.length > 0 && renderedLbpBrands.every(c => checkedValues.has(c)));
-            const lbpGroupCount = lbpBrands.reduce((s, c) => s + (counts[c] || 0), 0);
-            if (lbpBrands.length > 0 && (!hideDisabled || lbpGroupCount > 0 || lbpGroupChecked)) {
-                const groupDiv = document.createElement('div');
-                groupDiv.className = 'company-group-header';
-                const expandSpan = document.createElement('span');
-                expandSpan.className = 'company-group-expand';
-                expandSpan.textContent = '▶';
-                expandSpan.title = 'Cliquer pour afficher/masquer les filiales du groupe';
-                const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children' + (companyGroupLBPExpanded ? ' visible' : '');
-                childrenDiv.setAttribute('data-group', 'lbp');
-                if (companyGroupLBPExpanded) expandSpan.classList.add('expanded');
-                expandSpan.onclick = (e) => {
-                    e.stopPropagation();
-                    childrenDiv.classList.toggle('visible');
-                    expandSpan.classList.toggle('expanded');
-                    companyGroupLBPExpanded = childrenDiv.classList.contains('visible');
-                    localStorage.setItem('companyGroupLBPExpanded', companyGroupLBPExpanded);
-                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
-                };
-                const groupLabel = document.createElement('label');
-                groupLabel.style.display = 'flex';
-                groupLabel.style.alignItems = 'center';
-                groupLabel.style.flex = '1';
-                groupLabel.style.cursor = 'pointer';
-                const groupCb = document.createElement('input');
-                groupCb.type = 'checkbox';
-                groupCb.value = LBP_GROUP_KEY;
-                groupCb.checked = lbpGroupChecked;
-                const childCheckboxes = [];
-                groupCb.onchange = () => {
-                    lbpBrands.forEach(c => {
-                        const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-lbp-brand]`);
-                        if (subCb && !subCb.disabled) subCb.checked = groupCb.checked;
-                    });
-                    groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                    updateActiveFiltersBadge();
-                    applyFilters();
-                };
-                groupLabel.appendChild(groupCb);
-                const span = document.createElement('span');
-                span.textContent = `Groupe La Banque Postale (${lbpGroupCount})`;
-                groupLabel.appendChild(span);
-                groupDiv.appendChild(groupLabel);
-                groupDiv.appendChild(expandSpan);
-                container.appendChild(groupDiv);
-                lbpBrands.forEach(c => {
-                    const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
-                    const disabled = disabledValues.has(c);
-                    const label = document.createElement('label');
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox';
-                    cb.value = c;
-                    cb.setAttribute('data-lbp-brand', '1');
-                    cb.checked = checkedValues.has(c) || lbpGroupChecked;
-                    cb.disabled = disabled;
-                    childCheckboxes.push(cb);
-                    label.appendChild(cb);
-                    const sp = document.createElement('span');
-                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
-                    label.appendChild(sp);
-                    if (disabled) label.classList.add('disabled');
-                    childrenDiv.appendChild(label);
-                });
-                childCheckboxes.forEach(cb => {
-                    cb.onchange = () => {
-                        groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                        updateActiveFiltersBadge();
-                        applyFilters();
-                    };
-                });
-                groupDiv.addEventListener('click', (e) => {
-                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
-                    if (groupLabel.contains(e.target)) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                    groupCb.checked = !allChecked;
-                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
-                });
-                container.appendChild(childrenDiv);
-            }
-
-            const renderedAxaBrands = axaBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0 && !checkedValues.has(c)));
-            const axaGroupChecked = checkedValues.has(AXA_GROUP_KEY) || (renderedAxaBrands.length > 0 && renderedAxaBrands.every(c => checkedValues.has(c)));
-            const axaGroupCount = axaBrands.reduce((s, c) => s + (counts[c] || 0), 0);
-            if (axaBrands.length > 0 && (!hideDisabled || axaGroupCount > 0 || axaGroupChecked)) {
-                const groupDiv = document.createElement('div');
-                groupDiv.className = 'company-group-header';
-                const expandSpan = document.createElement('span');
-                expandSpan.className = 'company-group-expand';
-                expandSpan.textContent = '▶';
-                expandSpan.title = 'Cliquer pour afficher/masquer les filiales du groupe';
-                const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children' + (companyGroupAXAExpanded ? ' visible' : '');
-                childrenDiv.setAttribute('data-group', 'axa');
-                if (companyGroupAXAExpanded) expandSpan.classList.add('expanded');
-                expandSpan.onclick = (e) => {
-                    e.stopPropagation();
-                    childrenDiv.classList.toggle('visible');
-                    expandSpan.classList.toggle('expanded');
-                    companyGroupAXAExpanded = childrenDiv.classList.contains('visible');
-                    localStorage.setItem('companyGroupAXAExpanded', companyGroupAXAExpanded);
-                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
-                };
-                const groupLabel = document.createElement('label');
-                groupLabel.style.display = 'flex';
-                groupLabel.style.alignItems = 'center';
-                groupLabel.style.flex = '1';
-                groupLabel.style.cursor = 'pointer';
-                const groupCb = document.createElement('input');
-                groupCb.type = 'checkbox';
-                groupCb.value = AXA_GROUP_KEY;
-                groupCb.checked = axaGroupChecked;
-                const childCheckboxes = [];
-                groupCb.onchange = () => {
-                    axaBrands.forEach(c => {
-                        const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-axa-brand]`);
-                        if (subCb && !subCb.disabled) subCb.checked = groupCb.checked;
-                    });
-                    groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                    updateActiveFiltersBadge();
-                    applyFilters();
-                };
-                groupLabel.appendChild(groupCb);
-                const span = document.createElement('span');
-                span.textContent = `Groupe AXA (${axaGroupCount})`;
-                groupLabel.appendChild(span);
-                groupDiv.appendChild(groupLabel);
-                groupDiv.appendChild(expandSpan);
-                container.appendChild(groupDiv);
-                axaBrands.forEach(c => {
-                    const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
-                    const disabled = disabledValues.has(c);
-                    const label = document.createElement('label');
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox';
-                    cb.value = c;
-                    cb.setAttribute('data-axa-brand', '1');
-                    cb.checked = checkedValues.has(c) || axaGroupChecked;
-                    cb.disabled = disabled;
-                    childCheckboxes.push(cb);
-                    label.appendChild(cb);
-                    const sp = document.createElement('span');
-                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
-                    label.appendChild(sp);
-                    if (disabled) label.classList.add('disabled');
-                    childrenDiv.appendChild(label);
-                });
-                childCheckboxes.forEach(cb => {
-                    cb.onchange = () => {
-                        groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                        updateActiveFiltersBadge();
-                        applyFilters();
-                    };
-                });
-                groupDiv.addEventListener('click', (e) => {
-                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
-                    if (groupLabel.contains(e.target)) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                    groupCb.checked = !allChecked;
-                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
-                });
-                container.appendChild(childrenDiv);
-            }
-
-            const renderedAllianzBrands = allianzBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0 && !checkedValues.has(c)));
-            const allianzGroupChecked = checkedValues.has(ALLIANZ_GROUP_KEY) || (renderedAllianzBrands.length > 0 && renderedAllianzBrands.every(c => checkedValues.has(c)));
-            const allianzGroupCount = allianzBrands.reduce((s, c) => s + (counts[c] || 0), 0);
-            if (allianzBrands.length > 0 && (!hideDisabled || allianzGroupCount > 0 || allianzGroupChecked)) {
-                const groupDiv = document.createElement('div');
-                groupDiv.className = 'company-group-header';
-                const expandSpan = document.createElement('span');
-                expandSpan.className = 'company-group-expand';
-                expandSpan.textContent = '▶';
-                expandSpan.title = 'Cliquer pour afficher/masquer les filiales du groupe';
-                const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'company-group-children' + (companyGroupAllianzExpanded ? ' visible' : '');
-                childrenDiv.setAttribute('data-group', 'allianz');
-                if (companyGroupAllianzExpanded) expandSpan.classList.add('expanded');
-                expandSpan.onclick = (e) => {
-                    e.stopPropagation();
-                    childrenDiv.classList.toggle('visible');
-                    expandSpan.classList.toggle('expanded');
-                    companyGroupAllianzExpanded = childrenDiv.classList.contains('visible');
-                    localStorage.setItem('companyGroupAllianzExpanded', companyGroupAllianzExpanded);
-                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
-                };
-                const groupLabel = document.createElement('label');
-                groupLabel.style.display = 'flex';
-                groupLabel.style.alignItems = 'center';
-                groupLabel.style.flex = '1';
-                groupLabel.style.cursor = 'pointer';
-                const groupCb = document.createElement('input');
-                groupCb.type = 'checkbox';
-                groupCb.value = ALLIANZ_GROUP_KEY;
-                groupCb.checked = allianzGroupChecked;
-                const childCheckboxes = [];
-                groupCb.onchange = () => {
-                    allianzBrands.forEach(c => {
-                        const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-allianz-brand]`);
-                        if (subCb && !subCb.disabled) subCb.checked = groupCb.checked;
-                    });
-                    groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
-                    updateActiveFiltersBadge();
-                    applyFilters();
-                };
-                groupLabel.appendChild(groupCb);
-                const span = document.createElement('span');
-                span.textContent = `Groupe Allianz (${allianzGroupCount})`;
-                groupLabel.appendChild(span);
-                groupDiv.appendChild(groupLabel);
-                groupDiv.appendChild(expandSpan);
-                container.appendChild(groupDiv);
-                allianzBrands.forEach(c => {
-                    const cnt = counts[c] || 0;
-                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
-                    const disabled = disabledValues.has(c);
-                    const label = document.createElement('label');
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox';
-                    cb.value = c;
-                    cb.setAttribute('data-allianz-brand', '1');
-                    cb.checked = checkedValues.has(c) || allianzGroupChecked;
                     cb.disabled = disabled;
                     childCheckboxes.push(cb);
                     label.appendChild(cb);
@@ -4900,9 +4647,6 @@
                 companyGroupBPCEExpanded: companyGroupBPCEExpanded,
                 companyGroupBNPExpanded: companyGroupBNPExpanded,
                 companyGroupCMExpanded: companyGroupCMExpanded,
-                companyGroupAXAExpanded: companyGroupAXAExpanded,
-                companyGroupLBPExpanded: companyGroupLBPExpanded,
-                companyGroupAllianzExpanded: companyGroupAllianzExpanded,
                 continentExpanded: getContinentExpandedState(),
                 countryExpanded: getCountryExpandedState(),
                 familyGroupExpanded: familyGroupExpanded,
@@ -5575,18 +5319,6 @@
             if (typeof isBNPParibasBrand === 'function' && isBNPParibasBrand(companyName)) {
                 return 'images/logos/bnp_paribas.png';
             }
-            // Fallback : toute filiale AXA sans logo spécifique → logo groupe
-            if (typeof isAXABrand === 'function' && isAXABrand(companyName)) {
-                return 'images/logos/axa.png';
-            }
-            // Fallback : toute filiale La Banque Postale → logo groupe
-            if (typeof isLaBanquePostaleBrand === 'function' && isLaBanquePostaleBrand(companyName)) {
-                return 'images/logos/la_banque_postale.png';
-            }
-            // Fallback : toute filiale Allianz → logo groupe
-            if (typeof isAllianzBrand === 'function' && isAllianzBrand(companyName)) {
-                return 'images/logos/allianz.png';
-            }
             return null;
         }
 
@@ -5782,7 +5514,7 @@
                 }
 
                 // Toutes les candidatures nécessitent l'ouverture d'un onglet (pas de timer)
-                const url = job.job_url || job.url || '';
+                const url = normalizeOfferUrl(job);
                 if (!url) {
                     showToast('Erreur', 'URL de l\'offre introuvable.', 'error');
                     reEnableBtn();
@@ -5811,6 +5543,17 @@
                    companyName.includes('caceis') ||
                    companyName.includes('indosuez') ||
                    companyName.includes('idia');
+        }
+
+        function normalizeOfferUrl(job) {
+            const rawUrl = String(job?.job_url || job?.url || '').trim();
+            if (!rawUrl) return '';
+            const companyName = String(job?.company_name || '').toLowerCase();
+            const match = rawUrl.match(/careers\.axa\.com\/careers-home\/jobs\/(\d+)(?:[/?#]|$)/i);
+            if (match && companyName.includes('axa xl')) {
+                return `https://careers.axa.com/careers-home/jobs/${match[1]}?lang=en-us`;
+            }
+            return rawUrl;
         }
 
         // Envoi candidature vers l'API /apply (vignettes Crédit Agricole).
@@ -5890,7 +5633,7 @@
                 // Si c'est Crédit Agricole, envoyer vers le backend AWS
                 if (isCA) {
                     console.log('[TIMER] Timer terminé pour offre Crédit Agricole, envoi vers backend');
-                    apiResult = await sendApplicationToBackend(userId, job.job_url, 'credit_agricole');
+                    apiResult = await sendApplicationToBackend(userId, normalizeOfferUrl(job), 'credit_agricole');
                     
                     if (!apiResult.success) {
                         // Ne pas afficher "Erreur d'envoi" si le message de l'API indique un succès (réponse mal formée)
@@ -5917,7 +5660,7 @@
                 const applicationData = {
                     jobId: jobId,
                     jobTitle: cleanJobTitle(job.job_title),
-                    jobUrl: job.job_url,
+                    jobUrl: normalizeOfferUrl(job),
                     companyName: job.company_name || 'Non spécifié',
                     location: job.location || 'Non spécifié',
                     contractType: job.contract_type || 'Non spécifié',
@@ -6163,7 +5906,7 @@
                             const jobTitle = cleanJobTitle(job.job_title);
                             
                             let buttonHTML = '';
-                            const jobLinkHTML = `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre</a>`;
+                            const jobLinkHTML = `<a href="${normalizeOfferUrl(job)}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre</a>`;
                             
                             if (isExpired) {
                                 buttonHTML = `<span class="job-expired-label">Offre expirée</span>`;
@@ -6366,7 +6109,7 @@
                 const logoClass = getCompanyLogoClass(job.company_name, logoPath);
 
                 return `
-        <div class="${cardClass}" data-job-url="${job.job_url}">
+        <div class="${cardClass}" data-job-url="${normalizeOfferUrl(job)}">
             ${badgeHTML}
             <div class="job-card-head">
                 <div class="job-company-header">
@@ -6399,12 +6142,12 @@
                         const isSubmitted = status === 'envoyée';
 
                         if (isSubmitted || hasApplied) {
-                            return `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre</a>`;
+                            return `<a href="${normalizeOfferUrl(job)}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre</a>`;
                         } else {
-                            return `<a href="${job.job_url}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre</a>
+                            return `<a href="${normalizeOfferUrl(job)}" target="_blank" class="job-link" onclick="event.stopPropagation()">Voir l'offre</a>
                                     <button class="job-apply-btn" onclick="applyToJob('${job.job_id}', '${cleanJobTitle(job.job_title).replace(/'/g, "\\'")}', this)">Postuler</button>`;
                         }
-                    })() : `<a href="${job.job_url}" target="_blank" class="job-link">Voir l'offre</a>`}
+                    })() : `<a href="${normalizeOfferUrl(job)}" target="_blank" class="job-link">Voir l'offre</a>`}
                     </div>
                 </div>
             </div>
