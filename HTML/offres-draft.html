@@ -270,14 +270,22 @@
 
         .location-country-children {
             margin-left: 18px;
+            min-width: 0;
+            max-width: 100%;
+            overflow-x: hidden;
         }
 
         .location-region-children {
             margin-left: 18px;
+            min-width: 0;
+            max-width: 100%;
+            overflow-x: hidden;
         }
 
         .location-region-item {
             margin-left: 18px;
+            min-width: 0;
+            max-width: 100%;
         }
 
         /* Ligne du bouton reset */
@@ -470,11 +478,13 @@
         .filter-checkbox-container {
             min-height: 180px;
             max-height: 180px;
+            overflow-x: hidden;
             overflow-y: auto;
             border: 2px solid #e5e7eb;
             border-radius: 12px;
             padding: 12px;
             background: #f9fafb;
+            box-sizing: border-box;
         }
 
         .filter-box .filter-checkbox-container {
@@ -495,7 +505,9 @@
         }
 
         .filter-checkbox-container label {
-            display: block;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
             padding: 1px 6px;
             margin-bottom: 0px;
             border-radius: 8px;
@@ -504,6 +516,10 @@
             font-size: 13px;
             font-weight: 400;
             line-height: 1.28;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-x: hidden;
         }
 
         .filter-checkbox-container label:hover {
@@ -533,6 +549,8 @@
         .company-group-header {
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            gap: 8px;
             padding: 0;
             margin-bottom: 0px;
             border-radius: 8px;
@@ -540,6 +558,10 @@
             transition: background 0.2s;
             font-weight: 800;
             color: #1a1a1a;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-x: hidden;
         }
         .filter-checkbox-container .company-group-header,
         .filter-checkbox-container .company-group-header label,
@@ -1813,6 +1835,7 @@
             padding: 0;
             border: none;
             background: transparent;
+            overflow-x: hidden;
         }
 
         body.offers-page .filter-group.filter-group-location .filter-checkbox-container,
@@ -1852,6 +1875,25 @@
             padding: 3px 2px;
             border-radius: 4px;
             font-size: 0.81rem;
+        }
+
+        body.offers-page .filter-checkbox-container label span,
+        body.offers-page .company-group-header label span,
+        body.offers-page .location-region-item span,
+        body.offers-page .company-group-header span:not(.company-group-expand) {
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        body.offers-page .filter-checkbox-container input[type="checkbox"] {
+            flex: 0 0 auto;
+            margin-right: 0;
+        }
+
+        body.offers-page .company-group-header .company-group-expand {
+            flex: 0 0 auto;
         }
 
         body.offers-page .filter-row-reset {
