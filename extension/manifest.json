@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.0.60",
+  "version": "1.0.61",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -20,6 +20,9 @@
     "https://socgen.taleo.net/*",
     "https://groupecreditagricole.jobs/*",
     "https://*.myworkdayjobs.com/*",
+    "https://careers.axa.com/*",
+    "https://careers-fr-axa.icims.com/*",
+    "https://login.icims.eu/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
@@ -70,6 +73,14 @@
         "https://recrutement.bpce.fr/*"
       ],
       "js": ["content/bpce-careers-filler.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://careers.axa.com/*",
+        "https://careers-fr-axa.icims.com/*"
+      ],
+      "js": ["content/axa-careers-filler.js"],
       "run_at": "document_idle"
     },
     {

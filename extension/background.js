@@ -34,7 +34,8 @@ const BANK_SCRIPT_MAP = {
   credit_agricole: 'scripts/credit_agricole.js',
   societe_generale: 'scripts/societe_generale.js',
   deloitte: 'scripts/credit_agricole.js',
-  bpce: 'content/bpce-careers-filler.js'
+  bpce: 'content/bpce-careers-filler.js',
+  axa: 'content/axa-careers-filler.js'
 };
 
 function hasBankAutomation(bankId) {
@@ -456,6 +457,11 @@ async function reloadAndContinue(tabId, offerUrl, bankId, profile) {
 }
 
 const CA_CONNEXION_URL = 'https://groupecreditagricole.jobs/fr/connexion/';
+function getAxaApplyUrl(jobUrl) {
+  const match = String(jobUrl || '').match(/\/jobs\/(\d+)(?:[/?#]|$)/i);
+  if (!match) return jobUrl;
+  return `https://careers-fr-axa.icims.com/jobs/${match[1]}/login`;
+}
 
 const CONNECTION_TEST_URLS = {
   credit_agricole: 'https://groupecreditagricole.jobs/fr/connexion/',
@@ -820,6 +826,31 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       },
       taleos_bpce_tab_id: tab.id
     });
+  } else if (bankId === 'axa' || (offerUrl && (String(offerUrl).toLowerCase().includes('careers.axa.com') || String(offerUrl).toLowerCase().includes('axa.com/careers-home') || String(offerUrl).toLowerCase().includes('careers-fr-axa.icims.com')))) {
+    chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: getAxaApplyUrl(offerUrl), active: true };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    chrome.storage.local.set({
+      taleos_pending_axa: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'AXA', __offerUrl: offerUrl },
+        offerUrl,
+        applyUrl: getAxaApplyUrl(offerUrl),
+        jobId,
+        jobTitle,
+        companyName: companyName || 'AXA',
+        tabId: tab.id,
+        timestamp: Date.now()
+      }
+    });
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+    }
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
     const otherCreateOpts = { url: offerUrl, active: false };
@@ -1138,7 +1169,8 @@ async function fetchProfile(uid, bankId, token) {
     bpce_handicap: profile.bpce_handicap || '',
     bpce_vivier_natixis: profile.bpce_vivier_natixis || '',
     linkedin_url: (profile.linkedin_url || '').trim(),
-    bpce_job_alerts: !!profile.bpce_job_alerts
+    bpce_job_alerts: !!profile.bpce_job_alerts,
+    axa_talent_pool: profile.axa_talent_pool || 'Non'
   };
 }
 
