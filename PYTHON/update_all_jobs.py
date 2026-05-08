@@ -40,6 +40,7 @@ ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 JP_MORGAN_DB = PYTHON_DIR / "jp_morgan_jobs.db"
 GOLDMAN_SACHS_DB = PYTHON_DIR / "goldman_sachs_jobs.db"
 AXA_DB           = PYTHON_DIR / "axa_jobs.db"
+ALLIANZ_DB       = PYTHON_DIR / "allianz_jobs.db"
 
 EXPIRED_PAGE_PATTERNS = [
     "la page que vous recherchez est introuvable",
@@ -527,6 +528,7 @@ def merge_from_databases():
         ("JP Morgan Chase", JP_MORGAN_DB),
         ("Goldman Sachs", GOLDMAN_SACHS_DB),
         ("AXA", AXA_DB),
+        ("Allianz", ALLIANZ_DB),
     ]
 
     for name, db_path in sources_info:

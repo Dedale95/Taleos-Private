@@ -75,6 +75,15 @@ def is_axa(name: str) -> bool:
     )
 
 
+def is_allianz(name: str) -> bool:
+    n = (name or "").lower()
+    return (
+        "allianz" in n
+        or "agcs" in n
+        or "euler hermes" in n
+    )
+
+
 def is_credit_agricole(name: str) -> bool:
     n = (name or "").lower()
     return (
@@ -138,6 +147,8 @@ def canonical_group(name: str) -> str:
         return "J.P. Morgan"
     if "société générale" in low or "societe generale" in low:
         return "Groupe Société Générale"
+    if is_allianz(n):
+        return "Allianz"
     if is_axa(n):
         return "AXA"
     if is_credit_agricole(n):

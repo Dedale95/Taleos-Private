@@ -39,6 +39,7 @@ on:
           - goldman_sachs
           - axa
           - la_banque_postale
+          - allianz
 
 jobs:
   scrape:
@@ -123,6 +124,12 @@ jobs:
             script: la_banque_postale_scraper.py
             db_file: la_banque_postale_jobs.db
             timeout_minutes: 60
+            playwright_browser: ""
+          - name: Allianz
+            key: allianz
+            script: allianz_scraper.py
+            db_file: allianz_jobs.db
+            timeout_minutes: 30
             playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

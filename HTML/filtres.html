@@ -2412,7 +2412,8 @@
                         companyGroupBNPExpanded: data.companyGroupBNPExpanded === true,
                         companyGroupCMExpanded: data.companyGroupCMExpanded === true,
                         companyGroupAXAExpanded: data.companyGroupAXAExpanded === true,
-                        companyGroupLBPExpanded: data.companyGroupLBPExpanded === true
+                        companyGroupLBPExpanded: data.companyGroupLBPExpanded === true,
+                        companyGroupAllianzExpanded: data.companyGroupAllianzExpanded === true
                     };
                     companyGroupCAExpandedByAccordion[accordion.id] = accordion.companyGroupCAExpanded;
                     companyGroupBPCEExpandedByAccordion[accordion.id] = accordion.companyGroupBPCEExpanded;
@@ -2420,6 +2421,7 @@
                     companyGroupCMExpandedByAccordion[accordion.id] = accordion.companyGroupCMExpanded;
                     companyGroupAXAExpandedByAccordion[accordion.id] = accordion.companyGroupAXAExpanded;
                     companyGroupLBPExpandedByAccordion[accordion.id] = accordion.companyGroupLBPExpanded;
+                    companyGroupAllianzExpandedByAccordion[accordion.id] = accordion.companyGroupAllianzExpanded;
                     loadedAccordions.push(accordion);
                     console.log('📦 [loadAccordions] Accordéon chargé:', accordion.id, accordion.name);
                 });
@@ -2609,7 +2611,8 @@
                 companyGroupBNPExpanded: false,
                 companyGroupCMExpanded: false,
                 companyGroupAXAExpanded: false,
-                companyGroupLBPExpanded: false
+                companyGroupLBPExpanded: false,
+                companyGroupAllianzExpanded: false
             };
 
             // Vérifier si l'utilisateur est connecté avant de créer l'accordéon
@@ -2756,6 +2759,7 @@
         const CREDIT_MUTUEL_GROUP_KEY = '__CM_GROUP__';
         const AXA_GROUP_KEY = '__AXA_GROUP__';
         const LBP_GROUP_KEY = '__LBP_GROUP__';
+        const ALLIANZ_GROUP_KEY = '__ALLIANZ_GROUP__';
         const FAMILY_GROUPS = {
             'Contrôle et Risques': ['Risques / Contrôles permanents', 'Conformité / Sécurité financière', 'Inspection / Audit'],
             'Finance et Analyse': ['Finances / Comptabilité / Contrôle de gestion', 'Analyse financière et économique'],
@@ -2772,6 +2776,7 @@
         const companyGroupCMExpandedByAccordion = {};
         const companyGroupAXAExpandedByAccordion = {};
         const companyGroupLBPExpandedByAccordion = {};
+        const companyGroupAllianzExpandedByAccordion = {};
         function getCompanyGroupCAExpanded(accordionId) {
             if (companyGroupCAExpandedByAccordion[accordionId] !== undefined) return companyGroupCAExpandedByAccordion[accordionId];
             return false;
@@ -2817,6 +2822,10 @@
             if (companyGroupLBPExpandedByAccordion[accordionId] !== undefined) return companyGroupLBPExpandedByAccordion[accordionId];
             return false;
         }
+        function getCompanyGroupAllianzExpanded(accordionId) {
+            if (companyGroupAllianzExpandedByAccordion[accordionId] !== undefined) return companyGroupAllianzExpandedByAccordion[accordionId];
+            return false;
+        }
         function isCreditMutuelSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -2846,6 +2855,12 @@
             return n.includes('banque postale') ||
                 ['bedl', 'kkbb', 'sofiap', 'vivier', 'easybourse', 'filbanque'].some(s => n === s || n.startsWith(s + ' ') || n.startsWith(s + ' -'));
         }
+        function isAllianzBrand(name) {
+            if (!name || typeof name !== 'string') return false;
+            const n = name.toLowerCase();
+            return n.startsWith('allianz') || n.includes('allianz') ||
+                n.includes('agcs') || n.includes('euler hermes');
+        }
 
         function populateCompanyFilterAccordionWithGroup(accordionId, values, counts, disabledValues, hideDisabled, checkedValues) {
             const container = document.getElementById(`companyFilter-${accordionId}`);
@@ -2863,12 +2878,15 @@
             if (prevAXA) companyGroupAXAExpandedByAccordion[accordionId] = prevAXA.classList.contains('visible');
             const prevLBP = container.querySelector('.company-group-children[data-group="lbp"]');
             if (prevLBP) companyGroupLBPExpandedByAccordion[accordionId] = prevLBP.classList.contains('visible');
+            const prevAllianz = container.querySelector('.company-group-children[data-group="allianz"]');
+            if (prevAllianz) companyGroupAllianzExpandedByAccordion[accordionId] = prevAllianz.classList.contains('visible');
             const wasExpanded = getCompanyGroupCAExpanded(accordionId);
             const wasBPCEExpanded = getCompanyGroupBPCEExpanded(accordionId);
             const wasBNPExpanded = getCompanyGroupBNPExpanded(accordionId);
             const wasCMExpanded = getCompanyGroupCMExpanded(accordionId);
             const wasAXAExpanded = getCompanyGroupAXAExpanded(accordionId);
             const wasLBPExpanded = getCompanyGroupLBPExpanded(accordionId);
+            const wasAllianzExpanded = getCompanyGroupAllianzExpanded(accordionId);
             container.innerHTML = '';
 
             const caSubs = values.filter(c => isCreditAgricoleSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
@@ -2877,7 +2895,8 @@
             const cmSubs = values.filter(c => isCreditMutuelSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const axaBrands = values.filter(c => isAXABrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const lbpBrands = values.filter(c => isLaBanquePostaleBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const others = values.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c) && !isAXABrand(c) && !isLaBanquePostaleBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const allianzBrands = values.filter(c => isAllianzBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const others = values.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c) && !isAXABrand(c) && !isLaBanquePostaleBrand(c) && !isAllianzBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
 
             const renderedBpceBrands = bpceBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0));
             const bpceGroupChecked = cv.has(BPCE_GROUP_KEY) || (renderedBpceBrands.length > 0 && renderedBpceBrands.every(c => cv.has(c)));
@@ -3403,6 +3422,98 @@
                         requestAnimationFrame(() => {
                             const groupCbNew = container.querySelector(`input[value="${AXA_GROUP_KEY}"]`);
                             const childrenDivNew = container.querySelector('.company-group-children[data-group="axa"]');
+                            const childCbs = childrenDivNew ? Array.from(childrenDivNew.querySelectorAll('input[type="checkbox"]')) : [];
+                            if (groupCbNew && childCbs.length > 0) groupCbNew.checked = childCbs.every(c2 => c2.disabled || c2.checked);
+                        });
+                    };
+                    label.appendChild(cb);
+                    const sp = document.createElement('span');
+                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
+                    label.appendChild(sp);
+                    if (disabled) label.classList.add('disabled');
+                    childrenDiv.appendChild(label);
+                });
+                groupDiv.addEventListener('click', (e) => {
+                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                    groupCb.checked = !allChecked;
+                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                container.appendChild(childrenDiv);
+            }
+
+            const renderedAllianzBrands = allianzBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0));
+            const allianzGroupChecked = cv.has(ALLIANZ_GROUP_KEY) || (renderedAllianzBrands.length > 0 && renderedAllianzBrands.every(c => cv.has(c)));
+            const allianzGroupCount = allianzBrands.reduce((s, c) => s + (counts[c] || 0), 0);
+            if (allianzBrands.length > 0 && (!hideDisabled || allianzGroupCount > 0 || allianzGroupChecked)) {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'company-group-header';
+                const expandSpan = document.createElement('span');
+                expandSpan.className = 'company-group-expand';
+                expandSpan.textContent = '▶';
+                expandSpan.title = 'Cliquer pour afficher/masquer les filiales du groupe';
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'company-group-children' + (wasAllianzExpanded ? ' visible' : '');
+                childrenDiv.setAttribute('data-group', 'allianz');
+                if (wasAllianzExpanded) expandSpan.classList.add('expanded');
+                expandSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    childrenDiv.classList.toggle('visible');
+                    expandSpan.classList.toggle('expanded');
+                    const expanded = childrenDiv.classList.contains('visible');
+                    companyGroupAllianzExpandedByAccordion[accordionId] = expanded;
+                    const acc = accordions.find(a => a.id === accordionId);
+                    if (acc) { acc.companyGroupAllianzExpanded = expanded; saveAccordion(acc).catch(() => {}); }
+                };
+                const groupLabel = document.createElement('label');
+                groupLabel.style.display = 'flex';
+                groupLabel.style.alignItems = 'center';
+                groupLabel.style.flex = '1';
+                groupLabel.style.cursor = 'pointer';
+                const groupCb = document.createElement('input');
+                groupCb.type = 'checkbox';
+                groupCb.value = ALLIANZ_GROUP_KEY;
+                groupCb.checked = allianzGroupChecked;
+                const childCheckboxes = [];
+                groupCb.onchange = () => {
+                    allianzBrands.forEach(c => {
+                        const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-allianz-brand]`);
+                        if (subCb && !subCb.disabled) subCb.checked = groupCb.checked;
+                        updateFilter(accordionId, 'companies', c, groupCb.checked);
+                    });
+                    requestAnimationFrame(() => {
+                        const groupCbNew = container.querySelector(`input[value="${ALLIANZ_GROUP_KEY}"]`);
+                        const childrenDivNew = container.querySelector('.company-group-children[data-group="allianz"]');
+                        const childCbs = childrenDivNew ? Array.from(childrenDivNew.querySelectorAll('input[type="checkbox"]')) : [];
+                        if (groupCbNew && childCbs.length > 0) groupCbNew.checked = childCbs.every(c => c.disabled || c.checked);
+                    });
+                };
+                groupLabel.appendChild(groupCb);
+                const span = document.createElement('span');
+                span.textContent = `Groupe Allianz (${allianzGroupCount})`;
+                groupLabel.appendChild(span);
+                groupDiv.appendChild(groupLabel);
+                groupDiv.appendChild(expandSpan);
+                container.appendChild(groupDiv);
+                allianzBrands.forEach(c => {
+                    const cnt = counts[c] || 0;
+                    if (hideDisabled && cnt === 0) return;
+                    const disabled = disabledValues.has(c);
+                    const label = document.createElement('label');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = c;
+                    cb.setAttribute('data-allianz-brand', '1');
+                    cb.checked = cv.has(c) || allianzGroupChecked;
+                    cb.disabled = disabled;
+                    childCheckboxes.push(cb);
+                    cb.onchange = () => {
+                        updateFilter(accordionId, 'companies', c, cb.checked);
+                        requestAnimationFrame(() => {
+                            const groupCbNew = container.querySelector(`input[value="${ALLIANZ_GROUP_KEY}"]`);
+                            const childrenDivNew = container.querySelector('.company-group-children[data-group="allianz"]');
                             const childCbs = childrenDivNew ? Array.from(childrenDivNew.querySelectorAll('input[type="checkbox"]')) : [];
                             if (groupCbNew && childCbs.length > 0) groupCbNew.checked = childCbs.every(c2 => c2.disabled || c2.checked);
                         });
