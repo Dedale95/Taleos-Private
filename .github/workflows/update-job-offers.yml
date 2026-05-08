@@ -145,29 +145,32 @@ jobs:
             playwright install-deps $browser
           done
 
-      # ── Cache DB entre runs (delta scraping BNP) ──────────────────────────
-      # Seul BNP a un backlog de détails qui se résorbe sur plusieurs runs.
-      # Le cache persiste la DB SQLite d'un run au suivant pour éviter de
-      # re-scraper les mêmes 600 offres indéfiniment.
-      - name: Restaurer le cache DB (BNP uniquement)
-        if: matrix.key == 'bnp_paribas'
+      # ── Persistance DB inter-runs (delta scraping universel) ────────────────
+      # Restaure la base SQLite du run précédent afin que le scraper ne scrape
+      # que les NOUVELLES offres (delta) plutôt que la totalité chaque jour.
+      # CA : ~3 000 offres au premier run → ~50-100 nouvelles/jour ensuite (~5 min).
+      # BNP, CM, SG… bénéficient du même mécanisme.
+      # La sauvegarde utilise if:always() pour conserver la DB même en cas d'échec
+      # partiel (reprise là où on s'est arrêté au run suivant).
+      - name: Restaurer la base SQLite (delta scraping)
         uses: actions/cache/restore@v4
         with:
           path: PYTHON/${{ matrix.db_file }}
-          key: bnp-db-${{ github.run_id }}
+          key: scraper-db-${{ matrix.key }}-${{ github.run_id }}
           restore-keys: |
-            bnp-db-
+            scraper-db-${{ matrix.key }}-
 
       - name: Exécuter le scraper
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
         run: python "PYTHON/${{ matrix.script }}"
 
-      - name: Sauvegarder le cache DB (BNP uniquement)
-        if: matrix.key == 'bnp_paribas'
+      - name: Sauvegarder la base SQLite en cache
+        if: always()
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: PYTHON/${{ matrix.db_file }}
-          key: bnp-db-${{ github.run_id }}
+          key: scraper-db-${{ matrix.key }}-${{ github.run_id }}
 
       - name: Vérifier la base générée
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
