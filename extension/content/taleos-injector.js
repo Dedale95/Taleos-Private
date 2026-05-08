@@ -220,16 +220,34 @@
 
   function getBankIdFromUrl(url) {
     if (!url) return null;
-    if (url.includes('groupecreditagricole.jobs') || url.includes('creditagricole')) return 'credit_agricole';
-    if (url.includes('careers.societegenerale.com') || url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
-    if (url.includes('deloitte.com') || (url.includes('myworkdayjobs.com') && url.toLowerCase().includes('deloitte'))) return 'deloitte';
-    if (url.includes('recrutement.bpce.fr')) return 'bpce';
-    if (url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
-    if (url.includes('recrutement.creditmutuel.fr') || url.includes('creditmutuel.fr')) return 'credit_mutuel';
-    if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
-    if (url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
-    if (url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
-    return 'credit_agricole'; // défaut
+    const lowerUrl = String(url).toLowerCase();
+    if (lowerUrl.includes('groupecreditagricole.jobs') || lowerUrl.includes('creditagricole')) return 'credit_agricole';
+    if (lowerUrl.includes('careers.societegenerale.com') || lowerUrl.includes('societegenerale') || lowerUrl.includes('socgen.taleo.net')) return 'societe_generale';
+    if (lowerUrl.includes('deloitte.com') || (lowerUrl.includes('myworkdayjobs.com') && lowerUrl.includes('deloitte'))) return 'deloitte';
+    if (lowerUrl.includes('recrutement.bpce.fr')) return 'bpce';
+    if (lowerUrl.includes('group.bnpparibas') || lowerUrl.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
+    if (lowerUrl.includes('recrutement.creditmutuel.fr') || lowerUrl.includes('creditmutuel.fr')) return 'credit_mutuel';
+    if (lowerUrl.includes('talents.bpifrance.fr') || lowerUrl.includes('bpi.tzportal.io')) return 'bpifrance';
+    if (lowerUrl.includes('higher.gs.com') || lowerUrl.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
+    if (lowerUrl.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
+    if (lowerUrl.includes('careers.axa.com') || lowerUrl.includes('axa.com/careers-home') || lowerUrl.includes('icims.com/jobs/') || lowerUrl.includes('icims.eu/jobs/')) return 'axa';
+    return null;
+  }
+
+  function getBankIdFromCompanyName(companyName) {
+    const normalized = String(companyName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!normalized) return null;
+    if (normalized.includes('credit agricole') || normalized.includes('crédit agricole') || normalized.includes('amundi') || normalized.includes('lcl') || normalized.includes('bforbank') || normalized.includes('caceis') || normalized.includes('indosuez') || normalized.includes('idia')) return 'credit_agricole';
+    if (normalized.includes('societe generale') || normalized.includes('société générale')) return 'societe_generale';
+    if (normalized.includes('deloitte')) return 'deloitte';
+    if (normalized.includes('bpce')) return 'bpce';
+    if (normalized.includes('bnp paribas') || normalized.includes('arval') || normalized.includes('cardif') || normalized.includes('hello bank') || normalized.includes('nickel')) return 'bnp_paribas';
+    if (normalized.includes('credit mutuel') || normalized.includes('crédit mutuel') || normalized.includes('cic') || normalized.includes('euro information')) return 'credit_mutuel';
+    if (normalized.includes('bpifrance')) return 'bpifrance';
+    if (normalized.includes('goldman sachs')) return 'goldman_sachs';
+    if (normalized.includes('jp morgan') || normalized.includes('j.p. morgan') || normalized.includes('jpmorgan')) return 'jp_morgan';
+    if (normalized.startsWith('axa') || normalized.includes(' groupe axa') || normalized.includes(' gie axa') || normalized.includes('direct assurance')) return 'axa';
+    return null;
   }
 
   function findJobCard(el) {
@@ -427,6 +445,7 @@
     if ((bankId === 'credit_agricole' || !bankId) && /j\.?\s*p\.?\s*morgan|jp\s*morgan|jpmorgan/i.test(companyName || '')) {
       bankId = 'jp_morgan';
     }
+    if (!bankId) bankId = getBankIdFromCompanyName(companyName);
 
     if (!jobId) return;
 
@@ -449,6 +468,15 @@
     // Marquer tout de suite pour que la page (si elle reçoit l'événement) n'ouvre pas d'onglet
     btn.dataset.taleosProcessing = '1';
     btn.setAttribute('data-taleos-processing', '1');
+
+    // AXA n'a pas encore de filler de candidature branché : ouvrir le vrai portail,
+    // mais ne jamais retomber sur Crédit Agricole par défaut.
+    if (bankId === 'axa') {
+      setButtonProcessing(btn, jobId);
+      window.open(jobUrl, '_blank', 'noopener');
+      clearProcessing(jobId, true);
+      return;
+    }
 
     // Ping rapide : uniquement pour réveiller le service worker si besoin, mais on ne bloque plus l'automatisation sur un timeout
     try {
