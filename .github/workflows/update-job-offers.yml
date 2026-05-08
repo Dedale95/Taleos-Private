@@ -264,7 +264,7 @@ jobs:
       - name: Vérifier les changements
         id: changes
         run: |
-          if git diff --quiet HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_summary.json scraped_jobs_live.json scraped_jobs.json scraped_jobs_summary.json 2>/dev/null; then
+          if git diff --quiet HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_full.json HTML/scraped_jobs_summary.json scraped_jobs_live.json scraped_jobs.json scraped_jobs_summary.json 2>/dev/null; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -275,11 +275,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_summary.json scraped_jobs_live.json scraped_jobs.json scraped_jobs_summary.json
+          # scraped_jobs_full.json (Live+Expired, pour mes-candidatures) inclus
+          git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_full.json HTML/scraped_jobs_summary.json scraped_jobs_live.json scraped_jobs.json scraped_jobs_summary.json
           git commit -m "chore: mise à jour quotidienne des offres (pipeline parallèle)"
-          # Rebase sur origin/main au cas où des commits ont été poussés pendant le run
-          # (ex : fix workflow poussé manuellement en cours de batch). --autostash
-          # gère les fichiers trackés non-stagés restants (ex: scraped_jobs_full.json).
+          # Rebase sur origin/main au cas où des commits ont été poussés pendant le run.
+          # --autostash couvre tout fichier tracké résiduel non stagé.
           git pull --rebase --autostash origin main
           git push origin main
 
