@@ -541,23 +541,13 @@ class JobDetailScraper:
         # Si déjà dans un format standard, retourner tel quel
         return education
 
-    def check_if_exists(self, url: str) -> bool:
-        """Vérifie si la page existe (détection 404)"""
-        try:
-            response = self.session.head(url, timeout=10, allow_redirects=True)
-            return response.status_code == 200
-        except:
-            return False
-
     def scrape_job(self, url: str) -> Optional[Dict]:
         """Scrape les détails d'un job"""
         try:
-            # Vérification rapide de l'existence
-            if not self.check_if_exists(url):
+            response = self.session.get(url, timeout=self.config.request_timeout)
+            if response.status_code == 404:
                 self.logger.warning(f"Page non trouvée (404): {url}")
                 return None
-
-            response = self.session.get(url, timeout=self.config.request_timeout)
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, "html.parser")
@@ -678,6 +668,11 @@ class JobDetailScraper:
                     job["experience_level"] = extract_experience_level(
                         combined, job.get("contract_type"), job.get("job_title")
                     )
+
+            # Soft-404 : page 200 mais sans contenu job (redirection vers accueil, etc.)
+            if not job.get("job_title") and not job.get("job_description"):
+                self.logger.warning(f"Page sans contenu job valide (soft-404 ?) : {url}")
+                return None
 
             return job
 

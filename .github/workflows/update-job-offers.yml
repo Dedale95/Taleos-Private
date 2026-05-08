@@ -37,6 +37,7 @@ on:
           - oddo_bhf
           - jp_morgan
           - goldman_sachs
+          - axa
 
 jobs:
   scrape:
@@ -48,56 +49,74 @@ jobs:
       max-parallel: 4
       matrix:
         include:
+          # playwright_browser : navigateurs à installer ("chromium", "chromium firefox", ou vide)
+          # Vide = scraper pure requests, aucun navigateur nécessaire.
           - name: Crédit Agricole
             key: credit_agricole
             script: credit_agricole_scraper.py
             db_file: credit_agricole_jobs.db
             timeout_minutes: 90
+            playwright_browser: ""
           - name: Société Générale
             key: societe_generale
             script: societe_generale_scraper_improved.py
             db_file: societe_generale_jobs.db
             timeout_minutes: 90
+            playwright_browser: "chromium"
           - name: Deloitte
             key: deloitte
             script: deloitte_scraper.py
             db_file: deloitte_jobs.db
             timeout_minutes: 90
+            playwright_browser: "chromium"
           - name: BNP Paribas
             key: bnp_paribas
             script: bnp_paribas_scraper.py
             db_file: bnp_paribas_jobs.db
             timeout_minutes: 180
+            playwright_browser: "chromium firefox"
           - name: BPCE
             key: bpce
             script: bpce_scraper.py
             db_file: bpce_jobs.db
             timeout_minutes: 90
+            playwright_browser: ""
           - name: Bpifrance
             key: bpifrance
             script: bpifrance_scraper.py
             db_file: bpifrance_jobs.db
             timeout_minutes: 90
+            playwright_browser: "chromium"
           - name: Crédit Mutuel
             key: credit_mutuel
             script: credit_mutuel_scraper.py
             db_file: credit_mutuel_jobs.db
             timeout_minutes: 90
+            playwright_browser: ""
           - name: ODDO BHF
             key: oddo_bhf
             script: oddo_bhf_scraper.py
             db_file: oddo_bhf_jobs.db
             timeout_minutes: 90
+            playwright_browser: "chromium"
           - name: JP Morgan Chase
             key: jp_morgan
             script: jp_morgan_scraper.py
             db_file: jp_morgan_jobs.db
             timeout_minutes: 60
+            playwright_browser: "chromium"
           - name: Goldman Sachs
             key: goldman_sachs
             script: goldman_sachs_scraper.py
             db_file: goldman_sachs_jobs.db
             timeout_minutes: 30
+            playwright_browser: ""
+          - name: AXA
+            key: axa
+            script: axa_scraper.py
+            db_file: axa_jobs.db
+            timeout_minutes: 15
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
@@ -115,12 +134,16 @@ jobs:
           cache: 'pip'
           cache-dependency-path: PYTHON/requirements_scrapers.txt
 
-      - name: Installation des dépendances
+      - name: Installation des dépendances Python
+        run: pip install -r PYTHON/requirements_scrapers.txt
+
+      - name: Installation Playwright (si nécessaire)
+        if: matrix.playwright_browser != ''
         run: |
-          pip install -r PYTHON/requirements_scrapers.txt
-          playwright install chromium firefox
-          playwright install-deps chromium
-          playwright install-deps firefox
+          for browser in ${{ matrix.playwright_browser }}; do
+            playwright install $browser
+            playwright install-deps $browser
+          done
 
       # ── Persistance DB inter-runs (delta scraping) ───────────────────────────
       # Restaure la base SQLite du run précédent afin que le scraper ne scrape
