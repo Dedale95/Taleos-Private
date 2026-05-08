@@ -250,10 +250,14 @@
     return null;
   }
 
-  function getAxaApplyUrl(jobUrl) {
+  function getAxaApplyUrl(jobUrl, companyName = '') {
     const match = String(jobUrl || '').match(/\/jobs\/(\d+)(?:[/?#]|$)/i);
     if (!match) return jobUrl;
     const normalizedUrl = String(jobUrl || '').toLowerCase();
+    const normalizedCompany = String(companyName || '').toLowerCase();
+    if (normalizedCompany.includes('axa xl')) {
+      return `https://careers-en-axa.icims.com/jobs/${match[1]}/login?mobile=false&width=1331&height=500&bga=true&needsRedirect=false&jan1offset=60&jun1offset=120`;
+    }
     if (normalizedUrl.includes('lang=en')) {
       return `https://careers-en-axa.icims.com/jobs/${match[1]}/login?mobile=false&width=1331&height=500&bga=true&needsRedirect=false&jan1offset=60&jun1offset=120`;
     }
@@ -435,7 +439,9 @@
     const { card, jobUrl } = found;
     const jobId = extractJobIdFromOnClick(btn) || (card.querySelector('.job-id')?.textContent || '').trim();
     const jobTitle = (card.querySelector('.job-title')?.textContent || '').trim();
-    const companyName = (card.querySelector('.company-name-wrapper span, .job-company span')?.textContent || '').trim();
+    const companyName = (
+      card.querySelector('.job-company-name, .company-name-wrapper span, .job-company span, .job-company')?.textContent || ''
+    ).trim();
     const publicationDate = (card.querySelector('.job-date')?.textContent || '').replace(/^Publiée le\s*/i, '').trim();
     const location = (card.querySelector('.tag-location')?.textContent || '').replace(/^🌍\s*/, '').trim();
     const contractType = (card.querySelector('.tag-contract')?.textContent || '').replace(/^📄\s*/, '').trim();
@@ -524,7 +530,7 @@
 
     const openUrl = (bankId === 'credit_agricole' || jobUrl.includes('groupecreditagricole.jobs'))
       ? 'https://groupecreditagricole.jobs/fr/connexion/'
-      : (bankId === 'axa' ? getAxaApplyUrl(jobUrl) : jobUrl);
+      : (bankId === 'axa' ? getAxaApplyUrl(jobUrl, companyName) : jobUrl);
 
     /** Ouvre l'URL d'offre uniquement si le profil Firestore est complet (revérification systématique). */
     async function openOfferUrlOnlyIfProfileComplete() {
