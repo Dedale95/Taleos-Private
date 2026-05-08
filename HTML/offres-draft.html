@@ -2524,7 +2524,8 @@
         // Pagination variables
         let currentPage = 1;
         let itemsPerPage = 25;
-        let favoriteJobs = new Set(JSON.parse(localStorage.getItem('taleosFavoriteJobs') || '[]'));
+        const FAVORITES_STORAGE_KEY = 'taleosFavoriteJobs';
+        let favoriteJobs = new Set();
         let showFavoritesOnly = false;
         let offersViewMode = localStorage.getItem('taleosOffersView') || 'grid';
         const SECTIONS_MAX = 12;
@@ -2547,6 +2548,115 @@
             if (!uid) return null;
             const db = firebase.firestore();
             return db.collection('profiles').doc(uid).collection('offres_sections');
+        }
+
+        function readLocalFavoriteJobs() {
+            try {
+                return JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) || '[]')
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean);
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function writeLocalFavoriteJobs(keys) {
+            localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(Array.from(keys || [])));
+        }
+
+        function getFavoriteJobKey(job) {
+            if (!job || typeof job !== 'object') return '';
+            return String(job.job_id || job.job_url || '').trim();
+        }
+
+        function getFavoriteLookupKeys(job) {
+            const keys = new Set();
+            if (!job || typeof job !== 'object') return keys;
+            const jobId = String(job.job_id || '').trim();
+            const jobUrl = String(job.job_url || '').trim();
+            if (jobId) keys.add(jobId);
+            if (jobUrl) keys.add(jobUrl);
+            return keys;
+        }
+
+        function getFavoritesDocumentRef() {
+            const uid = getCurrentUserIdForSections();
+            if (!uid || !firebase?.firestore) return null;
+            return firebase.firestore()
+                .collection('profiles')
+                .doc(uid)
+                .collection('user_preferences')
+                .doc('offres_favorites');
+        }
+
+        async function persistFavoriteJobs() {
+            const serialized = Array.from(favoriteJobs);
+            const ref = getFavoritesDocumentRef();
+            if (ref) {
+                await ref.set({
+                    jobKeys: serialized,
+                    updatedAt: getNowIso()
+                }, { merge: true });
+                localStorage.removeItem(FAVORITES_STORAGE_KEY);
+                return;
+            }
+            writeLocalFavoriteJobs(serialized);
+        }
+
+        async function hydrateFavoriteJobs() {
+            const localFavorites = readLocalFavoriteJobs();
+            const ref = getFavoritesDocumentRef();
+
+            if (!ref) {
+                favoriteJobs = new Set(localFavorites);
+                syncFavoriteJobsWithDataset();
+                return;
+            }
+
+            try {
+                const snap = await ref.get();
+                const remoteFavorites = snap.exists && Array.isArray(snap.data()?.jobKeys)
+                    ? snap.data().jobKeys.map((value) => String(value || '').trim()).filter(Boolean)
+                    : [];
+                favoriteJobs = new Set([...remoteFavorites, ...localFavorites]);
+                await persistFavoriteJobs();
+            } catch (error) {
+                console.error('Erreur chargement favoris Firebase:', error);
+                favoriteJobs = new Set(localFavorites);
+            }
+
+            syncFavoriteJobsWithDataset();
+        }
+
+        function syncFavoriteJobsWithDataset() {
+            if (!Array.isArray(allJobs) || allJobs.length === 0) {
+                updateFavoritesToggle();
+                return;
+            }
+
+            const normalizedFavorites = new Set();
+            for (const job of allJobs) {
+                const canonicalKey = getFavoriteJobKey(job);
+                if (!canonicalKey) continue;
+                const lookupKeys = getFavoriteLookupKeys(job);
+                const matched = Array.from(lookupKeys).some((key) => favoriteJobs.has(key));
+                if (matched) normalizedFavorites.add(canonicalKey);
+            }
+
+            const changed = normalizedFavorites.size !== favoriteJobs.size ||
+                Array.from(normalizedFavorites).some((key) => !favoriteJobs.has(key));
+
+            favoriteJobs = normalizedFavorites;
+            if (showFavoritesOnly && favoriteJobs.size === 0) {
+                showFavoritesOnly = false;
+            }
+            updateFavoritesToggle();
+
+            if (changed) {
+                persistFavoriteJobs().catch((error) => {
+                    console.error('Erreur sauvegarde favoris synchronisés:', error);
+                });
+            }
         }
 
         function getNowIso() {
@@ -3803,6 +3913,7 @@
                     pushProcessed(data[i], i);
                 }
 
+                syncFavoriteJobsWithDataset();
                 filteredJobs = [...allJobs];
 
                 await initializeFilters();
@@ -3838,6 +3949,7 @@
                         if (textEl) textEl.textContent = 'Chargement des offres en arrière-plan : ' + allJobs.length + ' / ' + totalCount;
                     }
                     banner.remove();
+                    syncFavoriteJobsWithDataset();
                     await initializeFilters();
                     await applyFilters();
                     updateStats();
@@ -5281,7 +5393,7 @@
                 const jobEdu = job.education_level && String(job.education_level).trim();
                 const matchEducation = !selectedEducations.length || selectedEducations.includes(jobEdu) ||
                     (selectedEducations.includes('Non spécifié') && !jobEdu);
-                const matchFavorites = !showFavoritesOnly || favoriteJobs.has(job.job_id);
+                const matchFavorites = !showFavoritesOnly || favoriteJobs.has(getFavoriteJobKey(job));
 
                 return matchSearch && matchCountry && matchRegion && matchContract &&
                     matchExperience && matchFamily && matchCompany && matchEducation && matchFavorites;
@@ -6561,7 +6673,8 @@
                 const isPending = pendingApplications[job.job_id];
                 const status = applicationStatuses.get(job.job_id);
                 const isSubmitted = status === 'envoyée';
-                const isFavorite = favoriteJobs.has(job.job_id);
+                const favoriteKey = getFavoriteJobKey(job);
+                const isFavorite = favoriteKey ? favoriteJobs.has(favoriteKey) : false;
                 const matchScore = computeJobMatch(job);
                 
                 // Classes CSS selon l'état
@@ -6592,7 +6705,7 @@
                         <div class="job-company-name">${job.company_name || ''}</div>
                     </div>
                 </div>
-                <button class="job-favorite-btn ${isFavorite ? 'active' : ''}" onclick="toggleFavoriteJob(event, '${job.job_id}', this)" title="${isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}">
+                <button class="job-favorite-btn ${isFavorite ? 'active' : ''}" onclick="toggleFavoriteJob(event, '${favoriteKey.replace(/'/g, "\\'")}', this)" title="${isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}">
                     ${getFavoriteIconMarkup(isFavorite)}
                 </button>
             </div>
@@ -6745,18 +6858,24 @@
             return Math.min(98, Math.max(68, score));
         }
 
-        function toggleFavoriteJob(event, jobId, btn) {
+        async function toggleFavoriteJob(event, jobId, btn) {
             event.stopPropagation();
-            if (favoriteJobs.has(jobId)) favoriteJobs.delete(jobId);
-            else favoriteJobs.add(jobId);
-            localStorage.setItem('taleosFavoriteJobs', JSON.stringify(Array.from(favoriteJobs)));
+            const favoriteKey = String(jobId || '').trim();
+            if (!favoriteKey) return;
+            if (favoriteJobs.has(favoriteKey)) favoriteJobs.delete(favoriteKey);
+            else favoriteJobs.add(favoriteKey);
             updateFavoritesToggle();
             if (btn && btn.isConnected) {
-                const isFavorite = favoriteJobs.has(jobId);
+                const isFavorite = favoriteJobs.has(favoriteKey);
                 btn.classList.toggle('active', isFavorite);
                 btn.innerHTML = getFavoriteIconMarkup(isFavorite);
                 btn.title = isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris';
                 btn.closest('.job-card')?.classList.toggle('favorite', isFavorite);
+            }
+            try {
+                await persistFavoriteJobs();
+            } catch (error) {
+                console.error('Erreur sauvegarde favori:', error);
             }
             if (showFavoritesOnly) {
                 applyFilters();
@@ -7053,6 +7172,9 @@
         let firebaseAuthReady = false;
         let jobsLoaded = false;
 
+        favoriteJobs = new Set(readLocalFavoriteJobs());
+        updateFavoritesToggle();
+
         // ⚡ OPTIMISATION : Charger les jobs IMMÉDIATEMENT sans attendre l'auth
         // Les statistiques s'affichent tout de suite, les boutons se mettent à jour après
         console.log('⚡ Démarrage du chargement des jobs (optimisé)...');
@@ -7074,6 +7196,10 @@
 
                     // Charger les candidatures de l'utilisateur EN ARRIÈRE-PLAN
                     if (user) {
+                        await hydrateFavoriteJobs();
+                        if (jobsLoaded) {
+                            await applyFilters();
+                        }
                         loadUserApplications().then(() => {
                             // Une fois les candidatures chargées, mettre à jour les boutons
                             if (jobsLoaded && filteredJobs.length > 0) {
@@ -7083,6 +7209,11 @@
                         });
                         loadCustomSections().then(() => renderCustomSections());
                     } else {
+                        favoriteJobs = new Set(readLocalFavoriteJobs());
+                        syncFavoriteJobsWithDataset();
+                        if (jobsLoaded) {
+                            await applyFilters();
+                        }
                         userApplications.clear();
                         customSections = [];
                         sectionsLoaded = false;
