@@ -104,11 +104,24 @@
 
   function getBankIdFromUrl(url) {
     if (!url) return null;
-    if (url.includes('groupecreditagricole.jobs') || url.includes('creditagricole')) return 'credit_agricole';
-    if (url.includes('careers.societegenerale.com') || url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
-    if (url.includes('deloitte.com') || (url.includes('myworkdayjobs.com') && url.toLowerCase().includes('deloitte'))) return 'deloitte';
-    if (url.includes('recrutement.bpce.fr')) return 'bpce';
-    return 'credit_agricole'; // défaut
+    const lowerUrl = String(url).toLowerCase();
+    if (lowerUrl.includes('groupecreditagricole.jobs') || lowerUrl.includes('creditagricole')) return 'credit_agricole';
+    if (lowerUrl.includes('careers.societegenerale.com') || lowerUrl.includes('societegenerale') || lowerUrl.includes('socgen.taleo.net')) return 'societe_generale';
+    if (lowerUrl.includes('deloitte.com') || (lowerUrl.includes('myworkdayjobs.com') && lowerUrl.includes('deloitte'))) return 'deloitte';
+    if (lowerUrl.includes('recrutement.bpce.fr')) return 'bpce';
+    if (lowerUrl.includes('careers.axa.com') || lowerUrl.includes('axa.com/careers-home') || lowerUrl.includes('icims.com/jobs/') || lowerUrl.includes('icims.eu/jobs/')) return 'axa';
+    return null;
+  }
+
+  function getBankIdFromCompanyName(companyName) {
+    const normalized = String(companyName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!normalized) return null;
+    if (normalized.includes('credit agricole') || normalized.includes('crédit agricole') || normalized.includes('amundi') || normalized.includes('lcl') || normalized.includes('bforbank') || normalized.includes('caceis') || normalized.includes('indosuez') || normalized.includes('idia')) return 'credit_agricole';
+    if (normalized.includes('societe generale') || normalized.includes('société générale')) return 'societe_generale';
+    if (normalized.includes('deloitte')) return 'deloitte';
+    if (normalized.includes('bpce')) return 'bpce';
+    if (normalized.startsWith('axa') || normalized.includes(' groupe axa') || normalized.includes(' gie axa') || normalized.includes('direct assurance')) return 'axa';
+    return null;
   }
 
   function findJobCard(el) {
@@ -236,6 +249,7 @@
     if (jobUrl && String(jobUrl).toLowerCase().includes('groupecreditagricole.jobs')) {
       bankId = 'credit_agricole';
     }
+    if (!bankId) bankId = getBankIdFromCompanyName(companyName);
 
     if (!jobId) return;
 
@@ -258,6 +272,15 @@
     // Marquer tout de suite pour que la page (si elle reçoit l’événement) n’ouvre pas d’onglet
     btn.dataset.taleosProcessing = '1';
     btn.setAttribute('data-taleos-processing', '1');
+
+    // AXA n'a pas encore de filler de candidature branché : ouvrir le vrai portail,
+    // mais ne jamais retomber sur Crédit Agricole par défaut.
+    if (bankId === 'axa') {
+      setButtonProcessing(btn, jobId);
+      window.open(jobUrl, '_blank', 'noopener');
+      clearProcessing(jobId, true);
+      return;
+    }
 
     // Ping rapide : uniquement pour réveiller le service worker si besoin, mais on ne bloque plus l'automatisation sur un timeout
     try {

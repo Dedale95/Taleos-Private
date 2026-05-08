@@ -37,6 +37,10 @@ const BANK_SCRIPT_MAP = {
   bpce: 'content/bpce-careers-filler.js'
 };
 
+function hasBankAutomation(bankId) {
+  return Boolean(bankId && BANK_SCRIPT_MAP[bankId]);
+}
+
 const PROJECT_ID = 'project-taleos';
 
 let authSyncResolve = null;
@@ -615,6 +619,21 @@ async function runTestConnection(msg) {
 }
 
 async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId) {
+  if (bankId && !hasBankAutomation(bankId)) {
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    await chrome.tabs.create(createOpts);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+    }
+    return { success: true, message: 'Ouverture directe du portail carrière.' };
+  }
+
   let { taleosUserId, taleosIdToken } = await chrome.storage.local.get(['taleosUserId', 'taleosIdToken']);
   if (!taleosUserId && taleosTabId) {
     try {
