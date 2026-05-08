@@ -55,6 +55,35 @@ DETAIL_DELAY   = 0.8    # secondes entre les pages détail
 REQUEST_TIMEOUT = 30
 MAX_RETRIES    = 3
 
+# ─────────────── Filiales publiques LBP ────────────────────────
+# Les entités renvoyées par le site sont souvent des directions internes
+# (DSI, DFI, DRH…). On normalise vers les marques / entités publiques connues.
+# Tout ce qui ne match pas → "La Banque Postale".
+LBP_SUBSIDIARY_PATTERNS: Dict[str, str] = {
+    "leasing":              "La Banque Postale Leasing & Factoring",
+    "factoring":            "La Banque Postale Leasing & Factoring",
+    "assurance":            "La Banque Postale Assurances",
+    "bedl":                 "BEDL",
+    "kkbb":                 "KKBB",
+    "sofiap":               "Sofiap",
+    "vivier":               "Vivier",
+    "easy bourse":          "Easybourse",
+    "easybourse":           "Easybourse",
+    "filbanque":            "Filbanque",
+    "la banque postale sa": "La Banque Postale",
+}
+
+def normalize_lbp_entity(raw: str) -> str:
+    """Normalise une entité LBP : filiale publique ou 'La Banque Postale'."""
+    if not raw:
+        return COMPANY_NAME
+    n = raw.strip().lower()
+    for key, value in LBP_SUBSIDIARY_PATTERNS.items():
+        if key in n:
+            return value
+    return COMPANY_NAME
+
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -336,7 +365,7 @@ def parse_listing_page(html: str) -> List[Dict]:
             "job_title":    title,
             "contract_type": parse_contract(contract_raw) if contract_raw else "",
             "location":     location,
-            "company_name": unescape(entity) if entity else COMPANY_NAME,
+            "company_name": normalize_lbp_entity(unescape(entity)) if entity else COMPANY_NAME,
         })
     return jobs
 
@@ -364,7 +393,7 @@ def parse_detail_page(html: str, base_job: Dict) -> Dict:
                 job["contract_type"] = parse_contract(lines[i + 1])
             # Entité
             if line.lower() in ("entité", "entite") and i + 1 < len(lines):
-                job["company_name"] = unescape(lines[i + 1])
+                job["company_name"] = normalize_lbp_entity(unescape(lines[i + 1]))
             # Niveau d'études
             if "niveau" in line.lower() and "étud" in line.lower() and i + 1 < len(lines):
                 job["education_level"] = parse_education(lines[i + 1])

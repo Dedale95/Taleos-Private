@@ -2843,9 +2843,8 @@
         function isLaBanquePostaleBrand(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
-            return n.includes('banque postale') || n.includes('la poste') ||
-                ['lbp', 'sofiap', 'tocsin', 'easybourse', 'bedl',
-                 'bpce iard', 'filbanque'].some(s => n === s || n.startsWith(s + ' '));
+            return n.includes('banque postale') ||
+                ['bedl', 'kkbb', 'sofiap', 'vivier', 'easybourse', 'filbanque'].some(s => n === s || n.startsWith(s + ' ') || n.startsWith(s + ' -'));
         }
 
         function populateCompanyFilterAccordionWithGroup(accordionId, values, counts, disabledValues, hideDisabled, checkedValues) {
