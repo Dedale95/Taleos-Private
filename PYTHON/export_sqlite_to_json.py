@@ -488,12 +488,6 @@ def read_from_db(db_path, company_name, live_only=True):
             if db_path == CREDIT_MUTUEL_DB and job.get('company_name'):
                 job['company_name'] = normalize_cm_company_name(job['company_name'])
 
-            # AXA : toutes filiales (AXA France, AXA Banque, AXA XL, GIE AXA…) → "AXA"
-            if db_path == AXA_DB and job.get('company_name'):
-                n = job['company_name'].lower()
-                if n.startswith('axa') or 'gie axa' in n or 'direct assurance' in n or 'juridica' in n:
-                    job['company_name'] = 'AXA'
-            
             jobs.append(job)
         
         conn.close()
