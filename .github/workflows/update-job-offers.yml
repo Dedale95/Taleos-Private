@@ -278,9 +278,9 @@ jobs:
           git add HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_summary.json scraped_jobs_live.json scraped_jobs.json scraped_jobs_summary.json
           git commit -m "chore: mise à jour quotidienne des offres (pipeline parallèle)"
           # Rebase sur origin/main au cas où des commits ont été poussés pendant le run
-          # (ex : fix workflow poussé manuellement en cours de batch). Les fichiers JSON
-          # sont toujours regénérés donc le rebase ne crée jamais de conflit réel.
-          git pull --rebase origin main
+          # (ex : fix workflow poussé manuellement en cours de batch). --autostash
+          # gère les fichiers trackés non-stagés restants (ex: scraped_jobs_full.json).
+          git pull --rebase --autostash origin main
           git push origin main
 
   # S’exécute si au moins un scraper échoue (la consolidation tourne quand même).
