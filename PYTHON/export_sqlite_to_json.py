@@ -239,11 +239,8 @@ def normalize_contract_type(raw_contract: str) -> str:
     if any(x in norm or x in norm_clean for x in ["cdd", "temporary", "temporaire", "fixed term", "zero hours", "contractor", "temp"]):
         return "CDD"
 
-    # Graduate Programme (CDI) → CDI (le contrat sous-jacent est CDI)
-    if any(x in norm for x in ["graduate programme", "graduate program"]) and any(x in norm for x in ["cdi", "permanent"]):
-        return "CDI"
-
-    # Graduate Programme (sans précision CDI)
+    # Graduate Programme (avec ou sans "(CDI)") → toujours "Graduate Programme"
+    # Les offres Graduate Programme sont un type propre, pas un simple CDI.
     if any(x in norm or x in norm_clean for x in ["graduate programme", "graduate program"]):
         return "Graduate Programme"
 

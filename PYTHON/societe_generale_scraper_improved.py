@@ -417,7 +417,7 @@ async def fetch_job_details(context: BrowserContext, url: str, sem: asyncio.Sema
                 "Trainee": "Stage",
                 "International Volunteer Program": "VIE",
                 "V.I.E": "VIE",
-                "Graduate program": "Graduate Program",
+                "Graduate program": "Graduate Programme",
                 "Alternance": "Alternance / Apprentissage",
                 "CDI": "CDI",
                 "CDD": "CDD",

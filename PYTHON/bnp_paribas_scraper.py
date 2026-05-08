@@ -121,7 +121,8 @@ CONTRACT_MAPPING = {
     "apprenticeship": "Alternance / Apprentissage",
     "job étudiant": "Job étudiant",
     "student job": "Job étudiant",
-    "graduate programme (cdi)": "CDI",  # contrat sous-jacent = CDI
+    "graduate programme (cdi)": "Graduate Programme",
+    "graduate programme": "Graduate Programme",
     "graduate program": "Graduate Programme",
     "zero hours": "Zero Hours",
 }
