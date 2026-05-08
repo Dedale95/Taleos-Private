@@ -52,7 +52,8 @@ const BANK_SCRIPT_MAP = {
   credit_mutuel: 'content/credit-mutuel-careers-filler.js',
   bpifrance: 'content/bpifrance-careers-filler.js',
   jp_morgan: 'content/jp-morgan-careers-filler.js',
-  goldman_sachs: 'content/goldman-sachs-careers-filler.js'
+  goldman_sachs: 'content/goldman-sachs-careers-filler.js',
+  axa: 'content/axa-careers-filler.js'
 };
 
 function hasBankAutomation(bankId) {
@@ -80,6 +81,7 @@ const CREDIT_MUTUEL_BLUEPRINT_SCRIPT = 'scripts/credit_mutuel_blueprint.js';
 const BPIFRANCE_BLUEPRINT_SCRIPT = 'scripts/bpifrance_blueprint.js';
 const JP_MORGAN_BLUEPRINT_SCRIPT = 'scripts/jp_morgan_blueprint.js';
 const GOLDMAN_SACHS_BLUEPRINT_SCRIPT = 'scripts/goldman_sachs_blueprint.js';
+const AXA_BLUEPRINT_SCRIPT = 'scripts/axa_blueprint.js';
 
 function injectFilesWithBanner(mainFiles) {
   const arr = Array.isArray(mainFiles) ? mainFiles : [mainFiles];
@@ -116,6 +118,9 @@ function injectBankFiles(bankId, mainFiles) {
   if (bankId === 'goldman_sachs') {
     return injectFilesWithBanner([GOLDMAN_SACHS_BLUEPRINT_SCRIPT, ...arr]);
   }
+  if (bankId === 'axa') {
+    return injectFilesWithBanner([AXA_BLUEPRINT_SCRIPT, ...arr]);
+  }
   return injectFilesWithBanner(arr);
 }
 
@@ -130,6 +135,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'credit_mutuel') keys.push('taleos_pending_credit_mutuel', 'taleos_credit_mutuel_tab_id');
   if (bid === 'jp_morgan') keys.push('taleos_pending_jp_morgan', 'taleos_jp_morgan_tab_id');
   if (bid === 'goldman_sachs') keys.push('taleos_pending_goldman_sachs', 'taleos_gs_tab_id');
+  if (bid === 'axa') keys.push('taleos_pending_axa', 'taleos_axa_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -426,6 +432,8 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_jp_morgan_tab_id',
     'taleos_pending_goldman_sachs',
     'taleos_gs_tab_id',
+    'taleos_pending_axa',
+    'taleos_axa_tab_id',
     'taleos_pending_deloitte',
     'taleos_pending_offer',
     'taleos_ca_apply_tab_id'
@@ -506,6 +514,16 @@ async function resolveTabAndMetaForStuckReport() {
           offerUrl: s.taleos_pending_deloitte.offerUrl || ''
         };
       }
+    }
+  }
+  if (s.taleos_pending_axa && s.taleos_axa_tab_id) {
+    const tab = await chrome.tabs.get(s.taleos_axa_tab_id).catch(() => null);
+    if (tab) {
+      await registerApplyRunForTab(s.taleos_axa_tab_id, {
+        bankId: 'axa',
+        jobId: s.taleos_pending_axa.jobId || '',
+        offerUrl: s.taleos_pending_axa.offerUrl || ''
+      });
     }
   }
   if (s.taleos_pending_offer?.profile && s.taleos_ca_apply_tab_id) {
@@ -705,7 +723,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     clearApplyStuckWatchdog();
     return;
   }
-  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs'];
+  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs', 'taleos_pending_axa'];
   for (const k of keys) {
     const ch = changes[k];
     if (ch && (ch.newValue === undefined || ch.newValue === null)) {
@@ -812,6 +830,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       'taleos_bnp_tab_id',
       'taleos_credit_mutuel_tab_id',
       'taleos_jp_morgan_tab_id',
+      'taleos_axa_tab_id',
       'taleos_ca_apply_tab_id',
       'taleos_pending_sg',
       'taleos_pending_bpce',
@@ -819,6 +838,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       'taleos_pending_credit_mutuel',
       'taleos_pending_jp_morgan',
       'taleos_pending_goldman_sachs',
+      'taleos_pending_axa',
       'taleos_gs_tab_id',
       'taleos_pending_deloitte',
       'taleos_pending_offer',
@@ -850,6 +870,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (state.taleos_gs_tab_id === tabId || state.taleos_pending_goldman_sachs?.tabId === tabId) {
       keysToRemove.add('taleos_pending_goldman_sachs');
       keysToRemove.add('taleos_gs_tab_id');
+    }
+    if (state.taleos_axa_tab_id === tabId || state.taleos_pending_axa?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_axa');
+      keysToRemove.add('taleos_axa_tab_id');
     }
     if (state.taleos_ca_apply_tab_id === tabId || state.taleos_ca_candidature_pending?.tabId === tabId) {
       keysToRemove.add('taleos_pending_offer');
@@ -1597,6 +1621,11 @@ async function reloadAndContinue(tabId, offerUrl, bankId, profile) {
 }
 
 const CA_CONNEXION_URL = 'https://groupecreditagricole.jobs/fr/connexion/';
+function getAxaApplyUrl(jobUrl) {
+  const match = String(jobUrl || '').match(/\/jobs\/(\d+)(?:[/?#]|$)/i);
+  if (!match) return jobUrl;
+  return `https://careers-fr-axa.icims.com/jobs/${match[1]}/login`;
+}
 
 const CONNECTION_TEST_URLS = {
   credit_agricole: 'https://groupecreditagricole.jobs/fr/connexion/',
@@ -2105,6 +2134,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'credit_mutuel' || url.includes('recrutement.creditmutuel.fr')) return 'credit_mutuel';
   if (bid === 'bpifrance' || url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
   if (bid === 'jp_morgan' || bid.includes('jp morgan') || bid.includes('jpmorgan') || url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
+  if (bid === 'axa' || url.includes('careers.axa.com') || url.includes('careers-fr-axa.icims.com') || url.includes('candidature-recrutement.axa.fr')) return 'axa';
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
   if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
@@ -2450,6 +2480,37 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       taleos_bpce_tab_id: tab.id
     });
     scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'axa') {
+    chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+    const createOpts = { url: getAxaApplyUrl(offerUrl), active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    await chrome.storage.local.set({
+      taleos_pending_axa: {
+        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'AXA', __offerUrl: offerUrl },
+        offerUrl,
+        applyUrl: getAxaApplyUrl(offerUrl),
+        jobId,
+        jobTitle,
+        companyName: companyName || 'AXA',
+        tabId: tab.id,
+        timestamp: Date.now()
+      },
+      taleos_axa_tab_id: tab.id
+    });
+    await scheduleApplyStuckWatchdog();
   } else if (routeAs === 'bnp') {
     chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
     const createOpts = { url: offerUrl, active: false };
@@ -3560,6 +3621,7 @@ function normalizeSite(site, offerUrl) {
   if (raw.includes('bpifrance') || raw.includes('bpi')) return 'bpifrance';
   if (raw.includes('jp morgan') || raw.includes('jpmorgan') || raw.includes('jp_morgan')) return 'jp_morgan';
   if (raw.includes('goldman') || raw.includes('goldman sachs') || raw.includes('goldman_sachs')) return 'goldman_sachs';
+  if (raw.includes('axa')) return 'axa';
   if (raw.includes('societe') || raw.includes('socgen')) return 'societe_generale';
   if (raw.includes('bpce')) return 'bpce';
   if (raw.includes('deloitte')) return 'deloitte';
@@ -3569,6 +3631,7 @@ function normalizeSite(site, offerUrl) {
   if (url.includes('talents.bpifrance.fr') || url.includes('bpi.tzportal.io')) return 'bpifrance';
   if (url.includes('jpmc.fa.oraclecloud.com')) return 'jp_morgan';
   if (url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
+  if (url.includes('careers.axa.com') || url.includes('careers-fr-axa.icims.com') || url.includes('candidature-recrutement.axa.fr')) return 'axa';
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';

@@ -475,15 +475,6 @@
     btn.dataset.taleosProcessing = '1';
     btn.setAttribute('data-taleos-processing', '1');
 
-    // AXA n'a pas encore de filler de candidature branché : ouvrir le vrai portail,
-    // mais ne jamais retomber sur Crédit Agricole par défaut.
-    if (bankId === 'axa') {
-      setButtonProcessing(btn, jobId);
-      window.open(getAxaApplyUrl(jobUrl), '_blank', 'noopener');
-      clearProcessing(jobId, true);
-      return;
-    }
-
     // Ping rapide : uniquement pour réveiller le service worker si besoin, mais on ne bloque plus l'automatisation sur un timeout
     try {
       await Promise.race([
@@ -526,7 +517,7 @@
 
     const openUrl = (bankId === 'credit_agricole' || jobUrl.includes('groupecreditagricole.jobs'))
       ? 'https://groupecreditagricole.jobs/fr/connexion/'
-      : jobUrl;
+      : (bankId === 'axa' ? getAxaApplyUrl(jobUrl) : jobUrl);
 
     /** Ouvre l'URL d'offre uniquement si le profil Firestore est complet (revérification systématique). */
     async function openOfferUrlOnlyIfProfileComplete() {

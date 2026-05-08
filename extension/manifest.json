@@ -35,9 +35,10 @@
     "https://recrutement.creditmutuel.fr/*",
     "https://talents.bpifrance.fr/*",
     "https://bpi.tzportal.io/*",
-    "https://candidature-recrutement.axa.fr/*",
     "https://careers.axa.com/*",
+    "https://careers-fr-axa.icims.com/*",
     "https://login.icims.eu/*",
+    "https://candidature-recrutement.axa.fr/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
@@ -239,6 +240,14 @@
         "scripts/bpifrance_blueprint.js",
         "content/bpifrance-careers-filler.js"
       ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://careers.axa.com/*",
+        "https://careers-fr-axa.icims.com/*"
+      ],
+      "js": ["content/axa-careers-filler.js"],
       "run_at": "document_idle"
     },
     {
