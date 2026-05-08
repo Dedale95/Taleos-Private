@@ -1105,8 +1105,8 @@
         const LIST_EXTENSION_RUNS_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/listExtensionApplicationRuns';
         const SAVE_EXTENSION_RUN_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/saveExtensionApplicationRun';
         const SCRAPING_COVERAGE_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/getScrapingCoverageSnapshot';
-        const SCRAPING_COVERAGE_CACHE_KEY = 'taleosScrapingCoverageSnapshotV2';
-        const SCRAPING_COVERAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+        const SCRAPING_COVERAGE_CACHE_KEY = 'taleosScrapingCoverageSnapshotV3'; // V3 : invalide le cache V2 (AXA+CM ajoutés)
+        const SCRAPING_COVERAGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h — se rafraîchit après le batch du matin
         // siteCount = somme de TOUS les types d'offres affichés sur le site carrière
         // Mis à jour manuellement (~1×/semaine). Vérifier les URLs de référence pour recalculer.
         // Goldman : 1 467 (Careers Home) + 85 (Students/Campus) = 1 552  — vérifié le 06/05/2026

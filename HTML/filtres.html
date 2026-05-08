@@ -2090,7 +2090,8 @@
                                         const cn = job.company_name;
                                         const cnLower = cn.toLowerCase();
                                         let consolidated = null;
-                                        if (cnLower.includes('cic') && !cnLower.includes('credit mutuel')) consolidated = 'CIC';
+                                        if (cnLower.startsWith('axa') || cnLower.includes('gie axa') || cnLower.includes('direct assurance') || cnLower.includes('juridica')) consolidated = 'AXA';
+                                        else if (cnLower.includes('cic') && !cnLower.includes('credit mutuel')) consolidated = 'CIC';
                                         else if (cnLower.includes('cofidis')) consolidated = 'Cofidis';
                                         else if (cnLower.includes('euro information') || cnLower.includes('euro-information')) consolidated = 'Euro Information';
                                         else if (cnLower.includes('acm')) consolidated = 'ACM GIE';
