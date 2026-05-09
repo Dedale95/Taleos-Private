@@ -75,6 +75,16 @@ def is_axa(name: str) -> bool:
     )
 
 
+def is_lbp(name: str) -> bool:
+    n = (name or "").lower()
+    return any(s in n for s in [
+        "la banque postale", "banque postale",
+        "bedl", "easybourse", "sofiap",
+        "lbp assurances", "lbp am", "lbp asset",
+        "sf2", "bfm", "filbanque",
+    ])
+
+
 def is_allianz(name: str) -> bool:
     n = (name or "").lower()
     return (
@@ -147,6 +157,8 @@ def canonical_group(name: str) -> str:
         return "J.P. Morgan"
     if "société générale" in low or "societe generale" in low:
         return "Groupe Société Générale"
+    if is_lbp(n):
+        return "Groupe La Banque Postale"
     if is_allianz(n):
         return "Allianz"
     if is_axa(n):
