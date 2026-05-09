@@ -1105,8 +1105,8 @@
         const LIST_EXTENSION_RUNS_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/listExtensionApplicationRuns';
         const SAVE_EXTENSION_RUN_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/saveExtensionApplicationRun';
         const SCRAPING_COVERAGE_CF_URL = 'https://europe-west1-project-taleos.cloudfunctions.net/getScrapingCoverageSnapshot';
-        const SCRAPING_COVERAGE_CACHE_KEY = 'taleosScrapingCoverageSnapshotV3';
-        const SCRAPING_COVERAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+        const SCRAPING_COVERAGE_CACHE_KEY = 'taleosScrapingCoverageSnapshotV4';
+        const SCRAPING_COVERAGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h (était 24h — réduit pour capter les mises à jour quotidiennes)
         // siteCount = somme de TOUS les types d'offres affichés sur le site carrière
         // Mis à jour manuellement (~1×/semaine). Vérifier les URLs de référence pour recalculer.
         // Goldman : 1 467 (Careers Home) + 85 (Students/Campus) = 1 552  — vérifié le 06/05/2026
@@ -1123,7 +1123,7 @@
             { name: 'Bpifrance', siteCount: 224, careerUrl: 'https://talents.bpifrance.fr/nos-opportunites/?criteres=cdi%7Calternance%7Cstage%7Cvie', sourceLabel: 'Somme des contrats Bpifrance' },
             { name: 'ODDO BHF', siteCount: 215, careerUrl: 'https://www.oddo-bhf.com/fr/decouvrez-nos-offres-demplois/', sourceLabel: 'Page offres ODDO BHF' },
             { name: 'AXA', siteCount: 873, careerUrl: 'https://careers.axa.com/careers-home/jobs?page=1', sourceLabel: 'API AXA Careers (country=France)' },
-            { name: 'Allianz', siteCount: 1972, careerUrl: 'https://careers.allianz.com/global/en/search-results', sourceLabel: 'API PhenomPeople (global, tous pays) — vérifié mai 2026' },
+            { name: 'Allianz', siteCount: 1973, careerUrl: 'https://careers.allianz.com/global/en/search-results', sourceLabel: 'API PhenomPeople (global, tous pays) — vérifié mai 2026' },
             { name: 'La Banque Postale', siteCount: 265, careerUrl: 'https://www.labanquepostale.com/candidats/offres-d-emploi/nos-offres-d-emploi.html', sourceLabel: 'Site LBP (AEM JCR API)' }
         ];
         const RESULT_FILTERS = ['all', 'success', 'already_applied', 'failed', 'aborted', 'timeout', 'running'];
@@ -1565,7 +1565,8 @@
                     const cachedSnapshot = cached?.snapshot || null;
                     const expectedBankCount = SCRAPING_COVERAGE_FALLBACK_BANKS.length;
                     const cachedLooksFresh = cached?.storedAt && (Date.now() - Number(cached.storedAt) < SCRAPING_COVERAGE_CACHE_TTL_MS);
-                    const cachedLooksComplete = (cachedSnapshot?.banks?.length || 0) >= expectedBankCount;
+                    const cachedLooksComplete = (cachedSnapshot?.banks?.length || 0) >= expectedBankCount
+                        && Number(cachedSnapshot?.totals?.taleosCount || 0) > 5000; // rejet si snapshot de désastre (quasi-zéro offres)
                     if (cachedSnapshot && cachedLooksFresh && cachedLooksComplete) {
                         renderScrapingCoverage(cachedSnapshot);
                         return cachedSnapshot;
