@@ -1,6 +1,6 @@
 /**
  * Taleos - Remplissage formulaire BPCE Oracle Cloud (ekez.fa.em2.oraclecloud.com)
- * Version 1.0.60 : Logs anti-spam, correction disponibilité ("Immédiatement") et vivier Natixis.
+ * Version 1.0.61 : Sélection Oracle stabilisée par question, date DD-MM-YYYY, vivier Natixis robuste.
  */
 (function() {
   'use strict';
@@ -23,7 +23,7 @@
     if (document.getElementById(BANNER_ID)) return;
     const banner = document.createElement('div');
     banner.id = BANNER_ID;
-    banner.textContent = '⏳ Automatisation Taleos active (V1.0.60) — Ne touchez à rien.';
+    banner.textContent = '⏳ Automatisation Taleos active (V1.0.61) — Ne touchez à rien.';
     Object.assign(banner.style, {
       position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483647',
       background: 'linear-gradient(135deg, #003366 0%, #0055a4 100%)', color: 'white',
@@ -93,6 +93,40 @@
       }
     }
     return false;
+  }
+
+  function normalizeText(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function findQuestionContainer(fragments) {
+    const normalizedFragments = (fragments || []).map(normalizeText).filter(Boolean);
+    if (!normalizedFragments.length) return null;
+    const candidates = Array.from(document.querySelectorAll('.apply-flow-block, .input-row, .apply-flow-section, [data-bind*="cx-select-pills"]'))
+      .map(el => el.closest('.apply-flow-block, .input-row, .apply-flow-section') || el)
+      .filter(Boolean);
+    for (const el of candidates) {
+      const text = normalizeText(el.textContent || '');
+      if (normalizedFragments.every(fragment => text.includes(fragment))) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  function formatOracleAvailability(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Immédiatement';
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
+    const slash = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (slash) return `${slash[1]}-${slash[2]}-${slash[3]}`;
+    return raw;
   }
 
   async function runAutomation() {
@@ -167,27 +201,32 @@
         // Questions
         logOnce('📋 Étape 3 : Questions de candidature', 3);
         const handicapVal = (profile.bpce_handicap || 'Non').trim();
-        const handicapContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => el.textContent.toLowerCase().includes('handicap'));
+        const handicapContainer = findQuestionContainer([
+          'travailleur en situation de handicap',
+          'reconnaissance administrative'
+        ]) || findQuestionContainer(['handicap']);
         if (handicapContainer) smartClickButton('Handicap', handicapVal, handicapContainer);
 
-        // Disponibilité (Correction : Support du texte "Immédiatement")
+        // Disponibilité Oracle attendue en DD-MM-YYYY si une date est fournie.
         const disponibiliteTextarea = document.querySelector('textarea[name="300000620007177"]') || 
                                      document.querySelector('textarea[id^="300000620007177"]') ||
                                      document.querySelector('.input-row__control--autoheight');
         
-        // On cherche la valeur dans profile.available_from ou profile.disponibilite
-        const availableFrom = (profile.available_from || profile.available_date || profile.disponibilite || 'Immédiatement').trim();
+        const availableFrom = formatOracleAvailability(profile.available_from || profile.available_date || profile.disponibilite || 'Immédiatement');
         if (disponibiliteTextarea) {
           smartFillInput('Disponibilité', disponibiliteTextarea, availableFrom);
         }
 
-        // Vivier Natixis (Correction du sélecteur)
         const vivierVal = (profile.bpce_vivier_natixis || 'Oui').trim();
-        const vivierContainer = Array.from(document.querySelectorAll('.apply-flow-block, .input-row')).find(el => 
-          el.textContent.toLowerCase().includes('vivier') || 
-          el.textContent.toLowerCase().includes('natixis') ||
-          el.textContent.toLowerCase().includes('conserve mon profil')
-        );
+        const vivierContainer = findQuestionContainer([
+          'natixis conserve mon profil'
+        ]) || findQuestionContainer([
+          'conserve mon profil dans le vivier candidats'
+        ]) || findQuestionContainer([
+          'proposer de nouvelles offres d emploi'
+        ]) || findQuestionContainer([
+          'natixis'
+        ]);
         if (vivierContainer) {
           smartClickButton('Vivier Natixis', vivierVal, vivierContainer);
         }
@@ -208,7 +247,7 @@
   function init() {
     if (window.__taleosBpceOracleInit) return;
     window.__taleosBpceOracleInit = true;
-    logOnce('👁️  Surveillance Totale active (V1.0.60)');
+    logOnce('👁️  Surveillance Totale active (V1.0.61)');
     
     setInterval(runAutomation, 1500);
 
