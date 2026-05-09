@@ -129,7 +129,7 @@ jobs:
             key: allianz
             script: allianz_scraper.py
             db_file: allianz_jobs.db
-            timeout_minutes: 30
+            timeout_minutes: 90
             playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

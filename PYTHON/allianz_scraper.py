@@ -5,7 +5,7 @@ ALLIANZ Careers Scraper — careers.allianz.com
 Plateforme : PhenomPeople (tenant AISAIPGB)
 API        : POST https://careers.allianz.com/widgets
 Auth       : CSRF token extrait du cookie JWT PLAY_SESSION
-Filtre     : country = France (≈ 438 offres en mai 2026)
+Filtre     : aucun filtre pays (≈ 1 972 offres globales en mai 2026, 49 pays)
 Pagination : paramètre `from` (offset 0-based), size=100
             GET primer obligatoire avant chaque POST paginé (cache session PhenomPeople)
 Delta      : seules les nouvelles URLs passent par la page détail
@@ -242,7 +242,7 @@ def _search_payload(from_offset: int, size: int = PAGE_SIZE) -> dict:
         "counts": True,
         "all_fields": ["category", "country", "state", "city", "remote",
                        "employmentType", "jobLevel", "type", "unit"],
-        "selected_fields": {"country": ["France"]},
+        "selected_fields": {},
         "keywords": "",
         "sortBy": "",
         "jdsource": "facets",
