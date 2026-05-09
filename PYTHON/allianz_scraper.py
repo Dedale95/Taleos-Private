@@ -7,6 +7,7 @@ API        : POST https://careers.allianz.com/widgets
 Auth       : CSRF token extrait du cookie JWT PLAY_SESSION
 Filtre     : country = France (≈ 438 offres en mai 2026)
 Pagination : paramètre `from` (offset 0-based), size=100
+            GET primer obligatoire avant chaque POST paginé (cache session PhenomPeople)
 Delta      : seules les nouvelles URLs passent par la page détail
 
 Schema DB identique aux autres scrapers Taleos.
@@ -343,6 +344,33 @@ def parse_job_listing(raw: dict) -> dict:
 
 
 # ─────────────────────────── Scraping listing ───────────────────────────────
+def _refresh_session_for_page(session: requests.Session, from_offset: int) -> Optional[str]:
+    """
+    PhenomPeople maintient un cache de session côté serveur.
+    Un GET sur la page de recherche avec le paramètre `from` correspondant
+    prime ce cache avant le POST de pagination.
+    Retourne le nouveau CSRF si le cookie a changé, sinon None.
+    """
+    try:
+        resp = session.get(
+            f"{SEARCH_PAGE}?from={from_offset}&s=1",
+            timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning(f"  ⚠️  GET primer offset={from_offset} : {exc}")
+        return None
+
+    # Tenter de récupérer un nouveau CSRF si le cookie a été rafraîchi
+    new_play_session = session.cookies.get("PLAY_SESSION") or ""
+    new_csrf = _extract_csrf_from_play_session(new_play_session)
+    if new_csrf and new_csrf != session.headers.get("X-CSRF-TOKEN"):
+        session.headers["X-CSRF-TOKEN"] = new_csrf
+        logger.debug(f"  🔑 CSRF rafraîchi offset={from_offset}")
+        return new_csrf
+    return None
+
+
 def fetch_all_listings(session: requests.Session) -> List[dict]:
     """Récupère toutes les offres France depuis l'API listing."""
     logger.info("  📋 Page 1 (offset 0)…")
@@ -359,18 +387,34 @@ def fetch_all_listings(session: requests.Session) -> List[dict]:
     results = [parse_job_listing(j) for j in jobs_raw]
 
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    consecutive_empty = 0
+    MAX_CONSECUTIVE_EMPTY = 2  # abandon après 2 pages vides consécutives
+
     for page_num in range(1, total_pages):
         from_offset = page_num * PAGE_SIZE
+        # Prime le cache session PhenomPeople avant chaque POST paginé
+        _refresh_session_for_page(session, from_offset)
         time.sleep(REQUEST_DELAY)
         logger.info(f"  📋 Page {page_num + 1}/{total_pages} (offset {from_offset})…")
         data = _post(session, _search_payload(from_offset, PAGE_SIZE))
         if not data:
             logger.warning(f"  ⚠️  Réponse vide offset={from_offset}, on continue")
+            consecutive_empty += 1
+            if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                logger.warning(f"  ⚠️  {consecutive_empty} pages vides consécutives — arrêt pagination")
+                break
             continue
         jobs_raw = (data.get("eagerLoadRefineSearch", {}).get("data") or {}).get("jobs") or []
         if not jobs_raw:
-            logger.info("  → 0 résultats, fin de pagination")
-            break
+            # Diagnostiquer la structure de la réponse avant d'abandonner
+            top_keys = list(data.keys())
+            logger.warning(f"  ⚠️  0 jobs offset={from_offset} — clés réponse : {top_keys}")
+            consecutive_empty += 1
+            if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                logger.warning(f"  ⚠️  {consecutive_empty} pages vides consécutives — arrêt pagination")
+                break
+            continue
+        consecutive_empty = 0
         results.extend(parse_job_listing(j) for j in jobs_raw)
         logger.info(f"  → {len(jobs_raw)} offres (cumul : {len(results)})")
 
