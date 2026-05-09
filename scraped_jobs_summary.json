@@ -1,36 +1,14 @@
 {
-  "generated_at": "2026-05-09T10:07:47.879728+00:00",
-  "total_jobs": 22086,
+  "generated_at": "2026-05-09T11:09:41.511356+00:00",
+  "total_jobs": 4888,
   "counts_by_group": {
-    "J.P. Morgan": 7586,
     "Groupe BNP Paribas": 4788,
-    "Groupe BPCE": 2379,
-    "Groupe Crédit Agricole": 1956,
-    "Groupe Société Générale": 1631,
-    "Goldman Sachs": 1451,
-    "AXA": 796,
-    "Groupe Crédit Mutuel": 584,
-    "Deloitte": 396,
-    "ODDO BHF": 212,
-    "Bpifrance": 206,
-    "Allianz": 97,
-    "PIMCO": 3,
-    "Non spécifié": 1
+    "Allianz": 99,
+    "ADEUS": 1
   },
   "freshness_by_group": {
-    "AXA": "2026-05-09 09:59:41",
-    "Allianz": "2026-05-09 10:00:21",
-    "Bpifrance": "2026-05-08 10:49:07",
-    "Deloitte": "2026-05-08 10:44:50",
-    "Goldman Sachs": "2026-05-09 09:59:02",
-    "Groupe BNP Paribas": "2026-05-08 20:12:28",
-    "Groupe BPCE": "2026-05-09 09:53:56",
-    "Groupe Crédit Agricole": "2026-05-09 07:09:49",
-    "Groupe Crédit Mutuel": "2026-05-09 09:56:25",
-    "Groupe Société Générale": "2026-05-09 10:02:40",
-    "J.P. Morgan": "2026-05-09 09:58:44",
-    "Non spécifié": "2026-05-01 07:31:17",
-    "ODDO BHF": "2026-05-08 12:54:02",
-    "PIMCO": "2026-05-09 10:00:21"
+    "ADEUS": "2026-05-09 11:09:06",
+    "Allianz": "2026-05-09 11:09:06",
+    "Groupe BNP Paribas": "2026-05-08 20:12:28"
   }
 }
