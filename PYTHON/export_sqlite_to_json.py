@@ -407,15 +407,21 @@ def read_from_db(db_path, company_name, live_only=True):
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row  # Permet d'accéder aux colonnes par nom
         status_filter = "AND status = 'Live'" if live_only else ""
+        # Sélection dynamique des colonnes selon le schéma réel (certaines DB comme LBP
+        # n'ont pas toutes les colonnes, ex: training_specialization).
+        available_cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        wanted_cols = [
+            "job_id", "job_title", "contract_type", "publication_date", "location",
+            "job_family", "duration", "management_position", "status",
+            "education_level", "experience_level", "training_specialization",
+            "technical_skills", "behavioral_skills", "tools", "languages",
+            "job_description", "company_name", "company_description", "job_url",
+            "first_seen", "last_updated",
+        ]
+        select_cols = ", ".join(c for c in wanted_cols if c in available_cols)
         cursor = conn.execute(f"""
-            SELECT 
-                job_id, job_title, contract_type, publication_date, location,
-                job_family, duration, management_position, status,
-                education_level, experience_level, training_specialization,
-                technical_skills, behavioral_skills, tools, languages,
-                job_description, company_name, company_description, job_url,
-                first_seen, last_updated
-            FROM jobs 
+            SELECT {select_cols}
+            FROM jobs
             WHERE is_valid = 1 {status_filter}
             ORDER BY last_updated DESC
         """)
