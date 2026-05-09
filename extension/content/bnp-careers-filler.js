@@ -1099,6 +1099,25 @@
       });
       return;
     }
+    if (detection.key === 'already_applied') {
+      await validatePage(['already_applied'], profile, 'already applied');
+      log('ℹ️ BNP → offre déjà candidée détectée');
+      await submitSuccess({
+        jobId: pending.jobId || profile.__jobId || '',
+        jobTitle: pending.jobTitle || profile.__jobTitle || '',
+        companyName: pending.companyName || profile.__companyName || 'BNP Paribas',
+        offerUrl: pending.offerUrl || profile.__offerUrl || location.href,
+        location: profile.__offerMeta?.location || '',
+        contractType: profile.__offerMeta?.contractType || '',
+        experienceLevel: profile.__offerMeta?.experienceLevel || '',
+        jobFamily: profile.__offerMeta?.jobFamily || '',
+        publicationDate: profile.__offerMeta?.publicationDate || '',
+        status: 'envoyée',
+        successType: 'already_applied',
+        successMessage: 'You already applied for this job.'
+      });
+      return;
+    }
     if (detection.key === 'unavailable') {
       await validatePage(['unavailable'], profile, 'indisponible');
       await submitFailure({

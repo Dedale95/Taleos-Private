@@ -45,6 +45,13 @@
       'aller a mon profil',
       'aller à mon profil'
     ],
+    alreadyApplied: [
+      'thank you for your interest at bnp paribas',
+      'you already applied for this job',
+      'you already applied for this position',
+      'vous avez deja postule a cette offre',
+      'vous avez déjà postulé à cette offre'
+    ],
     unavailable: [
       'offre introuvable',
       'this job is no longer available',
@@ -106,6 +113,12 @@
       pathMatches: [/\/success/i],
       selectorsAny: ['a[href*="/Profile"]', 'a[href*="/externalcareers/Profile"]'],
       textPatterns: TEXT.success
+    },
+    already_applied: {
+      label: 'Candidature déjà envoyée BNP',
+      hostIncludes: ['bwelcome.hr.bnpparibas'],
+      selectorsAny: ['body'],
+      textPatterns: TEXT.alreadyApplied
     },
     unavailable: {
       label: 'Offre indisponible BNP',
