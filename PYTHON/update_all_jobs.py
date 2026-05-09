@@ -464,15 +464,23 @@ def merge_from_databases():
         
         try:
             conn = sqlite3.connect(db_path)
-            cursor = conn.execute("""
-                SELECT 
-                    job_id, job_title, contract_type, publication_date, location,
-                    job_family, duration, management_position, status,
-                    education_level, experience_level, training_specialization,
-                    technical_skills, behavioral_skills, tools, languages,
-                    job_description, company_name, company_description, job_url,
-                    first_seen, last_updated
-                FROM jobs 
+            # Colonnes souhaitées — certaines DB (LBP, Allianz…) ont un schéma
+            # légèrement différent. On ne sélectionne que les colonnes existantes.
+            available_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+            }
+            wanted_cols = [
+                "job_id", "job_title", "contract_type", "publication_date", "location",
+                "job_family", "duration", "management_position", "status",
+                "education_level", "experience_level", "training_specialization",
+                "technical_skills", "behavioral_skills", "tools", "languages",
+                "job_description", "company_name", "company_description", "job_url",
+                "first_seen", "last_updated",
+            ]
+            select_cols = ", ".join(c for c in wanted_cols if c in available_cols)
+            cursor = conn.execute(f"""
+                SELECT {select_cols}
+                FROM jobs
                 WHERE is_valid = 1 AND status = 'Live'
             """)
             

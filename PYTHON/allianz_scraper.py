@@ -543,31 +543,36 @@ class Database:
             conn.commit()
         logger.info(f"  ⚰️  {len(to_expire)} offre(s) expirée(s)")
 
-    def upsert(self, job: dict):
-        url = job.get("job_url", "")
-        if not url:
+    def upsert_batch(self, jobs: List[dict]):
+        """Upsert toutes les offres en une seule transaction (plus fiable et rapide)."""
+        valid = [j for j in jobs if j.get("job_url")]
+        if not valid:
             return
-        params = {
-            "job_url":          url,
-            "job_id":           job.get("job_id", ""),
-            "job_title":        job.get("job_title", ""),
-            "contract_type":    job.get("contract_type", ""),
-            "publication_date": job.get("publication_date", ""),
-            "location":         job.get("location", ""),
-            "job_family":       job.get("job_family", ""),
-            "company_name":     job.get("company_name", COMPANY_NAME),
-            "job_description":  job.get("job_description", ""),
-            "experience_level": job.get("experience_level", ""),
-            "education_level":  job.get("education_level", ""),
-            "country":          job.get("country", "France"),
-            "region":           job.get("region", ""),
-            "source":           SOURCE_NAME,
-            "status":           job.get("status", "Live"),
-            "is_valid":         int(job.get("is_valid", 1)),
-        }
+        params_list = [
+            {
+                "job_url":          j["job_url"],
+                "job_id":           j.get("job_id", ""),
+                "job_title":        j.get("job_title", ""),
+                "contract_type":    j.get("contract_type", ""),
+                "publication_date": j.get("publication_date", ""),
+                "location":         j.get("location", ""),
+                "job_family":       j.get("job_family", ""),
+                "company_name":     j.get("company_name", COMPANY_NAME),
+                "job_description":  j.get("job_description", ""),
+                "experience_level": j.get("experience_level", ""),
+                "education_level":  j.get("education_level", ""),
+                "country":          j.get("country", ""),
+                "region":           j.get("region", ""),
+                "source":           SOURCE_NAME,
+                "status":           j.get("status", "Live"),
+                "is_valid":         int(j.get("is_valid", 1)),
+            }
+            for j in valid
+        ]
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(_UPSERT, params)
+            conn.executemany(_UPSERT, params_list)
             conn.commit()
+        logger.info(f"  💾 {len(params_list)} offres upsertées en batch")
 
     def count_live(self) -> int:
         with sqlite3.connect(self.db_path) as conn:
@@ -602,41 +607,50 @@ def main():
     db      = Database(Config.DB_PATH)
     session, _ = build_session()
 
-    # 1. Listing complet (France)
-    all_jobs = fetch_all_listings(session)
-    if not all_jobs:
+    # 1. Listing complet (global)
+    all_jobs_raw = fetch_all_listings(session)
+    if not all_jobs_raw:
         logger.error("  ❌ Aucune offre récupérée — arrêt")
         return
 
-    current_urls  = {j["job_url"] for j in all_jobs if j.get("job_url")}
-    logger.info(f"  ✅ {len(all_jobs)} offres live sur le site")
+    # Dédupliquer par job_url (la pagination PhenomPeople peut retourner des doublons)
+    seen: Dict[str, dict] = {}
+    for j in all_jobs_raw:
+        url = j.get("job_url")
+        if url and url not in seen:
+            seen[url] = j
+    all_jobs = list(seen.values())
+    logger.info(f"  ✅ {len(all_jobs)} offres uniques live sur le site ({len(all_jobs_raw)} brutes)")
+
+    current_urls = set(seen.keys())
 
     # 2. Marquer expirées
     db.expire_missing(current_urls)
 
     # 3. Delta : nouvelles URLs seulement → page détail
     existing_urls = db.get_all_urls()
-    new_jobs  = [j for j in all_jobs if j.get("job_url") and j["job_url"] not in existing_urls]
-    old_jobs  = [j for j in all_jobs if j.get("job_url") and j["job_url"] in existing_urls]
+    new_jobs  = [j for j in all_jobs if j["job_url"] not in existing_urls]
+    old_jobs  = [j for j in all_jobs if j["job_url"] in existing_urls]
 
     logger.info(f"  🔍 {len(new_jobs)} nouvelles offres à enrichir / {len(old_jobs)} déjà en base")
 
     enriched: List[dict] = list(old_jobs)  # anciens : mise à jour via listing seulement
     for idx, job in enumerate(new_jobs, 1):
-        logger.info(f"  [{idx}/{len(new_jobs)}] Détail: {job['job_url']}")
+        if idx % 100 == 0 or idx == 1:
+            logger.info(f"  [{idx}/{len(new_jobs)}] Détail en cours…")
         enriched_job = fetch_detail(session, dict(job))
         enriched.append(enrich_nlp(enriched_job))
         time.sleep(DETAIL_DELAY)
 
-    # NLP sur les anciens aussi (job_family/experience peuvent manquer)
+    # NLP sur les anciens aussi
     for job in old_jobs:
         enrich_nlp(job)
 
-    # 4. Upsert tout
-    for job in enriched:
-        db.upsert(job)
+    # 4. Upsert en batch (une seule transaction SQLite)
+    logger.info(f"  💾 Upsert batch de {len(enriched)} offres…")
+    db.upsert_batch(enriched)
 
-    logger.info(f"  💾 {db.count_live()} offres live en base")
+    logger.info(f"  ✅ {db.count_live()} offres live en base")
     logger.info("✅ Scraping Allianz terminé")
 
 
