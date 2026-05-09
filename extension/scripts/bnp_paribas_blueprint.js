@@ -50,7 +50,9 @@
       'you already applied for this job',
       'you already applied for this position',
       'vous avez deja postule a cette offre',
-      'vous avez déjà postulé à cette offre'
+      'vous avez déjà postulé à cette offre',
+      'vous avez deja candidate a cette offre',
+      'vous avez déjà candidaté à cette offre'
     ],
     unavailable: [
       'offre introuvable',
