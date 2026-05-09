@@ -5,9 +5,12 @@ ALLIANZ Careers Scraper — careers.allianz.com
 Plateforme : PhenomPeople (tenant AISAIPGB)
 API        : POST https://careers.allianz.com/widgets
 Auth       : CSRF token extrait du cookie JWT PLAY_SESSION
-Filtre     : aucun filtre pays (≈ 1 972 offres globales en mai 2026, 49 pays)
-Pagination : paramètre `from` (offset 0-based), size=100
-            GET primer obligatoire avant chaque POST paginé (cache session PhenomPeople)
+Filtre     : aucun filtre pays (≈ 1 973 offres globales en mai 2026, 49 pays)
+Pagination : l'offset est lu dans l'en-tête HTTP **Referer** (PAS dans le corps POST).
+            → Avant chaque POST, on fixe :
+              Referer: https://careers.allianz.com/global/en/search-results?from=<offset>&s=1
+            Le champ `from` du corps POST est ignoré par le serveur.
+            La taille de page (`size=100`) est respectée dans le POST.
 Delta      : seules les nouvelles URLs passent par la page détail
 
 Schema DB identique aux autres scrapers Taleos.
@@ -50,6 +53,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────── Constantes ─────────────────────────────────────
 WIDGETS_URL   = "https://careers.allianz.com/widgets"
 SEARCH_PAGE   = "https://careers.allianz.com/global/en/search-results"
+SEARCH_PAGE_PAGED = "https://careers.allianz.com/global/en/search-results?from={from_offset}&s=1"
 DETAIL_URL    = "https://careers.allianz.com/global/en/job/{req_id}"
 COMPANY_NAME  = "Allianz"     # Fallback
 SOURCE_NAME   = "Allianz"
@@ -344,36 +348,19 @@ def parse_job_listing(raw: dict) -> dict:
 
 
 # ─────────────────────────── Scraping listing ───────────────────────────────
-def _refresh_session_for_page(session: requests.Session, from_offset: int) -> Optional[str]:
-    """
-    PhenomPeople maintient un cache de session côté serveur.
-    Un GET sur la page de recherche avec le paramètre `from` correspondant
-    prime ce cache avant le POST de pagination.
-    Retourne le nouveau CSRF si le cookie a changé, sinon None.
-    """
-    try:
-        resp = session.get(
-            f"{SEARCH_PAGE}?from={from_offset}&s=1",
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-    except Exception as exc:
-        logger.warning(f"  ⚠️  GET primer offset={from_offset} : {exc}")
-        return None
-
-    # Tenter de récupérer un nouveau CSRF si le cookie a été rafraîchi
-    new_play_session = session.cookies.get("PLAY_SESSION") or ""
-    new_csrf = _extract_csrf_from_play_session(new_play_session)
-    if new_csrf and new_csrf != session.headers.get("X-CSRF-TOKEN"):
-        session.headers["X-CSRF-TOKEN"] = new_csrf
-        logger.debug(f"  🔑 CSRF rafraîchi offset={from_offset}")
-        return new_csrf
-    return None
-
-
 def fetch_all_listings(session: requests.Session) -> List[dict]:
-    """Récupère toutes les offres France depuis l'API listing."""
+    """Récupère toutes les offres globales depuis l'API listing.
+
+    Mécanisme de pagination PhenomPeople (découverte mai 2026) :
+    ─────────────────────────────────────────────────────────────
+    Le paramètre `from` du corps POST est IGNORÉ par le serveur.
+    L'offset réel est lu par le serveur dans l'en-tête **Referer** :
+        Referer: https://careers.allianz.com/global/en/search-results?from=<offset>&s=1
+    La taille de page (`size` dans le POST) est bien respectée (on utilise 100).
+    """
+    # Page 1 : Referer pointe sur from=0 (valeur initiale dans HEADERS_BASE)
     logger.info("  📋 Page 1 (offset 0)…")
+    session.headers["Referer"] = SEARCH_PAGE_PAGED.format(from_offset=0)
     data = _post(session, _search_payload(0, PAGE_SIZE))
     if not data:
         logger.error("  ❌ Réponse vide sur la première page listing")
@@ -388,12 +375,12 @@ def fetch_all_listings(session: requests.Session) -> List[dict]:
 
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     consecutive_empty = 0
-    MAX_CONSECUTIVE_EMPTY = 2  # abandon après 2 pages vides consécutives
+    MAX_CONSECUTIVE_EMPTY = 3
 
     for page_num in range(1, total_pages):
         from_offset = page_num * PAGE_SIZE
-        # Prime le cache session PhenomPeople avant chaque POST paginé
-        _refresh_session_for_page(session, from_offset)
+        # ← clé du fix : mettre à jour le Referer AVANT le POST
+        session.headers["Referer"] = SEARCH_PAGE_PAGED.format(from_offset=from_offset)
         time.sleep(REQUEST_DELAY)
         logger.info(f"  📋 Page {page_num + 1}/{total_pages} (offset {from_offset})…")
         data = _post(session, _search_payload(from_offset, PAGE_SIZE))
@@ -406,7 +393,6 @@ def fetch_all_listings(session: requests.Session) -> List[dict]:
             continue
         jobs_raw = (data.get("eagerLoadRefineSearch", {}).get("data") or {}).get("jobs") or []
         if not jobs_raw:
-            # Diagnostiquer la structure de la réponse avant d'abandonner
             top_keys = list(data.keys())
             logger.warning(f"  ⚠️  0 jobs offset={from_offset} — clés réponse : {top_keys}")
             consecutive_empty += 1
