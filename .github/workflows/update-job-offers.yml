@@ -204,7 +204,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     needs: scrape
-    if: always()
+    # Ne tourner QUE si toutes les sources ont été scrappées (source=all ou schedule).
+    # Un dispatch source=X partiel n'a pas toutes les DBs → écraserait les JSON des autres sources.
+    if: always() && (github.event_name != 'workflow_dispatch' || inputs.source == 'all')
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # Limite la revalidation HTTP par base (voir update_all_jobs.py) pour finir dans les temps
