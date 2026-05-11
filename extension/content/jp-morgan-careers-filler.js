@@ -94,6 +94,13 @@
     }
   }
 
+  function isElementVisible(el) {
+    if (!el) return false;
+    const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+    const style = globalThis.getComputedStyle ? getComputedStyle(el) : null;
+    return !!rect && rect.width > 0 && rect.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden';
+  }
+
   function getValue(el) {
     if (!el) return '';
     return String(el.value || el.textContent || '').trim();
@@ -183,7 +190,7 @@
       let current = label;
       for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
         const fields = Array.from(current.querySelectorAll('input, textarea, select, [role="combobox"] input'))
-          .filter((el) => isVisible(el) || el === document.activeElement);
+          .filter((el) => isElementVisible(el) || el === document.activeElement);
         if (!fields.length) continue;
         const currentText = norm(current.textContent || '');
         if (!currentText.includes(target)) continue;
