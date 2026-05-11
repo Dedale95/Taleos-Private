@@ -140,8 +140,10 @@
       if (!text || text !== target) continue;
       const selected = option.getAttribute('aria-checked') === 'true' ||
         option.getAttribute('aria-pressed') === 'true' ||
+        option.classList.contains('cx-select-pill-section--selected') ||
         option.classList.contains('selected') ||
-        option.classList.contains('oj-selected');
+        option.classList.contains('oj-selected') ||
+        option.parentElement?.classList?.contains?.('cx-select-pill-section--selected');
       if (selected) {
         log(`✅ ${label} : formulaire='${option.textContent.trim()}' | Firebase='${desiredText}' -> Skip`, 1);
         return true;
@@ -164,33 +166,59 @@
 
   function findFieldByLabel(labelNeedle) {
     const target = norm(labelNeedle);
-    const labels = Array.from(document.querySelectorAll('label, span, div')).filter((el) => {
+    const labels = Array.from(document.querySelectorAll('label, legend, p, span, div')).filter((el) => {
       const text = norm(el.textContent || '');
       return text && text.includes(target);
     });
+    const candidates = [];
     for (const label of labels) {
       const forId = label.getAttribute?.('for');
       if (forId) {
         const direct = document.getElementById(forId);
-        if (direct) return direct;
+        if (direct) {
+          candidates.push({ field: direct, score: 1000 });
+          continue;
+        }
       }
-      const root = label.closest('.oj-form-layout, .oj-flex-item, .oj-form, .oj-panel, .oj-flex, div');
-      const field = root?.querySelector?.('input, textarea, select, [role="combobox"] input');
-      if (field) return field;
+      let current = label;
+      for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
+        const fields = Array.from(current.querySelectorAll('input, textarea, select, [role="combobox"] input'))
+          .filter((el) => isVisible(el) || el === document.activeElement);
+        if (!fields.length) continue;
+        const currentText = norm(current.textContent || '');
+        if (!currentText.includes(target)) continue;
+        const field = fields[0];
+        const exact = currentText === target ? 100 : 0;
+        const score = exact + Math.max(0, 40 - currentText.length) + Math.max(0, 20 - fields.length * 4) - depth;
+        candidates.push({ field, score });
+      }
     }
-    return null;
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0]?.field || null;
   }
 
   function findQuestionContainer(textNeedle) {
     const target = norm(textNeedle);
-    const nodes = document.querySelectorAll('section, fieldset, .oj-form-layout, .oj-panel, .oj-flex, [data-testid], div');
+    const nodes = Array.from(document.querySelectorAll('label, legend, h1, h2, h3, h4, h5, h6, p, span, div'));
+    const candidates = [];
     for (const node of nodes) {
       const text = norm(node.textContent || '');
       if (!text || !text.includes(target)) continue;
-      const hasButtons = node.querySelector('button, [role="radio"], [aria-pressed], [aria-checked]');
-      if (hasButtons) return node;
+      let current = node;
+      for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
+        const hasButtons = current.querySelector('button, [role="radio"], [aria-pressed], [aria-checked]');
+        if (!hasButtons) continue;
+        const currentText = norm(current.textContent || '');
+        if (!currentText.includes(target)) continue;
+        const optionCount = current.querySelectorAll('button, [role="radio"], [aria-pressed], [aria-checked]').length;
+        candidates.push({ node: current, textLength: currentText.length, optionCount });
+      }
     }
-    return null;
+    candidates.sort((a, b) => {
+      if (a.optionCount !== b.optionCount) return a.optionCount - b.optionCount;
+      return a.textLength - b.textLength;
+    });
+    return candidates[0]?.node || null;
   }
 
   function findButtonByText(text) {
@@ -479,9 +507,17 @@
     if (report) log(`Blueprint JP Morgan section 2: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
     const workAuth = resolveJpMorganWorkAuth(profile, pending);
 
-    auditAndSelectButton('At least 18 years of age', findQuestionContainer('at least 18 years of age'), 'Yes');
-    auditAndSelectButton('Legally authorized to work in this country', findQuestionContainer('legally authorized to work in this country'), workAuth.workAuthorized);
-    auditAndSelectButton('Require sponsorship', findQuestionContainer('require sponsorship'), workAuth.sponsorshipRequired);
+    auditAndSelectButton('At least 18 years of age', findQuestionContainer('are you at least 18 years of age'), 'Yes');
+    auditAndSelectButton(
+      'Legally authorized to work in this country',
+      findQuestionContainer('for the position you are applying to, are you legally authorized to work in this country'),
+      workAuth.workAuthorized
+    );
+    auditAndSelectButton(
+      'Require sponsorship',
+      findQuestionContainer('will you now or in the future require sponsorship for an employment-based visa status'),
+      workAuth.sponsorshipRequired
+    );
 
     const nextBtn = findButtonByText('Next');
     if (nextBtn && !state.nextSection2) {
