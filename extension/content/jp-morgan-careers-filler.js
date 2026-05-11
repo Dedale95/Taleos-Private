@@ -18,6 +18,7 @@
     nextSection2: false,
     nextSection3: false,
     submitSection4: false,
+    reviewStartedAt: 0,
     successSent: false,
     resumeUploadToken: '',
     coverUploadToken: ''
@@ -245,6 +246,45 @@
     const input = row.querySelector('input[role="combobox"], input[type="text"], select');
     if (!input) {
       log(`⚠️ ${label} : champ dropdown introuvable`, 1);
+      return false;
+    }
+    const desiredNorm = norm(desiredValue);
+    const currentRaw = getValue(input);
+    if (norm(currentRaw) === desiredNorm) {
+      log(`✅ ${label} : formulaire='${currentRaw || '(vide)'}' | Firebase='${desiredValue}' -> Skip`, 1);
+      return true;
+    }
+    log(`✏️ ${label} : formulaire='${currentRaw || '(vide)'}' | Firebase='${desiredValue}' -> Correction`, 1);
+    const toggleBtn = row.querySelector('button[aria-label*="Open the drop-down list" i], button.icon-dropdown-arrow');
+    if (toggleBtn) toggleBtn.click();
+    await sleep(200);
+    setInputValue(input, desiredValue);
+    input.focus?.();
+    await sleep(200);
+    for (const candidate of [desiredValue, ...aliases]) {
+      if (await pickVisibleOption(candidate)) return true;
+    }
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  function getDropdownField(selectors = [], label = '') {
+    const direct = selectors.length ? findBySelectors(selectors) : null;
+    if (direct) {
+      const row = direct.closest?.('.input-row, .oj-form-layout, .oj-flex-item, .oj-form, .oj-panel, .oj-flex') || direct.parentElement || document;
+      return { row, input: direct };
+    }
+    const row = label ? findQuestionRow(label) : null;
+    if (!row) return { row: null, input: null };
+    const input = row.querySelector('input[role="combobox"], input[type="text"], select');
+    return { row, input };
+  }
+
+  async function selectDropdownValueWithSelectors(label, selectors, desiredValue, aliases = []) {
+    const { row, input } = getDropdownField(selectors, label);
+    if (!row || !input || !desiredValue) {
+      log(`⚠️ ${label} : menu déroulant introuvable`, 1);
       return false;
     }
     const desiredNorm = norm(desiredValue);
@@ -618,7 +658,7 @@
     const experienceCards = document.querySelectorAll('[data-testid*="experience"], [id*="experience"], .experience-card').length;
     const degreeValue = mapEducationLevelToDegree(profile.education_level, profile.school_type);
     if (degreeValue) {
-      await selectDropdownValue('Degree', degreeValue, [degreeValue.replace(/'/g, '’')]);
+      await selectDropdownValueWithSelectors('Degree', ['input[name*="DEGREE" i]', 'input[id*="DEGREE" i]'], degreeValue, [degreeValue.replace(/'/g, '’')]);
     }
     const schoolField = findFieldByLabel('School') || findFieldByLabel('School Name') || findFieldByLabel('University');
     if (schoolField && profile.establishment) {
@@ -660,21 +700,38 @@
 
     const gender = deriveGender(profile) || profile.gender || '';
     if (gender) {
-      await selectDropdownValue('Gender', gender, [gender === 'Male' ? 'Male' : 'Female']);
+      await selectDropdownValueWithSelectors('Gender', ['input[name*="ORA_GENDER" i]', 'input[id*="ORA_GENDER" i]'], gender, [gender === 'Male' ? 'Male' : 'Female']);
     } else {
       log('⚠️ Gender : impossible à déduire depuis Firebase', 1);
     }
     const militaryTarget = profile.jp_morgan_military_service || 'No';
-    await selectDropdownValue('Have you ever served as a member of the armed forces of any country?', militaryTarget, [militaryTarget]);
+    await selectDropdownValueWithSelectors(
+      'Have you ever served as a member of the armed forces of any country?',
+      ['input[name*="emeaMilitaryStatus" i]', 'input[id*="emeaMilitaryStatus" i]'],
+      militaryTarget,
+      [militaryTarget]
+    );
 
     const fullName = `${profile.firstname || ''} ${profile.lastname || ''}`.trim();
     auditAndFill('E-signature', findBySelectors(['input[id*="fullName" i]', 'input[aria-label*="Full Name" i]']), fullName);
 
     const submitBtn = findButtonByText('Submit');
     if (submitBtn && !state.submitSection4) {
+      if (!state.reviewStartedAt) {
+        state.reviewStartedAt = Date.now();
+        log('⏳ JP Morgan : pause de 60 secondes pour relecture avant soumission');
+        ensureBanner('⏳ Relecture JP Morgan en cours — 60 secondes avant soumission automatique.');
+        return;
+      }
+      const elapsed = Date.now() - state.reviewStartedAt;
+      if (elapsed < 60000) {
+        const remaining = Math.max(1, Math.ceil((60000 - elapsed) / 1000));
+        ensureBanner(`⏳ Relecture JP Morgan en cours — soumission automatique dans ${remaining}s.`);
+        return;
+      }
       state.submitSection4 = true;
       submitBtn.click();
-      log('🚀 JP Morgan : clic final sur Submit');
+      log('🚀 JP Morgan : clic final sur Submit après 60 secondes de relecture');
     }
   }
 
