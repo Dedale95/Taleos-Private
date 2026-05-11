@@ -62,6 +62,24 @@
     }
   };
 
+  function findVisibleByText(selectors, regex) {
+    const nodes = Array.from(document.querySelectorAll(selectors));
+    return nodes.find((el) => {
+      const text = String(el.textContent || el.value || '').trim();
+      const visible = !!(el.offsetParent !== null || el.getClientRects?.().length);
+      return visible && regex.test(text);
+    }) || null;
+  }
+
+  function isAllianzLoggedInPage() {
+    const text = (document.body?.innerText || '').toLowerCase();
+    const html = (document.body?.innerHTML || '').toLowerCase();
+    const loginVisible = !!document.querySelector('#username') && !!document.querySelector('#password');
+    if (loginVisible) return false;
+    return /candidate profile|my profile|jobs applied|saved applications|welcome,|sign out/i.test(text) ||
+      /top_nav_my_profile|top_nav_jobs_applied|signout|logoutlink|lnklogout/.test(html);
+  }
+
   function fillAndSubmit(bankId, email, password) {
     const cfg = CONFIG[bankId];
     if (!cfg) return { done: false, error: 'Banque non supportée' };
@@ -83,6 +101,17 @@
         if (cookieBtn && cookieBtn.offsetParent !== null) {
           cookieBtn.click();
         }
+      }
+
+      if (bankId === 'allianz' && isAllianzLoggedInPage()) {
+        const signOutEl =
+          document.querySelector('#lnkLogout') ||
+          findVisibleByText('a, button, [role="button"], input[type="button"], input[type="submit"]', /sign out|log out/i);
+        if (!signOutEl) {
+          return { done: false, error: 'Bouton Sign Out Allianz introuvable.' };
+        }
+        signOutEl.click();
+        return { done: true, submitted: false, signedOut: true, needRetry: true };
       }
 
       const emailEl = qs(cfg.emailSel);
@@ -142,6 +171,12 @@
         return { done: true, phase: 1, needPhase2: true };
       }
       return { done: false, error: 'Bouton Connexion non trouvé' };
+    }
+    if (bankId === 'allianz' && phase === 1) {
+      return fillAndSubmit(bankId, email, password);
+    }
+    if (bankId === 'allianz' && phase === 2) {
+      return fillAndSubmit(bankId, email, password);
     }
     if (!bankId || !email || !password) return { done: false, error: 'Paramètres manquants' };
     return fillAndSubmit(bankId, email, password);
