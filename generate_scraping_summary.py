@@ -73,6 +73,10 @@ def is_axa(name: str) -> bool:
     )
 
 
+def is_kpmg(name: str) -> bool:
+    return "kpmg" in (name or "").lower()
+
+
 def is_credit_agricole(name: str) -> bool:
     n = (name or "").lower()
     return (
@@ -152,6 +156,8 @@ def canonical_group(name: str) -> str:
         return "Deloitte"
     if "oddo" in low:
         return "ODDO BHF"
+    if is_kpmg(n):
+        return "KPMG"
     if "la française" in low or "la francaise" in low:
         return "Groupe La Française"
     if "acm" in low:

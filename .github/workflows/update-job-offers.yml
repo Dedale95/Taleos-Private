@@ -38,6 +38,7 @@ on:
           - jp_morgan
           - goldman_sachs
           - axa
+          - kpmg
 
 jobs:
   scrape:
@@ -116,6 +117,12 @@ jobs:
             script: axa_scraper.py
             db_file: axa_jobs.db
             timeout_minutes: 15
+            playwright_browser: ""
+          - name: KPMG France
+            key: kpmg
+            script: kpmg_scraper.py
+            db_file: kpmg_jobs.db
+            timeout_minutes: 30
             playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
