@@ -320,6 +320,36 @@
     return '';
   }
 
+  function getEducationBlockForField(field) {
+    let current = field;
+    let best = null;
+    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+      const inputs = current.querySelectorAll('input, textarea, select, [role="combobox"]');
+      const text = norm(current.textContent || '');
+      if (!inputs.length || !text.includes('degree')) continue;
+      best = current;
+      const degreeInputs = current.querySelectorAll('input[name*="DEGREE" i], input[id*="DEGREE" i]');
+      if (degreeInputs.length > 1) break;
+    }
+    return best || field.parentElement || null;
+  }
+
+  async function removeEducationEntry(block, degreeLabel) {
+    if (!block) return false;
+    const btn = Array.from(block.querySelectorAll('button, [role="button"], a')).find((el) => {
+      const hint = `${el.textContent || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''}`;
+      return /remove|delete|trash|supprimer|retirer/i.test(hint);
+    });
+    if (!btn) {
+      log(`⚠️ Education (${degreeLabel || 'bloc'}) : bouton supprimer introuvable`, 1);
+      return false;
+    }
+    btn.click();
+    await sleep(500);
+    log(`🗑️ Education : bloc '${degreeLabel || 'autre diplôme'}' supprimé`, 1);
+    return true;
+  }
+
   function findQuestionContainer(textNeedle) {
     const target = norm(textNeedle);
     const nodes = Array.from(document.querySelectorAll('label, legend, h1, h2, h3, h4, h5, h6, p, span, div'));
@@ -657,6 +687,26 @@
     const educationCards = document.querySelectorAll('[data-testid*="education"], [id*="education"], .education-card').length;
     const experienceCards = document.querySelectorAll('[data-testid*="experience"], [id*="experience"], .experience-card').length;
     const degreeValue = mapEducationLevelToDegree(profile.education_level, profile.school_type);
+    if (degreeValue) {
+      const desiredNorm = norm(degreeValue);
+      const degreeInputs = Array.from(document.querySelectorAll('input[name*="DEGREE" i], input[id*="DEGREE" i]'))
+        .filter((el) => isElementVisible(el) || el === document.activeElement);
+      if (degreeInputs.length > 1) {
+        let keptMatch = false;
+        for (const input of degreeInputs) {
+          const currentRaw = getValue(input);
+          const currentNorm = norm(currentRaw);
+          if (!currentNorm) continue;
+          if (currentNorm === desiredNorm && !keptMatch) {
+            keptMatch = true;
+            continue;
+          }
+          if (currentNorm !== desiredNorm) {
+            await removeEducationEntry(getEducationBlockForField(input), currentRaw);
+          }
+        }
+      }
+    }
     if (degreeValue) {
       await selectDropdownValueWithSelectors('Degree', ['input[name*="DEGREE" i]', 'input[id*="DEGREE" i]'], degreeValue, [degreeValue.replace(/'/g, '’')]);
     }
