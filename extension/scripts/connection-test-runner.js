@@ -294,15 +294,12 @@
       if (!password) missing.push('mot de passe');
       return { done: false, error: `Paramètres manquants: ${missing.join(', ')}` };
     }
-=======
     if (bankId === 'allianz' && phase === 1) {
       return fillAndSubmit(bankId, email, password);
     }
     if (bankId === 'allianz' && phase === 2) {
       return fillAndSubmit(bankId, email, password);
     }
-    if (!bankId || !email || !password) return { done: false, error: 'Paramètres manquants' };
->>>>>>> 998209b (fix(connexions): sign out existing allianz session before test)
     return fillAndSubmit(bankId, email, password);
   };
 
