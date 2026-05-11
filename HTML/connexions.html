@@ -871,7 +871,7 @@
     (function() {
         const host = window.location.hostname || '';
         const protocol = window.location.protocol || '';
-        const isSupported = protocol === 'file:' ? false : (
+        const isSupported = protocol === 'file:' ? true : (
             host === 'taleos.co' || host.endsWith('.taleos.co') ||
             host === 'localhost' || host === '127.0.0.1' || host.endsWith('.github.io')
         );

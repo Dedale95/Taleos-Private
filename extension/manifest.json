@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.9",
-  "version_name": "1.2.9-allianz-signout-first",
+  "version": "1.2.10",
+  "version_name": "1.2.10-bridge-health-file-pages",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -21,6 +21,7 @@
     ]
   },
   "host_permissions": [
+    "file:///*",
     "https://*.taleos.co/*",
     "https://*.oraclecloud.com/*",
     "https://higher.gs.com/*",
@@ -77,6 +78,7 @@
   "content_scripts": [
     {
       "matches": [
+        "file:///*",
         "https://*.taleos.co/*",
         "https://*.github.io/*",
         "http://localhost/*",

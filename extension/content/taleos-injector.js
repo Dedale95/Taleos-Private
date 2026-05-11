@@ -8,7 +8,25 @@
   'use strict';
   if (window.__taleosInjectorLoaded) return;
   window.__taleosInjectorLoaded = true;
-  try { document.documentElement.setAttribute('data-taleos-injector', 'ready'); } catch (_) {}
+  const manifestInfo = (() => {
+    try {
+      const manifest = chrome?.runtime?.getManifest?.() || {};
+      return {
+        version: String(manifest.version || ''),
+        versionName: String(manifest.version_name || manifest.version || '')
+      };
+    } catch (_) {
+      return { version: '', versionName: '' };
+    }
+  })();
+  try {
+    document.documentElement.setAttribute('data-taleos-injector', 'ready');
+    if (manifestInfo.versionName) {
+      document.documentElement.setAttribute('data-taleos-injector-version', manifestInfo.versionName);
+    } else if (manifestInfo.version) {
+      document.documentElement.setAttribute('data-taleos-injector-version', manifestInfo.version);
+    }
+  } catch (_) {}
 
   function syncAuthFromPage(forceRefresh) {
     try {
@@ -31,6 +49,16 @@
         taleosUserEmail: email || ''
       }).catch(function() {});
     }
+  });
+
+  window.addEventListener('taleos-request-bridge-health', function() {
+    window.dispatchEvent(new CustomEvent('taleos-bridge-health-result', {
+      detail: {
+        ok: true,
+        version: manifestInfo.version,
+        versionName: manifestInfo.versionName
+      }
+    }));
   });
 
   function scheduleSync() {
