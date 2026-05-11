@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.0.60",
+  "version": "1.2.9",
+  "version_name": "1.2.9-allianz-signout-first",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -10,15 +11,36 @@
     "scripting",
     "tabs",
     "cookies",
-    "webRequest"
+    "webRequest",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "974062127016-qtdcv4551h0f0n4i52cmsponkstm5mhg.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly"
+    ]
+  },
   "host_permissions": [
     "https://*.taleos.co/*",
     "https://*.oraclecloud.com/*",
+    "https://higher.gs.com/*",
     "https://recrutement.bpce.fr/*",
+    "https://*.bpce.fr/*",
+    "https://*.recruitmentplatform.com/*",
     "https://careers.societegenerale.com/*",
     "https://socgen.taleo.net/*",
     "https://groupecreditagricole.jobs/*",
+    "https://group.bnpparibas/*",
+    "https://bwelcome.hr.bnpparibas/*",
+    "https://recrutement.creditmutuel.fr/*",
+    "https://talents.bpifrance.fr/*",
+    "https://bpi.tzportal.io/*",
+    "https://career5.successfactors.eu/*",
+    "https://careers.axa.com/*",
+    "https://careers-fr-axa.icims.com/*",
+    "https://careers-en-axa.icims.com/*",
+    "https://login.icims.eu/*",
+    "https://candidature-recrutement.axa.fr/*",
     "https://*.myworkdayjobs.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
@@ -28,7 +50,13 @@
     "http://127.0.0.1/*",
     "http://127.0.0.1:8000/*",
     "https://*.github.io/*",
-    "https://www.googleapis.com/auth/gmail.readonly"
+    "https://login.microsoftonline.com/*",
+    "https://www.googleapis.com/*",
+    "https://www.google-analytics.com/*",
+    "https://europe-west1-project-taleos.cloudfunctions.net/*",
+    "https://storage.googleapis.com/*",
+    "https://firebasestorage.googleapis.com/*",
+    "https://*.firebasestorage.app/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -44,8 +72,7 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
@@ -55,21 +82,180 @@
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
-      "js": ["content/taleos-injector.js"],
+      "js": [
+        "content/taleos-injector.js"
+      ],
       "run_at": "document_start"
     },
     {
       "matches": [
-        "https://*.fa.em2.oraclecloud.com/*"
+        "https://higher.gs.com/*",
+        "https://hdpc.fa.us2.oraclecloud.com/*"
       ],
-      "js": ["content/bpce-oracle-filler.js"],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/goldman_sachs_blueprint.js",
+        "content/goldman-sachs-careers-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://jpmc.fa.oraclecloud.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/jp_morgan_blueprint.js",
+        "content/jp-morgan-careers-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.fa.em2.oraclecloud.com/*",
+        "https://*.oraclecloud.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
+        "content/bpce-oracle-filler.js",
+        "content/bpce-lumesse-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://recrutement.bpce.fr/*",
+        "https://*.bpce.fr/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
+        "content/bpce-careers-filler.js",
+        "content/bpce-lumesse-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.recruitmentplatform.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
+        "content/bpce-lumesse-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.recruitmentplatform.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpce_blueprint.js",
+        "content/bpce-lumesse-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://careers.societegenerale.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/societe_generale_blueprint.js",
+        "content/sg-careers-helper.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": [
-        "https://recrutement.bpce.fr/*"
+        "https://socgen.taleo.net/*"
       ],
-      "js": ["content/bpce-careers-filler.js"],
+      "js": [
+        "scripts/societe_generale_blueprint.js",
+        "content/sg-at-click-polyfill.js",
+        "content/sg-taleo-runner.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://groupecreditagricole.jobs/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/credit_agricole_blueprint.js",
+        "content/ca-connexion-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.myworkdayjobs.com/*",
+        "https://*.deloitte.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/deloitte_blueprint.js",
+        "content/deloitte-careers-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://group.bnpparibas/*",
+        "https://bwelcome.hr.bnpparibas/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bnp_paribas_blueprint.js",
+        "content/bnp-careers-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://recrutement.creditmutuel.fr/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/credit_mutuel_blueprint.js",
+        "content/credit-mutuel-careers-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://talents.bpifrance.fr/*",
+        "https://bpi.tzportal.io/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/bpifrance_blueprint.js",
+        "content/bpifrance-careers-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://careers.axa.com/*",
+        "https://careers-fr-axa.icims.com/*",
+        "https://careers-en-axa.icims.com/*",
+        "https://login.icims.eu/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "scripts/axa_blueprint.js",
+        "content/axa-careers-filler.js"
+      ],
       "run_at": "document_idle"
     },
     {
@@ -78,14 +264,21 @@
         "https://outlook.office.com/*",
         "https://outlook.office365.com/*"
       ],
-      "js": ["content/outlook-interceptor.js"],
+      "js": [
+        "content/outlook-interceptor.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["scripts/*.js", "icons/*.png"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "scripts/*.js",
+        "icons/*.png"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
