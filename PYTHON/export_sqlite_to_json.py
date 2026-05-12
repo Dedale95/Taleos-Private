@@ -476,7 +476,13 @@ def read_from_db(db_path, company_name, live_only=True):
             # Crédit Mutuel : consolider les filiales/caisses vers les libellés groupe attendus côté front.
             if db_path == CREDIT_MUTUEL_DB and job.get('company_name'):
                 job['company_name'] = normalize_cm_company_name(job['company_name'])
-            
+
+            # Tronquer la description pour limiter la taille du JSON exporté.
+            # La description sert uniquement à la recherche par mots-clés : 5 000 chars suffisent.
+            _DESC_MAX = 5000
+            if job.get('job_description') and len(job['job_description']) > _DESC_MAX:
+                job['job_description'] = job['job_description'][:_DESC_MAX]
+
             jobs.append(job)
         
         conn.close()

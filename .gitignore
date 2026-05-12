@@ -40,6 +40,10 @@ TEST_CREDENTIALS.txt
 # HTML de debug (peut contenir données sensibles)
 sg_after_login.html
 
+# JSON d'export volumineux — redondants avec scraped_jobs_live.json (>100 MB avec KPMG Global)
+HTML/scraped_jobs.json
+scraped_jobs.json
+
 # Dépendances Node locales
 node_modules/
 
