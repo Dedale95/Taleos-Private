@@ -465,12 +465,18 @@
       }
     }
 
-    // Stratégie 3 (filet de sécurité) : tout élément visible avec texte exact
+    // Stratégie 3 (filet de sécurité) : tout élément visible avec texte exact.
+    // EXCLUSIONS : éléments dans les tile cards (.apply-flow-profile-item-tile)
+    // pour éviter de cliquer sur le résumé d'une carte éducation existante.
     if (!option) {
       const s3candidates = Array.from(document.querySelectorAll(
         'li, [class*="item"], [class*="option"], [class*="result"], [class*="choice"]'
-      )).filter((el) => isElementVisible(el) && normText(el.textContent || '') === target);
-      log(`   [pickOption] S3: ${s3candidates.length} candidat(s) texte-exact parmi li/item/option`, 2);
+      )).filter((el) => {
+        if (!isElementVisible(el)) return false;
+        if (el.closest?.('.apply-flow-profile-item-tile')) return false; // ← exclure tiles
+        return normText(el.textContent || '') === target;
+      });
+      log(`   [pickOption] S3: ${s3candidates.length} candidat(s) texte-exact (tiles exclus)`, 2);
       option = s3candidates[0] || null;
       if (option) log(`   [pickOption S3] trouvé: tag=${option.tagName} class="${option.className}"`, 2);
     }
@@ -851,24 +857,32 @@
       log(`✅ ${label} : '${currentRaw}' -> Skip`, 1);
       return true;
     }
-    const isDisabled = input.classList.contains('cx-select-input--disabled') || input.readOnly || input.disabled;
+    // cx-select-input (disabled ou non) : NE PAS appeler setInputValue.
+    // Les events input/change déclenchent la logique Oracle interne qui peut
+    // faire des requêtes serveur (400 Bad Request) ou sélectionner la mauvaise option.
+    const isCxSelect = input.classList.contains('cx-select-input') ||
+      input.classList.contains('cx-select-input--disabled');
+    const isDisabled = isCxSelect || input.readOnly || input.disabled;
     const cxContainer = input.closest('.cx-select-container');
-    log(`✏️ ${label} : '${currentRaw || '(vide)'}' → '${desiredValue}' | disabled=${isDisabled} classes="${input.className}" hasCxContainer=${!!cxContainer}`, 1);
-    if (isDisabled && cxContainer) {
+    log(`✏️ ${label} : '${currentRaw || '(vide)'}' → '${desiredValue}' | isCxSelect=${isCxSelect} disabled=${input.disabled} readOnly=${input.readOnly} hasCxContainer=${!!cxContainer}`, 1);
+    if (isCxSelect && cxContainer) {
+      cxContainer.click();
+    } else if (isDisabled && cxContainer) {
       cxContainer.click();
     } else {
       input.click();
       input.focus?.();
     }
     await sleep(400);
-    if (!isDisabled) {
+    // Pas de setInputValue pour les cx-select
+    if (!isCxSelect && !isDisabled) {
       setInputValue(input, desiredValue);
       await sleep(300);
     }
     for (const candidate of [desiredValue, ...aliases]) {
       if (await pickVisibleOption(candidate)) return true;
     }
-    if (!isDisabled) {
+    if (!isCxSelect && !isDisabled) {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -1131,13 +1145,15 @@
       await handleSuccess(pending);
       if (state.successSent) return;
 
-      if (detected.key === 'terms') return handleTermsAndConditions();
-      if (detected.key === 'email') return handleEmailStep(profile);
-      if (detected.key === 'pin') return handlePinStep();
-      if (detected.key === 'section_1') return handleSection1(profile);
-      if (detected.key === 'section_2') return handleSection2(profile, pending);
-      if (detected.key === 'section_3') return handleSection3(profile);
-      if (detected.key === 'section_4') return handleSection4(profile);
+      // IMPORTANT : utiliser `await` (pas `return`) pour que `finally { isRunning = false }`
+      // ne s'exécute qu'APRÈS la fin du handler — évite les runs concurrents sur section 3.
+      if (detected.key === 'terms') { await handleTermsAndConditions(); return; }
+      if (detected.key === 'email') { await handleEmailStep(profile); return; }
+      if (detected.key === 'pin') { await handlePinStep(); return; }
+      if (detected.key === 'section_1') { await handleSection1(profile); return; }
+      if (detected.key === 'section_2') { await handleSection2(profile, pending); return; }
+      if (detected.key === 'section_3') { await handleSection3(profile); return; }
+      if (detected.key === 'section_4') { await handleSection4(profile); return; }
       if (detected.key === 'offer') {
         ensureBanner(getBannerApi()?.getText() || '⏳ Automatisation Taleos en cours — Ne touchez à rien.');
         const applyBtn = Array.from(document.querySelectorAll('a, button')).find((el) => /apply now/i.test(el.textContent || ''));
@@ -1147,7 +1163,7 @@
         }
       }
       if (detected.key === 'my_profile_success' || detected.key === 'already_applied' || detected.key === 'success') {
-        return handleSuccess(pending);
+        await handleSuccess(pending);
       }
     } catch (e) {
       log(`❌ Erreur JP Morgan : ${e?.message || e}`);
