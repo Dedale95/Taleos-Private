@@ -41,6 +41,17 @@
     return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
+  // Comme norm() mais normalise aussi les apostrophes typographiques Unicode
+  // (U+2018 ' U+2019 ' U+201A ‚ U+201B ‛ U+2032 ′) en apostrophe ASCII U+0027.
+  // Indispensable pour comparer "Master’s Degree" (Oracle) avec "Master's Degree" (notre code).
+  function normText(value) {
+    return String(value || '')
+      .replace(/[‘’‚‛′]/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
   function normalizeNationalPhoneDigits(rawPhone, countryCode) {
     let d = String(rawPhone || '').replace(/\D/g, '');
     const cc = String(countryCode || '+33').trim().replace(/\s/g, '');
@@ -250,26 +261,32 @@
       log(`⚠️ ${label} : champ dropdown introuvable`, 1);
       return false;
     }
-    const desiredNorm = norm(desiredValue);
+    const desiredNorm = normText(desiredValue);
     const currentRaw = getValue(input);
-    if (norm(currentRaw) === desiredNorm) {
+    if (normText(currentRaw) === desiredNorm) {
       log(`✅ ${label} : formulaire='${currentRaw || '(vide)'}' | Firebase='${desiredValue}' -> Skip`, 1);
       return true;
     }
     log(`✏️ ${label} : formulaire='${currentRaw || '(vide)'}' | Firebase='${desiredValue}' -> Correction`, 1);
+    const isCxSelect = input.classList.contains('cx-select-input') ||
+      input.classList.contains('cx-select-input--disabled');
     // Oracle JET uses aria-label button; Oracle CX uses the input itself as toggle
     const toggleBtn = row.querySelector('button[aria-label*="Open the drop-down list" i], button.icon-dropdown-arrow');
     if (toggleBtn) toggleBtn.click();
     else { input.click(); input.focus?.(); }
-    await sleep(200);
-    setInputValue(input, desiredValue);
-    input.focus?.();
-    await sleep(200);
+    await sleep(300);
+    if (!isCxSelect) {
+      setInputValue(input, desiredValue);
+      input.focus?.();
+      await sleep(200);
+    }
     for (const candidate of [desiredValue, ...aliases]) {
       if (await pickVisibleOption(candidate)) return true;
     }
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!isCxSelect) {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     return true;
   }
 
@@ -291,26 +308,34 @@
       log(`⚠️ ${label} : menu déroulant introuvable`, 1);
       return false;
     }
-    const desiredNorm = norm(desiredValue);
+    const desiredNorm = normText(desiredValue);
     const currentRaw = getValue(input);
-    if (norm(currentRaw) === desiredNorm) {
+    if (normText(currentRaw) === desiredNorm) {
       log(`✅ ${label} : formulaire='${currentRaw || '(vide)'}' | Firebase='${desiredValue}' -> Skip`, 1);
       return true;
     }
     log(`✏️ ${label} : formulaire='${currentRaw || '(vide)'}' | Firebase='${desiredValue}' -> Correction`, 1);
+    // Oracle CX cx-select : NE PAS appeler setInputValue — les events input/change déclenchent
+    // la logique interne Oracle qui peut sélectionner la mauvaise option (ex. "Female" quand on cherche "Male").
+    const isCxSelect = input.classList.contains('cx-select-input') ||
+      input.classList.contains('cx-select-input--disabled');
     // Oracle JET uses aria-label button; Oracle CX uses the input itself as toggle
     const toggleBtn = row.querySelector('button[aria-label*="Open the drop-down list" i], button.icon-dropdown-arrow');
     if (toggleBtn) toggleBtn.click();
     else { input.click(); input.focus?.(); }
-    await sleep(200);
-    setInputValue(input, desiredValue);
-    input.focus?.();
-    await sleep(200);
+    await sleep(300);
+    if (!isCxSelect) {
+      setInputValue(input, desiredValue);
+      input.focus?.();
+      await sleep(200);
+    }
     for (const candidate of [desiredValue, ...aliases]) {
       if (await pickVisibleOption(candidate)) return true;
     }
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!isCxSelect) {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     return true;
   }
 
@@ -389,7 +414,8 @@
   }
 
   async function pickVisibleOption(textNeedle) {
-    const target = norm(textNeedle);
+    // normText : apostrophes Unicode normalisées → évite le mismatch "Master's" (U+2019) vs "Master's" (U+0027)
+    const target = normText(textNeedle);
     // Oracle HCM CX uses .cx-select__list-item--content (no role="option"), OJet uses .oj-listbox-result
     const options = Array.from(document.querySelectorAll(
       '[role="option"], li[role="option"], .oj-listbox-result, .oj-listview-item, .cx-select__list-item--content, [class*="cx-select__list-item"]'
@@ -398,9 +424,9 @@
     // Priorité 2 : l'option contient la cible (ex. 'France métropolitaine' pour 'france')
     // Priorité 3 : la cible contient le texte de l'option (ex. option abrégée)
     const option =
-      options.find((el) => norm(el.textContent || '') === target) ||
-      options.find((el) => norm(el.textContent || '').includes(target)) ||
-      options.find((el) => { const t = norm(el.textContent || ''); return t.length > 2 && target.includes(t); });
+      options.find((el) => normText(el.textContent || '') === target) ||
+      options.find((el) => normText(el.textContent || '').includes(target)) ||
+      options.find((el) => { const t = normText(el.textContent || ''); return t.length > 2 && target.includes(t); });
     if (option) {
       // Walk up to find clickable ancestor if needed
       let clickTarget = option;
@@ -771,7 +797,7 @@
       return false;
     }
     const currentRaw = getValue(input);
-    if (norm(currentRaw) === norm(desiredValue)) {
+    if (normText(currentRaw) === normText(desiredValue)) {
       log(`✅ ${label} : '${currentRaw}' -> Skip`, 1);
       return true;
     }
