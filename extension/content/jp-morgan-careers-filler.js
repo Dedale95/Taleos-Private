@@ -819,7 +819,7 @@
     if (degree) {
       const degreeInput = formEl.querySelector('input[name="contentItemId"]') ||
         document.querySelector('input[name="contentItemId"]');
-      await selectCxDropdownInForm('Diplôme', degreeInput, degree, [degree.replace(/'/g, '’')]);
+      await selectCxDropdownInForm('Diplome', degreeInput, degree, [degree.replace(/'/g, '’')]);
     }
 
     // ── École (cx-select autocomplete serveur) ───────────────────────────────
@@ -889,77 +889,77 @@
   }
 
   async function handleSection3(profile) {
-    ensureBanner(getBannerApi()?.getText() || ‘⏳ Automatisation Taleos en cours — Ne touchez à rien.’);
-    const report = blueprint?.getStructureReport?.(‘section_3’);
-    if (report) log(`Blueprint JP Morgan section 3: ${report.ok ? ‘OK’ : ‘KO’} (${report.matchedSelectors.length} sélecteurs)`);
-    log(‘🧾 JP Morgan → audit éducation & expérience (section 3)’);
+    ensureBanner(getBannerApi()?.getText() || '⏳ Automatisation Taleos en cours — Ne touchez à rien.');
+    const report = blueprint?.getStructureReport?.('section_3');
+    if (report) log(`Blueprint JP Morgan section 3: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
+    log('🧾 JP Morgan → audit éducation & expérience (section 3)');
 
     // ── Trouver les conteneurs Education / Experience ────────────────────────
     // Chaque section est dans un .profile-item-container distinct identifié par
     // le texte de son bouton "Add Education" ou "Add Experience".
-    const allContainers = document.querySelectorAll(‘[class*="standard-apply-flow-profile-item-"]’);
+    const allContainers = document.querySelectorAll('[class*="standard-apply-flow-profile-item-"]');
     let eduContainer = null;
     allContainers.forEach((c) => {
-      const addBtn = c.querySelector(‘button[class*="new-tile"]’);
-      if (norm(addBtn?.textContent || ‘’).includes(‘add education’)) eduContainer = c;
+      const addBtn = c.querySelector('button[class*="new-tile"]');
+      if (norm(addBtn?.textContent || '').includes('add education')) eduContainer = c;
     });
 
     // ── Paramètres éducation depuis Firebase ────────────────────────────────
     const degreeValue = mapEducationLevelToDegree(profile.education_level, profile.school_type);
-    const school = profile.school || profile.university || profile.education_school || ‘’;
-    const gradYear = String(profile.graduation_year || profile.grad_year || ‘’);
-    const gradMonth = profile.graduation_month || profile.grad_month || ‘’;
-    const eduCountry = profile.education_country || profile.country || ‘France’;
-    const areaOfStudy = profile.area_of_study || profile.major || profile.field_of_study || ‘’;
+    const school = profile.school || profile.university || profile.education_school || '';
+    const gradYear = String(profile.graduation_year || profile.grad_year || '');
+    const gradMonth = profile.graduation_month || profile.grad_month || '';
+    const eduCountry = profile.education_country || profile.country || 'France';
+    const areaOfStudy = profile.area_of_study || profile.major || profile.field_of_study || '';
 
     // ── Remplissage éducation ────────────────────────────────────────────────
     if (!eduContainer) {
-      log(‘⚠️ JP Morgan section 3 : conteneur Education introuvable’, 1);
+      log('⚠️ JP Morgan section 3 : conteneur Education introuvable', 1);
     } else if (!state.educationFilled) {
       // Vérifier si un formulaire inline est déjà ouvert (save-btn visible)
-      const isEditOpen = !!document.querySelector(‘button.save-btn’);
+      const isEditOpen = !!document.querySelector('button.save-btn');
       if (isEditOpen) {
-        log(‘ℹ️ JP Morgan section 3 : formulaire éducation déjà ouvert -> attente’, 1);
+        log('ℹ️ JP Morgan section 3 : formulaire éducation déjà ouvert -> attente', 1);
       } else {
-        const tiles = eduContainer.querySelectorAll(‘.apply-flow-profile-item-tile’);
+        const tiles = eduContainer.querySelectorAll('.apply-flow-profile-item-tile');
         if (tiles.length === 0) {
           // Aucun diplôme → cliquer "Add Education"
-          const addBtn = eduContainer.querySelector(‘button[class*="new-tile"]’);
+          const addBtn = eduContainer.querySelector('button[class*="new-tile"]');
           if (addBtn) {
             addBtn.click();
             await sleep(500);
-            log(‘➕ JP Morgan : ajout d\’une entrée éducation’, 1);
+            log('➕ JP Morgan : ajout d\'une entrée éducation', 1);
             const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
             if (ok) state.educationFilled = true;
           }
         } else {
           // Éditer la première carte (diplôme principal)
           const firstTile = tiles[0];
-          const editBtn = firstTile.querySelector(‘button[aria-label="Edit"]’);
+          const editBtn = firstTile.querySelector('button[aria-label="Edit"]');
           if (editBtn) {
             editBtn.click();
             await sleep(500);
-            log(‘✏️ JP Morgan : édition du diplôme existant (tile[0])’, 1);
+            log('✏️ JP Morgan : édition du diplôme existant (tile[0])', 1);
             const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
             if (ok) state.educationFilled = true;
           } else {
-            log(‘⚠️ JP Morgan section 3 : bouton Edit introuvable sur la carte éducation’, 1);
+            log('⚠️ JP Morgan section 3 : bouton Edit introuvable sur la carte éducation', 1);
           }
         }
       }
     } else {
-      log(‘✅ JP Morgan section 3 : éducation déjà remplie -> Skip’, 1);
+      log('✅ JP Morgan section 3 : éducation déjà remplie -> Skip', 1);
     }
 
     // ── Expérience : laisser inchangé (Oracle HCM récupère le profil existant) ─
-    const expTiles = document.querySelectorAll(‘.apply-flow-profile-item-tile’).length - (eduContainer?.querySelectorAll(‘.apply-flow-profile-item-tile’).length || 0);
+    const expTiles = document.querySelectorAll('.apply-flow-profile-item-tile').length - (eduContainer?.querySelectorAll('.apply-flow-profile-item-tile').length || 0);
     log(`ℹ️ JP Morgan → section 3 : ${expTiles} carte(s) expérience laissée(s) inchangée(s)`, 1);
 
-    const nextBtn = findButtonByText(‘Next’);
+    const nextBtn = findButtonByText('Next');
     if (nextBtn && !state.nextSection3) {
       state.nextSection3 = true;
       nextBtn.click();
-      log(‘➡️ JP Morgan : section 3 validée, clic sur Next’);
+      log('➡️ JP Morgan : section 3 validée, clic sur Next');
     }
   }
 
