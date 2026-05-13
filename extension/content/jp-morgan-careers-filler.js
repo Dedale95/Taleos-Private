@@ -94,9 +94,28 @@
     const currentTabId = await getCurrentTabId();
     const local = await chrome.storage.local.get([PENDING_KEY, TAB_KEY]);
     const pending = local[PENDING_KEY];
+    if (!pending) return null;
+
     const expectedTabId = pending?.tabId || local[TAB_KEY] || null;
-    if (!pending || !expectedTabId || !currentTabId || currentTabId !== expectedTabId) return null;
-    return pending;
+
+    // Cas normal : le tabId correspond
+    if (currentTabId && expectedTabId && currentTabId === expectedTabId) return pending;
+
+    // Récupération : le pending existe mais sans tabId (service worker crashé entre
+    // la création de l'onglet et l'écriture du tabId) → on "claim" cet onglet.
+    // Condition de sécurité : l'offerUrl doit correspondre à l'URL courante ET
+    // le pending doit être récent (< 5 min) pour éviter les faux positifs.
+    if (!expectedTabId && currentTabId) {
+      const offerHost = (() => { try { return new URL(pending.offerUrl || '').hostname; } catch (_) { return ''; } })();
+      const ageMs = Date.now() - (pending.timestamp || 0);
+      if (offerHost && location.hostname.includes(offerHost.split('.')[0]) && ageMs < 5 * 60 * 1000) {
+        log('🔄 JP Morgan : récupération candidature (tabId manquant → claim) — extension redémarrée pendant le lancement');
+        await chrome.storage.local.set({ [TAB_KEY]: currentTabId, [PENDING_KEY]: { ...pending, tabId: currentTabId } }).catch(() => {});
+        return { ...pending, tabId: currentTabId };
+      }
+    }
+
+    return null;
   }
 
   function visible(selector, root = document) {
@@ -858,31 +877,33 @@
       return true;
     }
     // cx-select-input (disabled ou non) : NE PAS appeler setInputValue.
-    // Les events input/change déclenchent la logique Oracle interne qui peut
-    // faire des requêtes serveur (400 Bad Request) ou sélectionner la mauvaise option.
+    // Les events input/change déclenchent la logique Oracle interne (400 Bad Request, mauvaise option).
     const isCxSelect = input.classList.contains('cx-select-input') ||
       input.classList.contains('cx-select-input--disabled');
-    const isDisabled = isCxSelect || input.readOnly || input.disabled;
+    // "vraiment readonly" = disabled HTML OU classe --disabled Oracle (pas juste cx-select-input)
+    const isTrulyDisabled = input.classList.contains('cx-select-input--disabled') || input.readOnly || input.disabled;
     const cxContainer = input.closest('.cx-select-container');
-    log(`✏️ ${label} : '${currentRaw || '(vide)'}' → '${desiredValue}' | isCxSelect=${isCxSelect} disabled=${input.disabled} readOnly=${input.readOnly} hasCxContainer=${!!cxContainer}`, 1);
-    if (isCxSelect && cxContainer) {
-      cxContainer.click();
-    } else if (isDisabled && cxContainer) {
+    log(`✏️ ${label} : '${currentRaw || '(vide)'}' → '${desiredValue}' | isCxSelect=${isCxSelect} trulyDisabled=${isTrulyDisabled} hasCxContainer=${!!cxContainer}`, 1);
+    // Ouverture du dropdown :
+    //   - cx-select VRAIMENT disabled  → clic sur le container (le seul élément cliquable)
+    //   - cx-select normal (éditable)  → clic sur l'INPUT (prouvé : ouvre le dropdown, S1=36 candidats)
+    //   - input ordinaire              → clic sur l'input
+    if (isTrulyDisabled && cxContainer) {
       cxContainer.click();
     } else {
       input.click();
       input.focus?.();
     }
     await sleep(400);
-    // Pas de setInputValue pour les cx-select
-    if (!isCxSelect && !isDisabled) {
+    // Pas de setInputValue pour les cx-select (déclenche des événements Oracle indésirables)
+    if (!isCxSelect) {
       setInputValue(input, desiredValue);
       await sleep(300);
     }
     for (const candidate of [desiredValue, ...aliases]) {
       if (await pickVisibleOption(candidate)) return true;
     }
-    if (!isCxSelect && !isDisabled) {
+    if (!isCxSelect) {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }

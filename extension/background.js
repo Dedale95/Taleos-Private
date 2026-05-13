@@ -2788,6 +2788,21 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
       } catch (_) {}
     }
+    // Écrire l'état pending AVANT de créer l'onglet (sans tabId encore).
+    // Si le service worker redémarre entre la création de l'onglet et l'écriture du state,
+    // le content script peut récupérer l'état via l'offerUrl plutôt que le tabId.
+    const pendingBase = {
+      profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'J.P. Morgan', __offerUrl: offerUrl },
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName: companyName || 'J.P. Morgan',
+      location: offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId: null, // sera mis à jour juste après
+      timestamp: Date.now()
+    };
+    await chrome.storage.local.set({ taleos_pending_jp_morgan: pendingBase });
     const tab = await chrome.tabs.create(createOpts);
     await registerApplyRunForTab(tab.id, runMeta);
     if (taleosTabId) {
@@ -2797,17 +2812,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }, ms));
     }
     await chrome.storage.local.set({
-      taleos_pending_jp_morgan: {
-        profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'J.P. Morgan', __offerUrl: offerUrl },
-        offerUrl,
-        jobId,
-        jobTitle,
-        companyName: companyName || 'J.P. Morgan',
-        location: offerMeta?.location || '',
-        contractType: offerMeta?.contractType || '',
-        tabId: tab.id,
-        timestamp: Date.now()
-      },
+      taleos_pending_jp_morgan: { ...pendingBase, tabId: tab.id },
       taleos_jp_morgan_tab_id: tab.id
     });
     await scheduleApplyStuckWatchdog();
