@@ -1159,6 +1159,68 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         },
         args: [forceRefresh]
       }).catch(function() {});
+
+      // ── Récupération automatique onglet JP Morgan mort ────────────────────
+      // Si la page Taleos vient de se recharger (forceRefresh=false = premier sync du chargement)
+      // et qu'une candidature JP Morgan est en cours → vérifier si l'onglet est encore vivant.
+      // Si le context extension est invalidé dans l'onglet (après mise à jour extension),
+      // fermer l'onglet mort et en ouvrir un propre pour relancer l'automatisation.
+      if (!forceRefresh) {
+        (async () => {
+          try {
+            const stored = await chrome.storage.local.get(['taleos_pending_jp_morgan', 'taleos_jp_morgan_tab_id']);
+            const pending = stored.taleos_pending_jp_morgan;
+            if (!pending?.offerUrl) return;
+            const ageMs = Date.now() - (pending.timestamp || 0);
+            if (ageMs < 30_000) return;          // trop récent : l'automation démarre peut-être encore
+            if (ageMs > 20 * 60_000) return;     // trop ancien : on abandonne
+            const jpTabId = stored.taleos_jp_morgan_tab_id || pending.tabId;
+            if (!jpTabId) return;
+
+            // Vérifier si le context extension est encore valide dans l'onglet JP Morgan.
+            // Si `chrome.runtime.id` est undefined, le content script est mort (extension mise à jour).
+            let contextAlive = false;
+            try {
+              const probeResult = await chrome.scripting.executeScript({
+                target: { tabId: jpTabId },
+                func: () => { try { return !!chrome?.runtime?.id; } catch (_) { return false; } }
+              });
+              contextAlive = probeResult?.[0]?.result === true;
+            } catch (_) {
+              contextAlive = false; // onglet introuvable ou injection impossible
+            }
+
+            if (contextAlive) return; // l'onglet JP Morgan tourne encore normalement
+
+            // Onglet mort → fermer + rouvrir proprement
+            console.log(`[Taleos] JP Morgan dead-tab recovery : onglet #${jpTabId} détecté mort → relance automatique`);
+            await chrome.tabs.remove(jpTabId).catch(() => {});
+            await chrome.storage.local.remove(['taleos_jp_morgan_tab_id']).catch(() => {});
+
+            const offerUrl = pending.offerUrl;
+            const taleosTabId = tabId;
+            const createOpts = { url: offerUrl, active: false };
+            try {
+              const taleosTab = await chrome.tabs.get(taleosTabId);
+              if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+            } catch (_) {}
+
+            // Remettre le timestamp à jour pour éviter de re-déclencher la récupération en boucle
+            const freshPending = { ...pending, tabId: null, timestamp: Date.now() };
+            await chrome.storage.local.set({ taleos_pending_jp_morgan: freshPending });
+
+            const newTab = await chrome.tabs.create(createOpts);
+            await chrome.storage.local.set({
+              taleos_pending_jp_morgan: { ...freshPending, tabId: newTab.id },
+              taleos_jp_morgan_tab_id: newTab.id
+            });
+
+            // Garder la page Taleos au premier plan
+            chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+          } catch (_) {}
+        })();
+      }
+      // ─────────────────────────────────────────────────────────────────────
     }
     sendResponse({ ok: true });
     return true;
@@ -2781,6 +2843,23 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     await scheduleApplyStuckWatchdog();
   } else if (routeAs === 'jp_morgan') {
     await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    // Fermer l'onglet JP Morgan mort s'il en existe un (récupération après rechargement extension).
+    // Quand la page Taleos détecte l'erreur d'extension et se recharge, elle relance taleos_apply.
+    // L'ancien onglet est mort (plus de content scripts actifs) → on le ferme proprement
+    // avant d'en créer un neuf, sans intervention de l'utilisateur.
+    try {
+      const { taleos_jp_morgan_tab_id: existingTabId } = await chrome.storage.local.get(['taleos_jp_morgan_tab_id']);
+      if (existingTabId) {
+        const existingTab = await chrome.tabs.get(existingTabId).catch(() => null);
+        if (existingTab) {
+          console.log(`[Taleos] JP Morgan : fermeture onglet mort #${existingTabId} avant relance`);
+          await chrome.tabs.remove(existingTabId).catch(() => {});
+        }
+        await chrome.storage.local.remove(['taleos_jp_morgan_tab_id', 'taleos_pending_jp_morgan']).catch(() => {});
+      }
+    } catch (_) {}
+
     const createOpts = { url: offerUrl, active: false };
     if (taleosTabId) {
       try {

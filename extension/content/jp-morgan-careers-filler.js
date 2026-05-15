@@ -1047,30 +1047,41 @@
         const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
         if (ok) state.educationFilled = true;
       } else {
-        const tiles = eduContainer.querySelectorAll('.apply-flow-profile-item-tile');
-        if (tiles.length === 0) {
-          // Aucun diplôme → cliquer "Add Education"
-          const addBtn = eduContainer.querySelector('button[class*="new-tile"]');
-          if (addBtn) {
-            addBtn.click();
-            await sleep(500);
-            log("➕ JP Morgan : ajout d'une entree education", 1);
-            const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
-            if (ok) state.educationFilled = true;
+        // ── Supprimer TOUTES les tiles éducation existantes avant d'ajouter celle de Firebase ──
+        // Oracle HCM pré-remplit souvent des formations issues d'un précédent profil (ex. "Unnamed Major").
+        // On purge tout pour repartir d'un état propre, puis on ajoute l'unique entrée Firebase.
+        const existingTiles = Array.from(eduContainer.querySelectorAll('.apply-flow-profile-item-tile'));
+        if (existingTiles.length > 0) {
+          log(`🗑️ JP Morgan section 3 : suppression de ${existingTiles.length} carte(s) éducation Oracle existante(s)`, 1);
+          // Supprimer en boucle : on re-query à chaque itération car le DOM change après chaque suppression.
+          let maxAttempts = existingTiles.length + 3;
+          while (maxAttempts-- > 0) {
+            const currentTiles = eduContainer.querySelectorAll('.apply-flow-profile-item-tile');
+            if (currentTiles.length === 0) break;
+            const delBtn = currentTiles[0].querySelector('button[aria-label="Delete"]');
+            if (!delBtn) { log('⚠️ JP Morgan section 3 : bouton Delete introuvable sur tile, arrêt suppression', 1); break; }
+            delBtn.click();
+            await sleep(700);
+            // Gérer une éventuelle modale de confirmation Oracle
+            const confirmBtn = Array.from(document.querySelectorAll('button')).find(
+              (b) => /^(yes|confirm|delete|ok|oui)$/i.test((b.textContent || '').trim())
+                && isElementVisible(b)
+            );
+            if (confirmBtn) { confirmBtn.click(); await sleep(500); }
           }
+          log('✅ JP Morgan section 3 : tiles éducation purgées', 1);
+        }
+
+        // Ajouter l'entrée éducation depuis Firebase
+        const addBtn = eduContainer.querySelector('button[class*="new-tile"]');
+        if (addBtn) {
+          addBtn.click();
+          await sleep(600);
+          log("➕ JP Morgan : ajout entrée éducation depuis Firebase", 1);
+          const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
+          if (ok) state.educationFilled = true;
         } else {
-          // Éditer la première carte (diplôme principal)
-          const firstTile = tiles[0];
-          const editBtn = firstTile.querySelector('button[aria-label="Edit"]');
-          if (editBtn) {
-            editBtn.click();
-            await sleep(500);
-            log('✏️ JP Morgan : edition du diplome existant (tile[0])', 1);
-            const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
-            if (ok) state.educationFilled = true;
-          } else {
-            log('⚠️ JP Morgan section 3 : bouton Edit introuvable sur la carte education', 1);
-          }
+          log('⚠️ JP Morgan section 3 : bouton Add Education introuvable après purge', 1);
         }
       }
     }
