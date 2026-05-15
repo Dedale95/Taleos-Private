@@ -241,8 +241,13 @@ def normalize_contract(raw: Optional[str]) -> Optional[str]:
     return config.CONTRACT_MAPPING.get(key, raw.strip())
 
 
+_INVALID_CITY_STRINGS = {'none', 'null', 'undefined', 'n/a', 'na', '-', '', 'ile', 'etats', 'aucun', 'aucune'}
+
 def build_location(city_raw: Optional[str], country_raw: Optional[str]) -> Optional[str]:
     """Construit la location au format 'Ville - Pays'"""
+    # Rejeter les valeurs de ville invalides (artefacts de template, fragments de mots)
+    if city_raw and str(city_raw).strip().lower() in _INVALID_CITY_STRINGS:
+        city_raw = None
     city = normalize_city(city_raw) if city_raw else None
     country = normalize_country(country_raw) if country_raw else None
 
@@ -443,7 +448,23 @@ async def fetch_job_detail(context: BrowserContext, job: Dict, sem: asyncio.Sema
                 if parent:
                     meta_items = [li.get_text(strip=True) for li in parent.select("ul li") if li.get_text(strip=True)]
                     # Villes connues à privilégier (éviter les adresses type "12 boulevard...")
-                    known_cities_oddo = {"PARIS", "Paris", "Saarbrücken", "Frankfurt", "Francfort", "Luxembourg", "Luxembourg Ville", "Düsseldorf", "Milan", "Genève", "Zurich"}
+                    known_cities_oddo = {
+                        # France
+                        "PARIS", "Paris", "Lyon", "Marseille", "Bordeaux", "Toulouse",
+                        "Lille", "Nantes", "Strasbourg", "Montpellier", "Rennes",
+                        "Clichy", "La Défense", "Courbevoie", "Neuilly-sur-Seine",
+                        # Allemagne
+                        "Saarbrücken", "Saarbrucken", "Frankfurt", "Francfort",
+                        "Düsseldorf", "Dusseldorf", "Berlin", "Munich", "München",
+                        "Hamburg", "Stuttgart", "Hannover", "Köln", "Cologne",
+                        "Aschheim", "Mannheim", "Wiesbaden",
+                        # Suisse / Luxembourg
+                        "Luxembourg", "Luxembourg Ville", "Genève", "Zurich",
+                        # Tunisie
+                        "Tunis",
+                        # International
+                        "Milan", "Londres", "London", "Madrid", "Amsterdam",
+                    }
                     for item in meta_items:
                         if re.match(r"\d{1,2}/\d{1,2}/\d{4}", item):
                             publication_date = parse_publication_date(item)

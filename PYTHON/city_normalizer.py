@@ -126,7 +126,32 @@ CITY_MAPPING = {
     'putrajaya': 'Kuala Lumpur',
     'aschheim': 'Aschheim',
     'aschheim bei münchen': 'Aschheim',
-    
+    # ========== ALLEMAGNE - villes supplémentaires ==========
+    'saarbrücken': 'Saarbrücken',
+    'saarbrucken': 'Saarbrücken',
+    'düsseldorf': 'Düsseldorf',
+    'dusseldorf': 'Düsseldorf',
+    'hamburg': 'Hamburg',
+    'berlin': 'Berlin',
+    'köln': 'Cologne',
+    'cologne': 'Cologne',
+    'koln': 'Cologne',
+    'stuttgart': 'Stuttgart',
+    'hannover': 'Hannover',
+    'nürnberg': 'Nuremberg',
+    'nuremberg': 'Nuremberg',
+    'dresden': 'Dresden',
+    'leipzig': 'Leipzig',
+    'dortmund': 'Dortmund',
+    'essen': 'Essen',
+    'duisburg': 'Duisburg',
+    'mannheim': 'Mannheim',
+    'karlsruhe': 'Karlsruhe',
+    'augsburg': 'Augsburg',
+    'wiesbaden': 'Wiesbaden',
+    'bielefeld': 'Bielefeld',
+    'bonn': 'Bonn',
+
     # ========== ITALIE - Harmonisation villes/provinces ==========
     'torino': 'Turin',
     'turin': 'Turin',
@@ -368,10 +393,14 @@ def normalize_city(city_raw):
     
     # Rejeter les mots isolés qui ne sont pas des villes connues
     # Mots-clés suspects qui ne devraient pas être des villes
-    invalid_standalone_words = ['central', 'boulevard', 'metro', 'park', 'einsteinring', 
+    invalid_standalone_words = ['central', 'boulevard', 'metro', 'park', 'einsteinring',
                                 'allée', 'chemin', 'allee', 'scheffer', 'floor', 'bldg',
                                 'building', 'tower', 'road', 'street', 'avenue',
-                                'n', 's', 'e', 'w']  # Abréviations directionnelles ou junk
+                                'n', 's', 'e', 'w',  # Abréviations directionnelles ou junk
+                                # Valeurs parasites provenant de templates ou pages web
+                                'none', 'null', 'undefined', 'n/a', 'na', '-',
+                                # Fragments de régions/pays (ex: "Ile" de "Île-de-France", "Etats" de "États-Unis")
+                                'ile', 'etats', 'aucun', 'aucune', 'inconnue', 'inconnu']
     if city_clean in invalid_standalone_words:
         return None
     

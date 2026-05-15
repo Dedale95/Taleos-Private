@@ -1352,16 +1352,19 @@ def wp_enrich_detail(html: str, job: Dict) -> Dict:
                     desc_raw, "html.parser"
                 ).get_text(separator="\n", strip=True)
 
-            if not j.get("location") and data.get("jobLocation"):
+            # Mettre à jour location depuis JSON-LD si on a une ville (même si location déjà défini)
+            if data.get("jobLocation"):
                 locations = data["jobLocation"]
                 if isinstance(locations, dict):
                     locations = [locations]
                 if locations:
                     addr  = locations[0].get("address", {})
-                    city  = addr.get("addressLocality", "")
+                    city  = addr.get("addressLocality", "").strip()
                     c     = addr.get("addressCountry", j.get("country", ""))
                     c_n   = normalize_country(c) or c
-                    if city:
+                    current_loc = j.get("location", "")
+                    # Mettre à jour si on a une ville et que la location actuelle est pays-seulement
+                    if city and (not current_loc or " - " not in current_loc):
                         j["location"] = f"{city} - {c_n}"
             break
         except Exception:
