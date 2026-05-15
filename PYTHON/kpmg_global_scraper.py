@@ -497,6 +497,48 @@ class Database:
 RADANCY_JOBS_PER_PAGE = 15
 
 
+def _playwright_available() -> bool:
+    """Vérifie si Playwright est installé dans l'environnement."""
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def fetch_html_playwright(url: str) -> Optional[str]:
+    """Récupère le HTML d'une page via Playwright (navigateur headless).
+    Contourne la protection anti-bot des IPs datacenter (ex. GitHub Actions).
+    Retourne None si Playwright n'est pas disponible ou en cas d'erreur.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            ctx = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="fr-FR",
+                viewport={"width": 1280, "height": 900},
+            )
+            page = ctx.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            # Attendre que les cartes offres soient chargées (data-job-id ou /job/ links)
+            try:
+                page.wait_for_selector("[data-job-id], a[href*='/job/']", timeout=8_000)
+            except Exception:
+                pass  # on prend quand même le HTML courant
+            content = page.content()
+            browser.close()
+            return content
+    except Exception as e:
+        logger.warning(f"  Playwright indisponible ou erreur : {e}")
+        return None
+
+
 def radancy_page_url(source: Dict, page: int) -> str:
     base         = source["base_url"]
     search_path  = source["search_path"]
@@ -519,7 +561,53 @@ def radancy_parse_listing(html: str, source: Dict) -> List[Dict]:
     company      = source["company_name"]
     jobs         = []
 
-    for card in soup.find_all(attrs={"data-job-id": True}):
+    # Stratégie 1 : cartes avec data-job-id (format Radancy standard — France, Allemagne)
+    cards_with_id = soup.find_all(attrs={"data-job-id": True})
+
+    # Stratégie 2 : liens /job/ID/ (format Radancy alternatif — Italie)
+    # Chaque lien /job/slug/ID/ est le titre de l'offre.
+    if not cards_with_id:
+        seen_hrefs: Set[str] = set()
+        for a in soup.find_all("a", href=re.compile(r"/job/.+/\d+/?$")):
+            href = a.get("href", "").strip()
+            if not href or href in seen_hrefs:
+                continue
+            seen_hrefs.add(href)
+            if not href.startswith("http"):
+                href = base_url + href
+            m = re.search(r"/(\d+)/?$", href)
+            job_id_raw = m.group(1) if m else href.rstrip("/").split("/")[-1]
+            title = a.get_text(strip=True)
+            if not title:
+                # Chercher le titre dans le parent proche
+                parent = a.parent
+                for _ in range(3):
+                    if parent and parent.get_text(strip=True):
+                        title = parent.get_text(strip=True)[:120]
+                        break
+                    parent = parent.parent if parent else None
+            if not title:
+                continue
+            jobs.append({
+                "job_id":           f"KPMG_{country_code}_{job_id_raw}",
+                "job_url":          href,
+                "job_title":        title,
+                "location":         country,
+                "region":           "",
+                "country":          country,
+                "contract_type":    "",
+                "job_family":       "",
+                "experience_level": "",
+                "company_name":     company,
+                "publication_date": "",
+                "job_description":  "",
+                "education_level":  "",
+                "_category":        "",
+                "_speciality":      "",
+            })
+        return jobs
+
+    for card in cards_with_id:
         job_id_raw = str(card.get("data-job-id", "")).strip()
         if not job_id_raw:
             continue
@@ -697,8 +785,33 @@ def scrape_radancy(source: Dict, db: Database, session: requests.Session):
     total_pages = radancy_get_total_pages(first_html)
     logger.info(f"  Pages estimées : {total_pages}")
 
+    # Vérifier si la page 1 contient des cartes offres.
+    # Les IPs datacenter (GitHub Actions) reçoivent une version sans cartes (protection anti-bot).
+    # Si 0 cartes en requests → basculer sur Playwright pour récupérer le HTML rendu.
+    use_playwright = False
+    probe_jobs = radancy_parse_listing(first_html, source)
+    if not probe_jobs and _playwright_available():
+        logger.info(f"  ⚠️ Page 1 : 0 offres avec requests → tentative Playwright (IP datacenter détectée)")
+        pw_html = fetch_html_playwright(first_url)
+        if pw_html:
+            probe_jobs_pw = radancy_parse_listing(pw_html, source)
+            if probe_jobs_pw:
+                logger.info(f"  ✅ Playwright : {len(probe_jobs_pw)} offres sur page 1 → mode Playwright activé")
+                first_html = pw_html
+                use_playwright = True
+                total_pages = radancy_get_total_pages(first_html) or total_pages
+            else:
+                logger.warning(f"  ❌ Playwright également 0 offres — marché peut-être vide ou hors ligne")
+        else:
+            logger.warning(f"  ❌ Playwright indisponible ou échec — abandon fallback")
+
     for page in range(1, total_pages + 5):
-        html = first_html if page == 1 else fetch_text(radancy_page_url(source, page), session)
+        if page == 1:
+            html = first_html
+        elif use_playwright:
+            html = fetch_html_playwright(radancy_page_url(source, page))
+        else:
+            html = fetch_text(radancy_page_url(source, page), session)
         if not html:
             logger.warning(f"  Page {page} : échec fetch — arrêt")
             break
@@ -777,9 +890,15 @@ def scrape_smartrecruiters(source: Dict, db: Database, session: requests.Session
         logger.info(f"  offset={offset} · {len(items)} offres (total={total})")
 
         for item in items:
-            job_id      = item.get("id", "")
+            job_id      = str(item.get("id", "")).strip()
             title       = item.get("name", "").strip()
-            posting_url = item.get("postingUrl") or item.get("applyUrl") or ""
+            # L'API SmartRecruiters de KPMG Australie n'expose pas postingUrl/applyUrl.
+            # On construit l'URL publique depuis l'identifiant company + job id.
+            posting_url = (
+                item.get("postingUrl")
+                or item.get("applyUrl")
+                or (f"https://jobs.smartrecruiters.com/{company_id}/{job_id}" if job_id else "")
+            )
             if not title or not posting_url:
                 continue
 
