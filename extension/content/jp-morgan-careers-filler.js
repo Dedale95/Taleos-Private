@@ -565,6 +565,29 @@
     return false;
   }
 
+  /**
+   * Supprime TOUS les attachments existants sur la page (CV + lettre de motivation)
+   * en cliquant sur chaque bouton "Remove Attachment" jusqu'à ce qu'il n'en reste plus.
+   * Appeler avant tout upload pour éviter les doublons.
+   */
+  async function removeAllAttachments() {
+    let removed = 0;
+    for (let pass = 0; pass < 10; pass++) {
+      const btn = Array.from(document.querySelectorAll('button, [role="button"], a')).find(b => {
+        if (!isElementVisible(b)) return false;
+        const text = norm(`${b.textContent || ''} ${b.getAttribute('aria-label') || ''} ${b.getAttribute('title') || ''}`);
+        return /remove attachment|remove resume|remove cover|remove file|remove document/.test(text)
+          || (text.includes('remove') && b.closest('[class*="attachment"], [class*="upload"], [class*="file"]'));
+      });
+      if (!btn) break;
+      btn.click();
+      await sleep(600);
+      removed++;
+    }
+    if (removed) log(`🗑️ Attachments : ${removed} pièce(s) supprimée(s) avant réupload`, 1);
+    return removed;
+  }
+
   async function ensureAttachment({ label, storagePath, filename, rootKeywords, uploadButtonText, token }) {
     if (!storagePath) {
       log(`⏭️ ${label} : aucun fichier Firebase`, 1);
@@ -1307,6 +1330,12 @@
     const report = blueprint?.getStructureReport?.('section_4');
     if (report) log(`Blueprint JP Morgan section 4: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
     log('🧾 JP Morgan → audit détaillé Firebase vs formulaire (section 4)');
+
+    // Supprimer TOUS les attachments existants avant de recharger CV + lettre
+    // → évite les doublons (ex. lettre de motivation uploadée deux fois)
+    state.resumeUploadToken = '';
+    state.coverUploadToken = '';
+    await removeAllAttachments();
 
     await ensureAttachment({
       label: 'CV',

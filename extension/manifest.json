@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.27",
-  "version_name": "1.2.27-jpmorgan-tile-completeness-check",
+  "version": "1.2.28",
+  "version_name": "1.2.28-jpmorgan-remove-all-attachments",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
