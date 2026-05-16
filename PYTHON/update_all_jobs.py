@@ -43,6 +43,7 @@ AXA_DB           = PYTHON_DIR / "axa_jobs.db"
 KPMG_DB          = PYTHON_DIR / "kpmg_jobs.db"
 HSBC_DB          = PYTHON_DIR / "hsbc_jobs.db"
 EY_DB            = PYTHON_DIR / "ey_jobs.db"
+LBP_DB           = PYTHON_DIR / "la_banque_postale_jobs.db"
 
 EXPIRED_PAGE_PATTERNS = [
     "la page que vous recherchez est introuvable",
@@ -236,6 +237,7 @@ def _print_db_live_expired_snapshot(title: str):
         ("KPMG Global", KPMG_DB),
         ("HSBC", HSBC_DB),
         ("EY", EY_DB),
+        ("La Banque Postale", LBP_DB),
     ]:
         if not db_path.exists() or not _db_has_jobs_table(db_path):
             print(f"   {name:<22} │   ---  │    ---  │    ---  (base absente)")
@@ -279,6 +281,7 @@ def revalidate_live_offers_all_sources():
         ("KPMG Global", KPMG_DB),
         ("HSBC", HSBC_DB),
         ("EY", EY_DB),
+        ("La Banque Postale", LBP_DB),
     ]:
         total += revalidate_live_offers_in_db(
             db_path, name, max_urls=max_per
@@ -539,6 +542,7 @@ def merge_from_databases():
         ("KPMG Global", KPMG_DB),
         ("HSBC", HSBC_DB),
         ("EY", EY_DB),
+        ("La Banque Postale", LBP_DB),
     ]
 
     for name, db_path in sources_info:
@@ -680,7 +684,7 @@ if __name__ == "__main__":
         total_expired = 0
         print(f"   {'Entité':<22} │ {'Live':>6} │ {'Expired':>7}")
         print("   " + "-" * 40)
-        for name, db_path in [("Crédit Agricole", CA_DB), ("Société Générale", SG_DB), ("Deloitte", DELOITTE_DB), ("BNP Paribas", BNP_DB), ("BPCE", BPCE_DB), ("Bpifrance", BPIFRANCE_DB), ("Crédit Mutuel", CREDIT_MUTUEL_DB), ("ODDO BHF", ODDO_BHF_DB), ("JP Morgan Chase", JP_MORGAN_DB), ("Goldman Sachs", GOLDMAN_SACHS_DB), ("AXA", AXA_DB), ("KPMG Global", KPMG_DB), ("HSBC", HSBC_DB), ("EY", EY_DB)]:
+        for name, db_path in [("Crédit Agricole", CA_DB), ("Société Générale", SG_DB), ("Deloitte", DELOITTE_DB), ("BNP Paribas", BNP_DB), ("BPCE", BPCE_DB), ("Bpifrance", BPIFRANCE_DB), ("Crédit Mutuel", CREDIT_MUTUEL_DB), ("ODDO BHF", ODDO_BHF_DB), ("JP Morgan Chase", JP_MORGAN_DB), ("Goldman Sachs", GOLDMAN_SACHS_DB), ("AXA", AXA_DB), ("KPMG Global", KPMG_DB), ("HSBC", HSBC_DB), ("EY", EY_DB), ("La Banque Postale", LBP_DB)]:
             if db_path.exists():
                 conn = sqlite3.connect(db_path)
                 row = conn.execute("""
