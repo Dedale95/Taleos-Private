@@ -44,6 +44,8 @@ ODDO_BHF_DB = PYTHON_DIR / "oddo_bhf_jobs.db"
 JP_MORGAN_DB = PYTHON_DIR / "jp_morgan_jobs.db"
 GOLDMAN_SACHS_DB = PYTHON_DIR / "goldman_sachs_jobs.db"
 KPMG_DB          = PYTHON_DIR / "kpmg_jobs.db"
+AXA_DB           = PYTHON_DIR / "axa_jobs.db"
+HSBC_DB          = PYTHON_DIR / "hsbc_jobs.db"
 
 
 def write_json(path: Path, data, pretty: bool = False):
@@ -516,6 +518,8 @@ def main():
         ("JP Morgan Chase", JP_MORGAN_DB),
         ("Goldman Sachs", GOLDMAN_SACHS_DB),
         ("KPMG Global",  KPMG_DB),
+        ("AXA",          AXA_DB),
+        ("HSBC",         HSBC_DB),
     ]
 
     # Mode strict pour éviter d'exporter des données BNP obsolètes en cas d'échec scraper/base manquante.
