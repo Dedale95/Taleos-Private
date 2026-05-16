@@ -1184,66 +1184,95 @@
         // Si la tile Taleos est déjà présente, on évite de la re-créer (on saute le "Add Education").
 
         /**
-         * Vérifie si une tile correspond au profil Taleos.
-         * La correspondance se fait sur le nom de l'école dans le sous-titre
-         * (.apply-flow-profile-item-tile__summary-subtitle ou texte normalisé).
+         * Vérifie si une tile correspond au profil Taleos (école présente dans le sous-titre).
          */
         function isTaleosTile(tile, targetSchool) {
           if (!targetSchool) return false;
-          // Chercher le sous-titre (école + date) dans la tile
           const subtitle = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent || '';
           const tileText = tile.textContent || '';
           const targetNorm = targetSchool.toLowerCase().trim();
-          // On vérifie que le nom de l'école Taleos apparaît dans le sous-titre ou le texte complet de la tile
           return subtitle.toLowerCase().includes(targetNorm) || tileText.toLowerCase().includes(targetNorm);
+        }
+
+        /**
+         * Vérifie si la tile Taleos est COMPLÈTE : école ET diplôme présents.
+         * summary-title = diplôme, summary-subtitle = école + date.
+         */
+        function isTaleosTileComplete(tile, targetSchool, targetDegree) {
+          if (!isTaleosTile(tile, targetSchool)) return false;
+          if (!targetDegree) return true;
+          const title = tile.querySelector('.apply-flow-profile-item-tile__summary-title')?.textContent || '';
+          const degNorm = normText(targetDegree).replace(/['']/g, "'");
+          const titleNorm = normText(title).replace(/['']/g, "'");
+          return titleNorm.includes(degNorm) || (degNorm.length > 4 && titleNorm.includes(degNorm.split("'")[0].trim()));
         }
 
         const existingTiles = Array.from(eduContainer.querySelectorAll('.apply-flow-profile-item-tile'));
         let taloesAlreadyPresent = false;
 
         if (existingTiles.length > 0) {
-          // Identifier quelles tiles conserver / supprimer
           const tilesToDelete = [];
           for (const tile of existingTiles) {
             if (isTaleosTile(tile, school)) {
-              taloesAlreadyPresent = true;
-              const subtitle = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
-              log(`✅ JP Morgan section 3 : tile Taleos détectée ("${subtitle}") → conservée`, 1);
+              const tileTitle = tile.querySelector('.apply-flow-profile-item-tile__summary-title')?.textContent?.trim() || '';
+              const tileSub = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
+              const isComplete = isTaleosTileComplete(tile, school, degreeValue);
+
+              if (isComplete) {
+                taloesAlreadyPresent = true;
+                log(`✅ JP Morgan section 3 : tile Taleos complète ("${tileTitle} / ${tileSub}") → conservée`, 1);
+              } else {
+                // École présente mais diplôme absent/incorrect → ouvrir Edit et corriger
+                log(`✏️ JP Morgan section 3 : tile Taleos incomplète (diplôme="${tileTitle || '(vide)'}", attendu="${degreeValue}") → correction via Edit`, 1);
+                const editBtn = tile.querySelector('button[aria-label="Edit"]');
+                if (editBtn) {
+                  editBtn.click();
+                  await sleep(900);
+                  const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
+                  if (ok) {
+                    taloesAlreadyPresent = true;
+                    log('✅ JP Morgan section 3 : tile Taleos corrigée (diplôme ajouté)', 1);
+                  } else {
+                    log('⚠️ JP Morgan section 3 : correction via Edit échouée → suppression + recréation', 1);
+                    // Fermer le formulaire si ouvert
+                    const cancelBtn = document.querySelector('button.cancel-btn');
+                    if (cancelBtn && isElementVisible(cancelBtn)) { cancelBtn.click(); await sleep(500); }
+                    tilesToDelete.push(tile); // sera supprimée pour recréation propre
+                  }
+                } else {
+                  log('⚠️ JP Morgan section 3 : bouton Edit introuvable — suppression + recréation', 1);
+                  tilesToDelete.push(tile);
+                }
+              }
             } else {
-              const subtitle = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
-              log(`🗑️ JP Morgan section 3 : tile non-Taleos ("${subtitle}") → suppression`, 1);
+              const tileSub = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
+              log(`🗑️ JP Morgan section 3 : tile non-Taleos ("${tileSub}") → suppression`, 1);
               tilesToDelete.push(tile);
             }
           }
 
-          // Supprimer les tiles non-Taleos une par une (le DOM se met à jour après chaque suppression)
+          // Supprimer les tiles non-Taleos / incomplètes non corrigées
           for (let i = 0; i < tilesToDelete.length; i++) {
-            // Re-query : après suppression d'une tile le DOM change, on identifie la suivante par correspondance de texte
-            const subtitle = tilesToDelete[i].querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
-            // Retrouver la tile dans le DOM courant (elle peut avoir bougé)
             const currentTiles = Array.from(eduContainer.querySelectorAll('.apply-flow-profile-item-tile'));
-            const target = currentTiles.find(t => !isTaleosTile(t, school));
+            const target = currentTiles.find(t => !isTaleosTileComplete(t, school, degreeValue));
             if (!target) break;
             const delBtn = target.querySelector('button[aria-label="Delete"]');
             if (!delBtn) { log('⚠️ JP Morgan section 3 : bouton Delete introuvable, arrêt suppression', 1); break; }
             delBtn.click();
             await sleep(700);
-            // Gérer une éventuelle modale de confirmation Oracle
             const confirmBtn = Array.from(document.querySelectorAll('button')).find(
-              (b) => /^(yes|confirm|delete|ok|oui)$/i.test((b.textContent || '').trim())
-                && isElementVisible(b)
+              (b) => /^(yes|confirm|delete|ok|oui)$/i.test((b.textContent || '').trim()) && isElementVisible(b)
             );
             if (confirmBtn) { confirmBtn.click(); await sleep(500); }
           }
 
           if (tilesToDelete.length > 0) {
-            log(`✅ JP Morgan section 3 : ${tilesToDelete.length} tile(s) non-Taleos supprimée(s)`, 1);
+            log(`✅ JP Morgan section 3 : ${tilesToDelete.length} tile(s) supprimée(s)`, 1);
           }
         }
 
         if (taloesAlreadyPresent) {
-          // La tile Taleos était déjà dans Oracle HCM → pas besoin de la re-créer
-          log('✅ JP Morgan section 3 : entrée éducation Taleos déjà présente, pas de recréation', 1);
+          log('✅ JP Morgan section 3 : entrée éducation Taleos complète → pas de recréation', 1);
           state.educationFilled = true;
         } else {
           // Ajouter l'entrée éducation depuis Firebase
