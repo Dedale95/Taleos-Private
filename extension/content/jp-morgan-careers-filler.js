@@ -43,10 +43,10 @@
 
   // Comme norm() mais normalise aussi les apostrophes typographiques Unicode
   // (U+2018 ' U+2019 ' U+201A ‚ U+201B ‛ U+2032 ′) en apostrophe ASCII U+0027.
-  // Indispensable pour comparer "Master’s Degree" (Oracle) avec "Master's Degree" (notre code).
+  // Indispensable pour comparer "Master's Degree" (Oracle) avec "Master's Degree" (notre code).
   function normText(value) {
     return String(value || '')
-      .replace(/[‘’‚‛′]/g, "'")
+      .replace(/[''‚‛′]/g, "'")
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
@@ -923,23 +923,23 @@
    *   button.save-btn                      — Sauvegarder
    */
   /**
-   * Trouve le formulaire inline d’éducation Oracle HCM (plusieurs sélecteurs possibles).
+   * Trouve le formulaire inline d'éducation Oracle HCM (plusieurs sélecteurs possibles).
    * Oracle peut rendre le formulaire inline OU en modal selon la version/contexte.
    */
   function findOpenEduForm() {
     // Sélecteurs par ordre de priorité
     return (
-      document.querySelector(‘.profile-item-content--form’) ||
-      document.querySelector(‘[class*="profile-item-content"][class*="form"]’) ||
-      document.querySelector(‘[class*="apply-flow-profile-item"][class*="form"]’) ||
+      document.querySelector('.profile-item-content--form') ||
+      document.querySelector('[class*="profile-item-content"][class*="form"]') ||
+      document.querySelector('[class*="apply-flow-profile-item"][class*="form"]') ||
       // Si save-btn est visible, remonter au conteneur parent
       (() => {
-        const saveBtn = document.querySelector(‘button.save-btn’);
+        const saveBtn = document.querySelector('button.save-btn');
         if (!saveBtn || !isElementVisible(saveBtn)) return null;
         return (
-          saveBtn.closest(‘[class*="profile-item-content"]’) ||
-          saveBtn.closest(‘[class*="education"]’) ||
-          saveBtn.closest(‘[role="dialog"]’) ||
+          saveBtn.closest('[class*="profile-item-content"]') ||
+          saveBtn.closest('[class*="education"]') ||
+          saveBtn.closest('[role="dialog"]') ||
           saveBtn.parentElement
         );
       })()
@@ -949,23 +949,23 @@
   /**
    * Ouvre un dropdown cx-select (disabled ou non) en utilisant la séquence
    * complète mousedown/mouseup/click sur le bon élément déclencheur.
-   * Retourne true si un listbox est visible après l’ouverture.
+   * Retourne true si un listbox est visible après l'ouverture.
    */
   async function openCxDropdown(input) {
-    const container = input?.closest?.(‘.cx-select-container’) || input?.closest?.(‘[class*="cx-select"]’) || input?.parentElement;
+    const container = input?.closest?.('.cx-select-container') || input?.closest?.('[class*="cx-select"]') || input?.parentElement;
     // Chercher un bouton déclencheur explicite (flèche ▼) dans le container
-    const triggerBtn = container?.querySelector(‘button[class*="cx-select"], button[aria-label*="open" i], button[aria-expanded], button[class*="trigger"], button[class*="dropdown"]’);
-    // Cibles à essayer dans l’ordre
+    const triggerBtn = container?.querySelector('button[class*="cx-select"], button[aria-label*="open" i], button[aria-expanded], button[class*="trigger"], button[class*="dropdown"]');
+    // Cibles à essayer dans l'ordre
     const targets = [triggerBtn, container, input].filter(Boolean);
 
     for (const target of targets) {
-      for (const type of [‘mousedown’, ‘mouseup’, ‘click’]) {
+      for (const type of ['mousedown', 'mouseup', 'click']) {
         target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
       }
       await sleep(700);
-      // Vérifier si un listbox s’est ouvert
+      // Vérifier si un listbox s'est ouvert
       const listbox = document.querySelector(
-        ‘[role="listbox"]:not([aria-hidden="true"]), [class*="cx-select__list"]:not([aria-hidden]), [class*="cx-select__dropdown"]:not([aria-hidden])’
+        '[role="listbox"]:not([aria-hidden="true"]), [class*="cx-select__list"]:not([aria-hidden]), [class*="cx-select__dropdown"]:not([aria-hidden])'
       );
       if (listbox && isElementVisible(listbox)) return true;
     }
@@ -980,24 +980,24 @@
       formEl = findOpenEduForm();
     }
     if (!formEl) {
-      log(‘⚠️ JP Morgan : formulaire inline éducation non apparu après 3,2 s’, 1);
+      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 3,2 s', 1);
       return false;
     }
-    log(`📋 fillEducationInlineForm formEl="${formEl.className.slice(0, 60)}" degree=’${degree}’ school=’${school}’ month=’${gradMonth}’ year=’${gradYear}’`, 1);
+    log(`📋 fillEducationInlineForm formEl="${formEl.className.slice(0, 60)}" degree='${degree}' school='${school}' month='${gradMonth}' year='${gradYear}'`, 1);
 
     // ── Diplôme ─────────────────────────────────────────────────────────────
     // Le champ Degree est un cx-select en lecture seule (on ne peut que choisir dans la liste).
-    // On l’identifie par plusieurs sélecteurs, puis on ouvre le dropdown via openCxDropdown().
+    // On l'identifie par plusieurs sélecteurs, puis on ouvre le dropdown via openCxDropdown().
     let degreeOk = !degree; // true si pas de valeur cible (optionnel)
     if (degree) {
-      // Trouver l’input du champ Degree (multiples sélecteurs Oracle connus)
+      // Trouver l'input du champ Degree (multiples sélecteurs Oracle connus)
       const degSels = [
-        ‘input[name="contentItemId"]’,
-        ‘input[name*="degree" i]’,
-        ‘input[id*="contentItemId" i]’,
-        ‘input[aria-label*="degree" i]’,
-        ‘input.cx-select-input--disabled’,
-        ‘input.cx-select-input’,
+        'input[name="contentItemId"]',
+        'input[name*="degree" i]',
+        'input[id*="contentItemId" i]',
+        'input[aria-label*="degree" i]',
+        'input.cx-select-input--disabled',
+        'input.cx-select-input',
       ];
       let degreeInput = null;
       for (const sel of degSels) {
@@ -1006,14 +1006,14 @@
       }
       // Fallback label-based
       if (!degreeInput) {
-        const allLabels = Array.from(document.querySelectorAll(‘label, [class*="label"], span’));
+        const allLabels = Array.from(document.querySelectorAll('label, [class*="label"], span'));
         const degLabel = allLabels.find((l) => /^\s*degree[\s*]*$/i.test(l.textContent.trim()));
         if (degLabel) {
-          const id = degLabel.htmlFor || degLabel.getAttribute(‘for’);
+          const id = degLabel.htmlFor || degLabel.getAttribute('for');
           if (id) degreeInput = document.getElementById(id);
           if (!degreeInput) {
-            const row = degLabel.closest(‘[class*="row"], [class*="field"], [class*="cx-select"]’);
-            degreeInput = row?.querySelector(‘input’) || null;
+            const row = degLabel.closest('[class*="row"], [class*="field"], [class*="cx-select"]');
+            degreeInput = row?.querySelector('input') || null;
           }
           if (degreeInput) log(`   [degree] trouvé via label fallback`, 2);
         }
@@ -1022,9 +1022,9 @@
 
       if (degreeInput) {
         const currentDeg = getValue(degreeInput);
-        const degNorm = normText(degree).replace(/[‘’]/g, "’");
-        if (normText(currentDeg).replace(/[‘’]/g, "’") === degNorm || normText(currentDeg).replace(/[‘’]/g, "’").includes(degNorm)) {
-          log(`✅ Diplôme : ‘${currentDeg}’ -> Skip`, 1);
+        const degNorm = normText(degree).replace(/['']/g, "'");
+        if (normText(currentDeg).replace(/['']/g, "'") === degNorm || normText(currentDeg).replace(/['']/g, "'").includes(degNorm)) {
+          log(`✅ Diplôme : '${currentDeg}' -> Skip`, 1);
           degreeOk = true;
         } else {
           for (let attempt = 0; attempt < 3 && !degreeOk; attempt++) {
@@ -1032,19 +1032,19 @@
             log(`   [degree] dropdown ouvert=${opened} (tentative ${attempt + 1})`, 2);
             if (!opened) {
               // Dernier recours : clic simple sur le container
-              (degreeInput.closest(‘.cx-select-container’) || degreeInput).click();
+              (degreeInput.closest('.cx-select-container') || degreeInput).click();
               await sleep(800);
             }
-            const picked = await pickVisibleOption(degree) || await pickVisibleOption(degree.replace(/’/g, ‘’’));
+            const picked = await pickVisibleOption(degree) || await pickVisibleOption(degree.replace(/'/g, '’'));
             if (picked) {
-              log(`✏️ Diplôme : → ‘${degree}’ (tentative ${attempt + 1})`, 1);
+              log(`✏️ Diplôme : → '${degree}' (tentative ${attempt + 1})`, 1);
               degreeOk = true;
             } else {
               log(`⚠️ Diplôme tentative ${attempt + 1} : options visibles : ${
-                Array.from(document.querySelectorAll(‘[class*="cx-select__list-item"], [role="option"]’))
-                  .map(e => e.textContent.trim().slice(0, 30)).join(‘ | ‘).slice(0, 200) || ‘(aucune)’
+                Array.from(document.querySelectorAll('[class*="cx-select__list-item"], [role="option"]'))
+                  .map(e => e.textContent.trim().slice(0, 30)).join(' | ').slice(0, 200) || '(aucune)'
               }`, 1);
-              document.dispatchEvent(new KeyboardEvent(‘keydown’, { key: ‘Escape’, bubbles: true }));
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
               await sleep(400);
             }
           }
