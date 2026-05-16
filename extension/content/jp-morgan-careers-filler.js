@@ -1023,8 +1023,11 @@
 
     // ── Paramètres éducation depuis Firebase ────────────────────────────────
     const degreeValue = mapEducationLevelToDegree(profile.education_level, profile.school_type);
-    const school = profile.school || profile.university || profile.education_school || '';
-    const gradYear = String(profile.graduation_year || profile.grad_year || '');
+    // background.js envoie le champ "establishment" (profile.establishment || profile.institution_name)
+    // mais l'ancien code lisait "school" qui n'existe pas → toujours vide → isTaleosTile() ne matchait jamais
+    const school = profile.school || profile.university || profile.education_school || profile.establishment || '';
+    // background.js envoie "diploma_year" (from profile.graduation_year), filler doit lire les deux
+    const gradYear = String(profile.graduation_year || profile.grad_year || profile.diploma_year || '');
     const gradMonth = profile.graduation_month || profile.grad_month || '';
     const eduCountry = profile.education_country || profile.country || 'France';
     const areaOfStudy = profile.area_of_study || profile.major || profile.field_of_study || '';
