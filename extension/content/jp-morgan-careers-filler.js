@@ -23,7 +23,8 @@
     reviewStartedAt: 0,
     successSent: false,
     resumeUploadToken: '',
-    coverUploadToken: ''
+    coverUploadToken: '',
+    attachmentsCleared: false   // one-shot : suppression+réupload faits une seule fois par session
   };
 
   function sleep(ms) {
@@ -996,14 +997,14 @@
   }
 
   async function fillEducationInlineForm(degree, school, gradMonth, gradYear, country, areaOfStudy) {
-    // Attendre que le formulaire soit rendu (Oracle HCM peut prendre >600 ms après ADD)
+    // Attendre que le formulaire soit rendu (Oracle HCM peut prendre >1 s après ADD/EDIT)
     let formEl = null;
-    for (let attempt = 0; attempt < 8 && !formEl; attempt++) {
+    for (let attempt = 0; attempt < 15 && !formEl; attempt++) {
       await sleep(400);
       formEl = findOpenEduForm();
     }
     if (!formEl) {
-      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 3,2 s', 1);
+      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 6 s', 1);
       return false;
     }
     log(`📋 fillEducationInlineForm formEl="${formEl.className.slice(0, 60)}" degree='${degree}' school='${school}' month='${gradMonth}' year='${gradYear}'`, 1);
@@ -1037,14 +1038,30 @@
             degreeInput.parentElement;
 
           for (let attempt = 0; attempt < 4 && !degreeOk; attempt++) {
-            // Un seul clic sur le container suffit (pas de séquence mousedown/up → risque de toggle)
-            container.click();
-            await sleep(1500); // Oracle HCM peut être lent à rendre la liste
+            // Séquence MouseEvent complète sur le bouton interne OU le container
+            // (container.click() = event synthétique ignoré par certains handlers Oracle)
+            const triggerEl = container.querySelector('button') || container;
+            for (const evType of ['mousedown', 'mouseup', 'click']) {
+              triggerEl.dispatchEvent(new MouseEvent(evType, { bubbles: true, cancelable: true, view: window }));
+            }
+            await sleep(2000); // Oracle peut être lent à rendre la liste
 
-            // Collecter toutes les options visibles
-            const items = Array.from(document.querySelectorAll(
+            // Collecter toutes les options depuis n'importe quel listbox ouvert
+            const itemSet = new Set();
+            // A) Sélecteurs ciblés Oracle cx-select
+            document.querySelectorAll(
               '.cx-select__list-item--content, [class*="cx-select__list-item"], [role="option"]'
-            )).filter(el => isElementVisible(el) && el.textContent.trim());
+            ).forEach(el => { if (isElementVisible(el) && el.textContent.trim()) itemSet.add(el); });
+            // B) Tout listbox/dropdown ouvert → li, div, span enfants visibles
+            document.querySelectorAll(
+              '[role="listbox"], [class*="cx-select__list"]:not([class*="__list-item"]), [class*="cx-select__dropdown"], [class*="cx-select-dropdown--open"]'
+            ).forEach(lb => {
+              if (!isElementVisible(lb)) return;
+              lb.querySelectorAll('li, div, span').forEach(el => {
+                if (isElementVisible(el) && el.textContent.trim().length > 1) itemSet.add(el);
+              });
+            });
+            const items = Array.from(itemSet);
 
             log(`   [degree] tentative ${attempt + 1}: ${items.length} options. "${items.slice(0, 6).map(e => e.textContent.trim()).join(' | ')}"`, 1);
 
@@ -1332,10 +1349,14 @@
     log('🧾 JP Morgan → audit détaillé Firebase vs formulaire (section 4)');
 
     // Supprimer TOUS les attachments existants avant de recharger CV + lettre
-    // → évite les doublons (ex. lettre de motivation uploadée deux fois)
-    state.resumeUploadToken = '';
-    state.coverUploadToken = '';
-    await removeAllAttachments();
+    // → évite les doublons. Guard one-shot : on ne refait pas ça à chaque appel
+    //   (handleSection4 est appelé plusieurs fois par le mutation observer).
+    if (!state.attachmentsCleared) {
+      state.resumeUploadToken = '';
+      state.coverUploadToken = '';
+      await removeAllAttachments();
+      state.attachmentsCleared = true;
+    }
 
     await ensureAttachment({
       label: 'CV',
