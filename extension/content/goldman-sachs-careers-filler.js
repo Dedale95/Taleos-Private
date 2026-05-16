@@ -1,27 +1,30 @@
 (function () {
   'use strict';
 
-  // Fonctionne sur les deux domaines GS : higher.gs.com (offre) + hdpc.fa.us2.oraclecloud.com (HCM)
   const GS_HOSTS = ['higher.gs.com', 'hdpc.fa.us2.oraclecloud.com'];
   if (!GS_HOSTS.some((h) => (location.hostname || '').includes(h))) return;
 
-  const BANNER_ID    = 'taleos-gs-banner';
-  const PENDING_KEY  = 'taleos_pending_goldman_sachs';
-  const TAB_KEY      = 'taleos_gs_tab_id';
-  const LOG_PREFIX   = '[Taleos Goldman Sachs]';
-  const blueprint    = globalThis.__TALEOS_GOLDMAN_SACHS_BLUEPRINT__ || null;
+  const BANNER_ID   = 'taleos-gs-banner';
+  const PENDING_KEY = 'taleos_pending_goldman_sachs';
+  const TAB_KEY     = 'taleos_gs_tab_id';
+  const LOG_PREFIX  = '[Taleos Goldman Sachs]';
+  const blueprint   = globalThis.__TALEOS_GOLDMAN_SACHS_BLUEPRINT__ || null;
 
   let isRunning = false;
   let currentTabIdPromise = null;
   let logged = new Set();
+
+  // ── État session (one-shot guards) ──────────────────────────────────────────
   let state = {
-    emailSubmitted: false,
-    nextSection1: false,
-    nextSection2: false,
-    submitSection3: false,
-    resumeUploadDone: false,
-    coverUploadDone: false,
-    successSent: false
+    emailSubmitted:      false,
+    privacyAgreed:       false,
+    nextSection1:        false,
+    nextSection2:        false,
+    submitSection3:      false,
+    attachmentsCleared:  false,   // one-shot : suppression avant réupload
+    resumeUploadDone:    false,
+    coverUploadDone:     false,
+    successSent:         false
   };
 
   // ─── Utilitaires ─────────────────────────────────────────────────────────────
@@ -35,8 +38,10 @@
     console.log(`${LOG_PREFIX} ${text}`);
   }
 
-  function norm(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  function norm(v) { return String(v || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+  function normText(v) {
+    return String(v || '').replace(/[''‚‛′]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
   function getBannerApi() { return globalThis.__TALEOS_AUTOMATION_BANNER__ || null; }
@@ -56,7 +61,7 @@
   async function getCurrentTabId() {
     if (!currentTabIdPromise) {
       currentTabIdPromise = chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' })
-        .then((res) => res?.tabId || null)
+        .then((r) => r?.tabId || null)
         .catch(() => null);
     }
     return currentTabIdPromise;
@@ -71,13 +76,17 @@
     return pending;
   }
 
+  function isElementVisible(el) {
+    if (!el) return false;
+    const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+    const style = globalThis.getComputedStyle ? getComputedStyle(el) : null;
+    return !!rect && rect.width > 0 && rect.height > 0 &&
+      style?.display !== 'none' && style?.visibility !== 'hidden';
+  }
+
   function visible(selector, root = document) {
     try {
-      return Array.from(root.querySelectorAll(selector)).find((el) => {
-        const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
-        const style = globalThis.getComputedStyle ? getComputedStyle(el) : null;
-        return !!rect && rect.width > 0 && rect.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden';
-      }) || null;
+      return Array.from(root.querySelectorAll(selector)).find(isElementVisible) || null;
     } catch (_) { return null; }
   }
 
@@ -106,17 +115,17 @@
     const current = getValue(el);
     const desired = String(desiredValue ?? '').trim();
     if (norm(current) === norm(desired)) {
-      log(`✅ ${label} : formulaire='${current || '(vide)'}' | Firebase='${desired || '(vide)'}' -> Skip`, 1);
+      log(`✅ ${label} : '${current || '(vide)'}' -> Skip`, 1);
       return true;
     }
-    log(`✏️ ${label} : formulaire='${current || '(vide)'}' | Firebase='${desired || '(vide)'}' -> Correction`, 1);
+    log(`✏️ ${label} : formulaire='${current || '(vide)'}' | Firebase='${desired}' -> Correction`, 1);
     setInputValue(el, desired);
     return true;
   }
 
-  function findBySelectors(selectors) {
+  function findBySelectors(selectors, root = document) {
     for (const sel of selectors) {
-      const el = visible(sel) || document.querySelector(sel);
+      const el = visible(sel, root) || root.querySelector(sel);
       if (el) return el;
     }
     return null;
@@ -130,107 +139,7 @@
     }) || null;
   }
 
-  /**
-   * Cliquer un pill button Oracle JET par texte de question + texte de valeur.
-   * Les pills GS n'ont pas d'attribut aria-checked fiable — on détecte la sélection
-   * par la couleur de fond (classe CSS distincte ou inline style).
-   */
-  function findQuestionContainer(textNeedle) {
-    const target = norm(textNeedle);
-    const nodes = document.querySelectorAll(
-      'section, fieldset, .oj-form-layout, .oj-panel, .oj-flex, [data-testid], div'
-    );
-    for (const node of nodes) {
-      const text = norm(node.textContent || '');
-      if (!text || !text.includes(target)) continue;
-      const hasButtons = node.querySelector('button, [role="radio"], [aria-pressed]');
-      if (hasButtons) return node;
-    }
-    return null;
-  }
-
-  function isPillSelected(pill) {
-    // GS indique la sélection par le background — on détecte via computed style
-    const style = globalThis.getComputedStyle ? getComputedStyle(pill) : null;
-    const bg = style?.backgroundColor || '';
-    // Bleu foncé GS sélectionné ≈ rgb(30,30,60) ou similaire — on vérifie si ≠ transparent/blanc
-    const isWhiteOrTransparent = bg === 'rgba(0, 0, 0, 0)' || bg === '' || bg === 'transparent'
-      || bg === 'rgb(255, 255, 255)';
-    // Attributs alternatifs
-    const ariaChecked = pill.getAttribute('aria-checked');
-    const ariaPressed = pill.getAttribute('aria-pressed');
-    const classSelected = pill.classList.contains('selected') || pill.classList.contains('oj-selected')
-      || pill.classList.contains('is-selected');
-    return (!isWhiteOrTransparent) || ariaChecked === 'true' || ariaPressed === 'true' || classSelected;
-  }
-
-  function auditAndClickPill(label, questionText, desiredValue) {
-    if (!desiredValue) return false;
-    const container = findQuestionContainer(questionText) || document;
-    const pills = Array.from(container.querySelectorAll('button, [role="radio"], [aria-pressed]'));
-    const target = norm(desiredValue);
-    for (const pill of pills) {
-      const pillText = norm(pill.innerText || pill.textContent || '');
-      if (!pillText || pillText !== target) continue;
-      if (isPillSelected(pill)) {
-        log(`✅ ${label} : formulaire='${pill.innerText?.trim()}' | Firebase='${desiredValue}' -> Skip`, 1);
-        return true;
-      }
-      log(`✏️ ${label} : formulaire='(autre)' | Firebase='${desiredValue}' -> Correction`, 1);
-      pill.click();
-      return true;
-    }
-    log(`⚠️ ${label} : option '${desiredValue}' introuvable pour "${questionText}"`, 1);
-    return false;
-  }
-
-  async function fillOJCombobox(labelOrSelector, value) {
-    if (!value) return false;
-    let input = null;
-    // Essai par sélecteur direct
-    if (labelOrSelector.startsWith('#') || labelOrSelector.startsWith('[') || labelOrSelector.startsWith('.')) {
-      input = visible(labelOrSelector) || document.querySelector(labelOrSelector);
-    }
-    // Sinon chercher par texte de label adjacent
-    if (!input) {
-      const target = norm(labelOrSelector);
-      const labels = Array.from(document.querySelectorAll('label, span, div, oj-label')).filter((el) => {
-        const text = norm(el.textContent || '');
-        return text === target || text.includes(target);
-      });
-      for (const lbl of labels) {
-        const root = lbl.closest('.oj-form-layout, .oj-flex-item, .oj-form, .oj-panel, .oj-flex, div') || lbl.parentElement;
-        const found = root?.querySelector?.('input[role="combobox"], input[type="text"], [role="combobox"] input');
-        if (found) { input = found; break; }
-      }
-    }
-    if (!input) { log(`⚠️ OJ Combobox '${labelOrSelector}' : champ introuvable`, 1); return false; }
-
-    const current = getValue(input);
-    if (norm(current) === norm(value)) {
-      log(`✅ OJ Combobox '${labelOrSelector}' : formulaire='${current}' | Firebase='${value}' -> Skip`, 1);
-      return true;
-    }
-    log(`✏️ OJ Combobox '${labelOrSelector}' : formulaire='${current}' | Firebase='${value}' -> Correction`, 1);
-    // Injection de la valeur + ouverture dropdown + clic option
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    if (setter) setter.call(input, value);
-    else input.value = value;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(400);
-    // Cliquer sur la première option correspondante
-    const options = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result, .oj-listview-item'));
-    const match = options.find((el) => norm(el.textContent || '') === norm(value) || norm(el.textContent || '').includes(norm(value)));
-    if (match) {
-      match.click();
-      await sleep(300);
-      return true;
-    }
-    // Fallback : touche Enter
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-    await sleep(200);
-    return true;
-  }
+  // ── Upload ────────────────────────────────────────────────────────────────────
 
   async function setFileInputFromStorage(inputEl, storagePath, filename) {
     if (!inputEl || !storagePath) return false;
@@ -252,124 +161,301 @@
     return true;
   }
 
-  async function ensureAttachment({ label, storagePath, filename, inputSelector, doneFlag }) {
+  /**
+   * Trouve la zone d'upload pour un label donné ("resume" ou "cover letter").
+   * Oracle HCM CX : les zones upload sont dans des sections labellisées.
+   * On cherche le container englobant qui contient le texte ET un input[type="file"].
+   */
+  function findUploadRoot(keyword) {
+    const target = norm(keyword);
+    // Chercher du plus spécifique au plus général
+    const candidates = Array.from(document.querySelectorAll(
+      'section, fieldset, [class*="attachment"], [class*="upload"], [class*="document"], .oj-panel, .oj-flex, div'
+    ));
+    for (const el of candidates) {
+      const text = norm(el.textContent || '');
+      if (!text.includes(target)) continue;
+      if (el.querySelector('input[type="file"]')) return el;
+    }
+    return document;
+  }
+
+  /**
+   * Supprime TOUS les attachments existants sur la page avant réupload.
+   * Cherche les boutons "Remove" visibles dans les zones d'upload.
+   */
+  async function removeAllAttachments() {
+    let removed = 0;
+    for (let pass = 0; pass < 10; pass++) {
+      const btn = Array.from(document.querySelectorAll('button, [role="button"]')).find(b => {
+        if (!isElementVisible(b)) return false;
+        const t = norm(`${b.textContent || ''} ${b.getAttribute('aria-label') || ''}`);
+        return /remove|supprimer|delete|trash/.test(t) &&
+          b.closest('[class*="attachment"], [class*="upload"], [class*="file"], [class*="document"]');
+      });
+      if (!btn) break;
+      btn.click();
+      await sleep(600);
+      removed++;
+    }
+    if (removed) log(`🗑️ Attachments : ${removed} pièce(s) supprimée(s)`, 1);
+    return removed;
+  }
+
+  async function ensureUpload({ label, storagePath, filename, keyword, doneFlag }) {
     if (!storagePath) { log(`⏭️ ${label} : aucun fichier Firebase`, 1); return false; }
     if (state[doneFlag]) return true;
 
-    // Vérifier si un fichier est déjà uploadé (nom affiché dans le DOM)
-    const existingName = document.querySelector('[class*="file-name"], [class*="attachment-name"], [class*="upload-name"]');
-    if (existingName && norm(existingName.textContent).includes(norm(filename || ''))) {
-      log(`✅ ${label} : fichier déjà présent -> Skip`, 1);
-      state[doneFlag] = true;
-      return true;
-    }
-
-    // Chercher l'input file par sélecteur ou par zone contextuelle
-    let input = null;
-    if (inputSelector) {
-      input = visible(inputSelector) || document.querySelector(inputSelector);
-    }
+    const root = findUploadRoot(keyword);
+    let input = visible('input[type="file"]', root) || root.querySelector('input[type="file"]');
     if (!input) {
-      input = visible('input[type="file"]') || document.querySelector('input[type="file"]');
+      // Fallback global
+      const allInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      input = allInputs.find(i => isElementVisible(i) || i.offsetParent !== null) || allInputs[0] || null;
     }
     if (!input) { log(`⚠️ ${label} : champ upload introuvable`, 1); return false; }
 
     const ok = await setFileInputFromStorage(input, storagePath, filename);
     if (ok) {
       state[doneFlag] = true;
-      log(`✅ ${label} : ${filename || storagePath.split('/').pop()} (Firebase Storage)`, 1);
-      await sleep(700);
+      log(`✅ ${label} : ${filename || storagePath.split('/').pop()} (Firebase)`, 1);
+      await sleep(800);
       return true;
     }
     return false;
+  }
+
+  // ── Pill buttons / Radio ──────────────────────────────────────────────────────
+
+  function findQuestionContainer(textNeedle) {
+    const target = norm(textNeedle);
+    const nodes = document.querySelectorAll('section, fieldset, .oj-form-layout, .oj-panel, .oj-flex, div');
+    for (const node of nodes) {
+      const text = norm(node.textContent || '');
+      if (!text || !text.includes(target)) continue;
+      if (node.querySelector('button, [role="radio"], [aria-pressed]')) return node;
+    }
+    return null;
+  }
+
+  function isPillSelected(pill) {
+    const style = globalThis.getComputedStyle ? getComputedStyle(pill) : null;
+    const bg = style?.backgroundColor || '';
+    const isUnselected = bg === 'rgba(0, 0, 0, 0)' || bg === '' || bg === 'transparent' || bg === 'rgb(255, 255, 255)';
+    return !isUnselected
+      || pill.getAttribute('aria-checked') === 'true'
+      || pill.getAttribute('aria-pressed') === 'true'
+      || pill.classList.contains('selected')
+      || pill.classList.contains('oj-selected')
+      || pill.classList.contains('is-selected');
+  }
+
+  function auditAndClickPill(label, questionText, desiredValue) {
+    if (!desiredValue) return false;
+    const container = findQuestionContainer(questionText) || document;
+    const pills = Array.from(container.querySelectorAll('button, [role="radio"], [aria-pressed]'));
+    const target = norm(desiredValue);
+    for (const pill of pills) {
+      const pillText = norm(pill.innerText || pill.textContent || '');
+      if (!pillText || pillText !== target) continue;
+      if (isPillSelected(pill)) {
+        log(`✅ ${label} : '${pill.innerText?.trim()}' -> Skip`, 1);
+        return true;
+      }
+      log(`✏️ ${label} : -> '${desiredValue}'`, 1);
+      pill.click();
+      return true;
+    }
+    log(`⚠️ ${label} : option '${desiredValue}' introuvable pour "${questionText}"`, 1);
+    return false;
+  }
+
+  // ── OJ Combobox (Oracle JET dropdown) ────────────────────────────────────────
+
+  async function fillOJCombobox(labelOrSelector, value) {
+    if (!value) return false;
+    let input = null;
+    if (labelOrSelector.startsWith('#') || labelOrSelector.startsWith('[') || labelOrSelector.startsWith('.')) {
+      input = visible(labelOrSelector) || document.querySelector(labelOrSelector);
+    }
+    if (!input) {
+      const target = norm(labelOrSelector);
+      const labels = Array.from(document.querySelectorAll('label, span, div, oj-label')).filter((el) => {
+        return norm(el.textContent || '') === target || norm(el.textContent || '').includes(target);
+      });
+      for (const lbl of labels) {
+        const root = lbl.closest('.oj-form-layout, .oj-flex-item, .oj-form, .oj-panel, div') || lbl.parentElement;
+        const found = root?.querySelector?.('input[role="combobox"], input[type="text"], [role="combobox"] input');
+        if (found) { input = found; break; }
+      }
+    }
+    if (!input) { log(`⚠️ OJ Combobox '${labelOrSelector}' introuvable`, 1); return false; }
+
+    const current = getValue(input);
+    if (norm(current) === norm(value)) {
+      log(`✅ OJ Combobox '${labelOrSelector}' : '${current}' -> Skip`, 1);
+      return true;
+    }
+    log(`✏️ OJ Combobox '${labelOrSelector}' : '${current}' -> '${value}'`, 1);
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (setter) setter.call(input, value);
+    else input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(500);
+    // Cliquer sur la première option correspondante
+    const options = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result, .oj-listview-item'));
+    const match = options.find(el => norm(el.textContent || '').includes(norm(value)));
+    if (match) {
+      for (const type of ['mousedown', 'mouseup', 'click']) {
+        match.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      }
+      await sleep(300);
+      return true;
+    }
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+    await sleep(200);
+    return true;
   }
 
   // ─── Handlers par page ───────────────────────────────────────────────────────
 
   async function handleOfferPage() {
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : navigation vers le formulaire...');
-    const applyBtn = findButtonByText('Apply') || findButtonByText('Apply Now')
-      || Array.from(document.querySelectorAll('a, button')).find((el) => /\bapply\b/i.test(el.textContent || ''));
+    // L'URL Apply est dans le href de l'anchor <a href="...hdpc.fa.us2.oraclecloud.com/.../apply/email">
+    const applyLink = document.querySelector('a[href*="hdpc.fa.us2.oraclecloud.com"][href*="/apply/email"]');
+    if (applyLink) {
+      log('🔗 Goldman Sachs → navigation via lien Apply direct');
+      applyLink.click();
+      return;
+    }
+    // Fallback : bouton Apply textuel
+    const applyBtn = Array.from(document.querySelectorAll('a, button')).find(
+      el => /^\s*apply\s*$/i.test(el.textContent || '')
+    );
     if (applyBtn) {
       applyBtn.click();
-      log('🔗 Goldman Sachs → clic sur Apply');
+      log('🔗 Goldman Sachs → clic sur bouton Apply');
     } else {
       log('⚠️ Goldman Sachs → bouton Apply introuvable sur la page offre');
     }
   }
 
-  async function handleOtpEmailStep(profile) {
+  async function handleEmailStep(profile) {
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : saisie de l\'email...');
-    const report = blueprint?.getStructureReport?.('otp_email');
+    const report = blueprint?.getStructureReport?.('email');
     if (report) log(`Blueprint GS email: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
 
-    const emailInput = findBySelectors(['input[type="email"]', 'input[id*="email" i]', 'input[aria-label*="Email" i]']);
-    auditAndFill('Email', emailInput, profile.email || profile.auth_email);
-
-    const nextBtn = findButtonByText('Next');
-    if (nextBtn && !state.emailSubmitted) {
-      await sleep(300);
-      state.emailSubmitted = true;
-      nextBtn.click();
-      log('➡️ Goldman Sachs : clic sur Next après saisie email');
-      // Le code OTP sera envoyé par email — l'utilisateur le saisira manuellement
-      ensureBanner('📧 Code OTP Goldman Sachs envoyé par email — saisissez-le sur la page puis Taleos reprend automatiquement.');
-    }
-  }
-
-  async function handleSection1(profile) {
-    ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 1 (documents & infos)...');
-    const report = blueprint?.getStructureReport?.('section1');
-    if (report) log(`Blueprint GS section 1: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
-    log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 1)');
-
-    // Email (pré-rempli)
-    const emailInput = findBySelectors(['input[type="email"]']);
-    if (emailInput) {
-      auditAndFill('Email', emailInput, profile.email || profile.auth_email);
+    // Gérer la modale de consentement vie privée GS si présente
+    if (!state.privacyAgreed) {
+      const agreeBtn = Array.from(document.querySelectorAll('button.app-dialog__footer-button')).find(
+        b => norm(b.textContent) === 'agree' && isElementVisible(b)
+      );
+      if (agreeBtn) {
+        agreeBtn.click();
+        state.privacyAgreed = true;
+        log('✅ Goldman Sachs : modale vie privée acceptée (Agree)', 1);
+        await sleep(500);
+      }
     }
 
-    // LinkedIn URL
-    const linkedinInput = findBySelectors([
-      'input[aria-label*="LinkedIn" i]',
-      'input[placeholder*="linkedin" i]',
-      'input[id*="linkedin" i]'
+    // Email — sélecteurs confirmés par analyse DOM réelle
+    const emailInput = findBySelectors([
+      'input#primary-email-0',
+      'input[name="primary-email"]',
+      'input[type="email"]',
+      'input[aria-label*="Email Address" i]'
     ]);
-    auditAndFill('LinkedIn URL', linkedinInput, profile.linkedin_url || '');
+    auditAndFill('Email', emailInput, profile.auth_email || profile.email || '');
 
-    // CV / Resume — input#attachment-upload-50
-    await ensureAttachment({
-      label: 'CV',
-      storagePath: profile.cv_storage_path,
-      filename: profile.cv_filename,
-      inputSelector: 'input#attachment-upload-50',
-      doneFlag: 'resumeUploadDone'
-    });
-
-    // Lettre de motivation — input#attachment-upload-7
-    await ensureAttachment({
-      label: 'Lettre de motivation',
-      storagePath: profile.lm_storage_path,
-      filename: profile.lm_filename,
-      inputSelector: 'input#attachment-upload-7',
-      doneFlag: 'coverUploadDone'
-    });
-
-    // T&C checkbox
-    const checkbox = findBySelectors(['input[type="checkbox"]', '[role="checkbox"]']);
+    // T&C checkbox — id confirmé : legal-disclaimer-checkbox
+    const checkbox = findBySelectors([
+      'input#legal-disclaimer-checkbox',
+      'input[type="checkbox"]',
+      '[role="checkbox"]'
+    ]);
     if (checkbox) {
       const checked = checkbox.checked || checkbox.getAttribute('aria-checked') === 'true';
       if (!checked) {
         checkbox.click();
         log('✅ Terms and conditions : case cochée', 1);
       } else {
-        log('✅ Terms and conditions : case déjà cochée -> Skip', 1);
+        log('✅ Terms and conditions : déjà cochée -> Skip', 1);
       }
     } else {
       log('⚠️ Terms and conditions : checkbox introuvable', 1);
     }
 
-    // Bouton NEXT
+    // Bouton Next
+    const nextBtn = findBySelectors([
+      'button.apply-flow-pagination__button.theme-color-1',
+      'button.apply-flow-pagination__button'
+    ]);
+    const nextByText = findButtonByText('Next');
+    const btn = (nextBtn && isElementVisible(nextBtn)) ? nextBtn : nextByText;
+
+    if (btn && !state.emailSubmitted) {
+      await sleep(400);
+      state.emailSubmitted = true;
+      btn.click();
+      log('➡️ Goldman Sachs : clic sur Next après saisie email');
+      ensureBanner('📧 Goldman Sachs — Vérifiez votre boîte email et cliquez le lien reçu (ou entrez le code). Taleos reprend automatiquement.');
+    }
+  }
+
+  async function handleSection1(profile) {
+    ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 1 (documents & infos)...');
+    const report = blueprint?.getStructureReport?.('section_1');
+    if (report) log(`Blueprint GS section 1: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
+    log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 1)');
+
+    // Email pré-rempli (vérification/correction)
+    const emailInput = findBySelectors(['input[type="email"]', 'input#primary-email-0', 'input[name="primary-email"]']);
+    if (emailInput) auditAndFill('Email', emailInput, profile.auth_email || profile.email || '');
+
+    // LinkedIn URL
+    const linkedinInput = findBySelectors([
+      'input[aria-label*="LinkedIn" i]',
+      'input[placeholder*="linkedin" i]',
+      'input[id*="linkedin" i]',
+      'input[name*="linkedin" i]'
+    ]);
+    auditAndFill('LinkedIn URL', linkedinInput, profile.linkedin_url || '');
+
+    // ── Attachments — one-shot : supprimer tout puis réuploader ─────────────
+    if (!state.attachmentsCleared) {
+      state.attachmentsCleared = true;
+      await removeAllAttachments();
+      state.resumeUploadDone = false;
+      state.coverUploadDone = false;
+    }
+
+    // CV / Resume — cherché par zone "resume" (pas d'ID fixe Oracle)
+    await ensureUpload({
+      label: 'CV',
+      storagePath: profile.cv_storage_path,
+      filename: profile.cv_filename,
+      keyword: 'resume',
+      doneFlag: 'resumeUploadDone'
+    });
+
+    // Lettre de motivation — cherché par zone "cover letter"
+    // Supporte les deux nommages Firebase (letter_* et lm_*)
+    await ensureUpload({
+      label: 'Lettre de motivation',
+      storagePath: profile.letter_storage_path || profile.lm_storage_path,
+      filename: profile.letter_filename || profile.lm_filename,
+      keyword: 'cover letter',
+      doneFlag: 'coverUploadDone'
+    });
+
+    // T&C checkbox (peut réapparaître en section 1)
+    const checkbox = findBySelectors(['input#legal-disclaimer-checkbox', 'input[type="checkbox"]']);
+    if (checkbox && !checkbox.checked) {
+      checkbox.click();
+      log('✅ Terms and conditions section 1 : case cochée', 1);
+    }
+
+    // Bouton Next
     const nextBtn = findButtonByText('Next');
     if (nextBtn && !state.nextSection1) {
       await sleep(500);
@@ -380,64 +466,68 @@
   }
 
   async function handleSection2(profile) {
-    ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 2 (questions de candidature)...');
-    const report = blueprint?.getStructureReport?.('section2');
+    ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 2 (questions)...');
+    const report = blueprint?.getStructureReport?.('section_2');
     if (report) log(`Blueprint GS section 2: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 2)');
 
-    // — EXPÉRIENCE —
+    // ── Expérience ──────────────────────────────────────────────────────────
     const expMap = {
-      '< 1 an': 'Less than 1 year',
+      '< 1 an':    'Less than 1 year',
       '1 - 5 ans': '1 - 3 years',
-      '6 - 10 ans': '3+ years',
-      '> 10 ans': '3+ years'
+      '6 - 10 ans':'3+ years',
+      '> 10 ans':  '3+ years'
     };
     const expValue = expMap[profile.experience_level] || '3+ years';
     auditAndClickPill('Années d\'expérience', 'years of relevant experience', expValue);
 
-    // — WORK AUTHORIZATION —
-    auditAndClickPill('Work auth (pays)', 'work authorisation for the countries', 'Yes');
+    // ── Work Authorization ──────────────────────────────────────────────────
+    auditAndClickPill('Work auth pays', 'work authorisation for the countries', 'Yes');
 
-    // work_authorization_type : liste multi-sélection (ex. ["National", "EEA/Swiss National..."])
     const authTypes = Array.isArray(profile.work_authorization_type) ? profile.work_authorization_type : [];
     for (const authType of authTypes) {
       auditAndClickPill(`Work auth type: ${authType}`, 'which of the following apply to you', authType);
     }
 
-    // Visa sponsorship
     auditAndClickPill('Visa sponsorship', 'require visa sponsorship', 'No');
 
-    // — DISCLOSURES —
-    // GS history
-    const gsWorked = profile.deloitte_worked === 'yes' ? 'Yes - Full Time Employee' : 'No';
-    auditAndClickPill('GS history', 'previously interned or worked at goldman sachs', gsWorked);
-    // PwC / Mazars
+    // ── Disclosures ─────────────────────────────────────────────────────────
+    // GS history (réutilise profile.deloitte_worked pour l'instant — champ dédié GS à créer si besoin)
+    const gsHistoryValue = profile.gs_previously_worked === 'yes'
+      ? 'Yes - Full Time Employee'
+      : (profile.gs_previously_interned === 'yes' ? 'Yes - Intern' : 'No');
+    auditAndClickPill('GS history', 'previously interned or worked at goldman sachs', gsHistoryValue);
+
     auditAndClickPill('PwC/Mazars', 'pricewaterhousecoopers', 'No');
-    // Contingent worker
     auditAndClickPill('Contingent worker', 'current contingent worker at goldman sachs', 'No');
-    // Government/regulatory
     auditAndClickPill('Government/regulatory', 'government, regulatory, or intergovernmental', 'No');
 
-    // — DIVERSITÉ / IDENTITÉ —
+    // ── Diversité / Identité ────────────────────────────────────────────────
     const diversityConsent = profile.gs_diversity_consent || 'I do not consent';
     auditAndClickPill('Consentement diversité', 'sexual orientation and gender identity data', diversityConsent);
-    auditAndClickPill('Genre', 'please indicate your gender', profile.gender || 'Prefer not to say');
-    auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
-    auditAndClickPill('Orientation sexuelle', 'please indicate your sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
-    auditAndClickPill('Pronoms', 'please indicate your pronouns', profile.pronouns || 'Prefer Not To Say');
+
+    if (norm(diversityConsent).includes('consent') && !norm(diversityConsent).includes('do not')) {
+      // Remplir les champs diversité uniquement si consentement donné
+      auditAndClickPill('Genre', 'please indicate your gender', profile.gender || 'Prefer not to say');
+      auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
+      auditAndClickPill('Orientation sexuelle', 'please indicate your sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
+      auditAndClickPill('Pronoms', 'please indicate your pronouns', profile.pronouns || 'Prefer Not To Say');
+    }
+
     auditAndClickPill('Handicap', 'consider yourself to have a disability', profile.gs_disability || 'Prefer not to say');
 
-    // — RACE / ETHNICITÉ — (OJ combobox)
-    await fillOJCombobox('race / ethnicity', profile.gs_race_ethnicity || '');
-    // Si "Two or more races" → remplir origines additionnelles
-    if (profile.gs_race_ethnicity === 'Two or more races') {
-      const origins = Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [];
-      for (let i = 0; i < origins.length && i < 3; i++) {
-        await fillOJCombobox(`Additional origin ${i + 1}`, origins[i]);
+    // Race / Ethnicité (OJ combobox)
+    if (profile.gs_race_ethnicity) {
+      await fillOJCombobox('race / ethnicity', profile.gs_race_ethnicity);
+      if (profile.gs_race_ethnicity === 'Two or more races') {
+        const origins = Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [];
+        for (let i = 0; i < origins.length && i < 3; i++) {
+          await fillOJCombobox(`Additional origin ${i + 1}`, origins[i]);
+        }
       }
     }
 
-    // — Bouton NEXT —
+    // ── Bouton Next ─────────────────────────────────────────────────────────
     await sleep(300);
     const nextBtn = findButtonByText('Next');
     if (nextBtn && !state.nextSection2) {
@@ -449,47 +539,61 @@
 
   async function handleSection3(profile) {
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 3 (langues & signature)...');
-    const report = blueprint?.getStructureReport?.('section3');
+    const report = blueprint?.getStructureReport?.('section_3');
     if (report) log(`Blueprint GS section 3: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 3)');
 
-    // Langues — vérifier les langues déjà présentes, ajouter les manquantes
+    // ── Langues ─────────────────────────────────────────────────────────────
     const languages = Array.isArray(profile.languages) ? profile.languages : [];
-    if (languages.length > 0) {
-      // Compter les lignes langue existantes
-      const languageRows = document.querySelectorAll('[class*="language-row"], [class*="language-item"], .oj-flex-item');
-      const existingCount = languageRows.length;
-      const languageMap = { 'Français': 'French', 'Anglais': 'English', 'Espagnol': 'Spanish', 'Allemand': 'German', 'Italien': 'Italian', 'Portugais': 'Portuguese' };
-      for (const lang of languages) {
-        const langName = languageMap[lang.language] || lang.language || lang.name || '';
-        if (!langName) continue;
-        // Vérifier si déjà présente
-        const pageText = norm(document.body?.innerText || '');
-        if (!pageText.includes(norm(langName))) {
-          // Ajouter langue
-          const addBtn = findButtonByText('Add Language') || findButtonByText('ADD LANGUAGE');
-          if (addBtn) {
-            addBtn.click();
-            await sleep(500);
-            await fillOJCombobox('language', langName);
-            log(`✅ Langue ajoutée : ${langName}`, 1);
+    const langMap = {
+      'Français': 'French', 'Anglais': 'English', 'Espagnol': 'Spanish',
+      'Allemand': 'German', 'Italien': 'Italian', 'Portugais': 'Portuguese',
+      'Mandarin': 'Mandarin', 'Japonais': 'Japanese', 'Arabe': 'Arabic'
+    };
+    const pageText = norm(document.body?.innerText || '');
+
+    for (const lang of languages) {
+      const langName = langMap[lang.language] || lang.language || lang.name || '';
+      if (!langName) continue;
+      if (!pageText.includes(norm(langName))) {
+        const addBtn = findButtonByText('Add Language') || findButtonByText('ADD LANGUAGE');
+        if (addBtn) {
+          addBtn.click();
+          await sleep(600);
+          await fillOJCombobox('language', langName);
+          // Niveau de langue si présent
+          if (lang.level || lang.proficiency) {
+            const levelMap = {
+              'Natif': 'Native', 'Courant': 'Fluent', 'Avancé': 'Advanced',
+              'Intermédiaire': 'Intermediate', 'Débutant': 'Beginner'
+            };
+            const level = levelMap[lang.level] || levelMap[lang.proficiency] || lang.level || lang.proficiency || '';
+            if (level) await fillOJCombobox('proficiency', level);
           }
+          log(`✅ Langue ajoutée : ${langName}`, 1);
         } else {
-          log(`✅ Langue présente : ${langName} -> Skip`, 1);
+          log(`⚠️ Langue : bouton "Add Language" introuvable`, 1);
         }
+      } else {
+        log(`✅ Langue présente : ${langName} -> Skip`, 1);
       }
     }
 
-    // E-Signature : "Full Name"
-    const fullName = `${profile.firstname || ''} ${(profile.lastname || '').toUpperCase()}`.trim();
+    // ── E-Signature Full Name ────────────────────────────────────────────────
+    // Utilise first_name/last_name (snake_case Firebase) avec fallback legacy
+    const firstName = profile.first_name || profile.firstname || '';
+    const lastName = profile.last_name || profile.lastname || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+
     const signatureInput = findBySelectors([
-      'input[id*="fullName" i]',
-      'input[aria-label*="Full Name" i]',
-      'input[placeholder*="full name" i]'
-    ]) || findFieldByLabel('Full Name');
+      'input[name="fullName"]',
+      'input[aria-label*="full name" i]',
+      'input[placeholder*="full name" i]',
+      'input[id*="fullName" i]'
+    ]);
     auditAndFill('E-Signature (Full Name)', signatureInput, fullName);
 
-    // — SUBMIT —
+    // ── Submit ───────────────────────────────────────────────────────────────
     await sleep(500);
     const submitBtn = findButtonByText('Submit') || findButtonByText('SUBMIT');
     if (submitBtn && !state.submitSection3) {
@@ -499,41 +603,19 @@
     }
   }
 
-  function findFieldByLabel(labelNeedle) {
-    const target = norm(labelNeedle);
-    const labels = Array.from(document.querySelectorAll('label, span, div, oj-label')).filter((el) => {
-      const text = norm(el.textContent || '');
-      return el.children.length === 0 && text === target;
-    });
-    for (const label of labels) {
-      const forId = label.getAttribute?.('for');
-      if (forId) {
-        const direct = document.getElementById(forId);
-        if (direct) return direct;
-      }
-      const root = label.closest('.oj-form-layout, .oj-flex-item, .oj-form, div') || label.parentElement;
-      const field = root?.querySelector?.('input[type="text"], input[type="email"], textarea');
-      if (field) return field;
-    }
-    return null;
-  }
-
   async function handleSuccess(pending) {
     if (state.successSent) return;
 
-    // ① Toast
-    const hasToast = blueprint?.checkToast?.() || (
-      document.querySelector('div.notifications[role="alert"]')?.innerText?.includes('Thank you for your job application')
-    );
-    // ② Liste My Applications
+    const hasToast = blueprint?.checkToast?.() ||
+      !!(document.querySelector('div.notifications[role="alert"]')?.innerText?.toLowerCase().includes('thank you for your job application'));
     const jobId = pending.jobId || '';
-    const hasListEntry = blueprint?.checkApplicationInList?.(jobId)
-      || (/\/my-profile/i.test(location.pathname) && document.body?.innerText?.includes('Application Submitted'));
+    const hasListEntry = blueprint?.checkApplicationInList?.(jobId) ||
+      (/\/my-profile/i.test(location.pathname) && document.body?.innerText?.includes('Application Submitted'));
 
     if (!hasToast && !hasListEntry) return;
 
     state.successSent = true;
-    log(`🎉 Succès Goldman Sachs détecté : ${hasToast ? 'Toast "Thank you..."' : 'My Applications / Application Submitted'}`);
+    log(`🎉 Succès Goldman Sachs : ${hasToast ? 'Toast "Thank you..."' : 'My Applications / Application Submitted'}`);
 
     await chrome.runtime.sendMessage({
       action: 'candidature_success',
@@ -557,21 +639,30 @@
     try {
       const pending = await getPending();
       if (!pending) return;
+
       const profile = pending.profile || {};
       const detected = blueprint?.detectPage?.() || { key: 'unknown', label: 'Inconnue' };
-      log(`🚀 Démarrage Goldman Sachs sur '${detected.key}' (${location.pathname})`);
+      log(`🚀 Démarrage Goldman Sachs sur ${detected.key} (${location.pathname})`);
       await blueprint?.recordLog?.({ page: detected.key, href: location.href });
 
-      // Vérifier succès en premier (avant toute action)
+      // Vérifier succès en premier
       await handleSuccess(pending);
       if (state.successSent) return;
 
       switch (detected.key) {
         case 'offer':      return await handleOfferPage();
-        case 'otp_email':  return await handleOtpEmailStep(profile);
-        case 'section1':   return await handleSection1(profile);
-        case 'section2':   return await handleSection2(profile);
-        case 'section3':   return await handleSection3(profile);
+        case 'email':      return await handleEmailStep(profile);
+        case 'pin':
+          // Code PIN — même logique que JP Morgan (l'utilisateur saisit manuellement)
+          ensureBanner('📧 Goldman Sachs — Saisissez le code reçu par email puis Taleos reprend automatiquement.');
+          log('🔐 Goldman Sachs → attente saisie code PIN par l\'utilisateur');
+          return;
+        case 'section_1':  return await handleSection1(profile);
+        case 'section_2':  return await handleSection2(profile);
+        case 'section_3':  return await handleSection3(profile);
+        case 'already_applied':
+          log('ℹ️ Goldman Sachs : candidature déjà soumise pour ce poste');
+          return;
         case 'my_profile': return await handleSuccess(pending);
         default:
           log(`⚠️ Page non reconnue par le blueprint : '${detected.key}' (${location.href})`);
@@ -586,7 +677,6 @@
   function init() {
     if (window.__taleosGsInit) return;
     window.__taleosGsInit = true;
-    // Polling + MutationObserver pour réagir aux transitions Oracle HCM
     setInterval(run, 1500);
     const observer = new MutationObserver(() => {
       clearTimeout(window.__taleosGsDebounce);
