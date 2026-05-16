@@ -1047,19 +1047,54 @@
         const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
         if (ok) state.educationFilled = true;
       } else {
-        // ── Supprimer TOUTES les tiles éducation existantes avant d'ajouter celle de Firebase ──
-        // Oracle HCM pré-remplit souvent des formations issues d'un précédent profil (ex. "Unnamed Major").
-        // On purge tout pour repartir d'un état propre, puis on ajoute l'unique entrée Firebase.
+        // ── Supprimer UNIQUEMENT les tiles qui ne correspondent PAS au profil Taleos ──
+        // Oracle HCM pré-remplit parfois des formations issues d'un profil antérieur (ex. "Unnamed Major / ESCP Europe").
+        // On conserve la tile qui correspond à l'école Taleos et on supprime les autres.
+        // Si la tile Taleos est déjà présente, on évite de la re-créer (on saute le "Add Education").
+
+        /**
+         * Vérifie si une tile correspond au profil Taleos.
+         * La correspondance se fait sur le nom de l'école dans le sous-titre
+         * (.apply-flow-profile-item-tile__summary-subtitle ou texte normalisé).
+         */
+        function isTaleosTile(tile, targetSchool) {
+          if (!targetSchool) return false;
+          // Chercher le sous-titre (école + date) dans la tile
+          const subtitle = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent || '';
+          const tileText = tile.textContent || '';
+          const targetNorm = targetSchool.toLowerCase().trim();
+          // On vérifie que le nom de l'école Taleos apparaît dans le sous-titre ou le texte complet de la tile
+          return subtitle.toLowerCase().includes(targetNorm) || tileText.toLowerCase().includes(targetNorm);
+        }
+
         const existingTiles = Array.from(eduContainer.querySelectorAll('.apply-flow-profile-item-tile'));
+        let taloesAlreadyPresent = false;
+
         if (existingTiles.length > 0) {
-          log(`🗑️ JP Morgan section 3 : suppression de ${existingTiles.length} carte(s) éducation Oracle existante(s)`, 1);
-          // Supprimer en boucle : on re-query à chaque itération car le DOM change après chaque suppression.
-          let maxAttempts = existingTiles.length + 3;
-          while (maxAttempts-- > 0) {
-            const currentTiles = eduContainer.querySelectorAll('.apply-flow-profile-item-tile');
-            if (currentTiles.length === 0) break;
-            const delBtn = currentTiles[0].querySelector('button[aria-label="Delete"]');
-            if (!delBtn) { log('⚠️ JP Morgan section 3 : bouton Delete introuvable sur tile, arrêt suppression', 1); break; }
+          // Identifier quelles tiles conserver / supprimer
+          const tilesToDelete = [];
+          for (const tile of existingTiles) {
+            if (isTaleosTile(tile, school)) {
+              taloesAlreadyPresent = true;
+              const subtitle = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
+              log(`✅ JP Morgan section 3 : tile Taleos détectée ("${subtitle}") → conservée`, 1);
+            } else {
+              const subtitle = tile.querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
+              log(`🗑️ JP Morgan section 3 : tile non-Taleos ("${subtitle}") → suppression`, 1);
+              tilesToDelete.push(tile);
+            }
+          }
+
+          // Supprimer les tiles non-Taleos une par une (le DOM se met à jour après chaque suppression)
+          for (let i = 0; i < tilesToDelete.length; i++) {
+            // Re-query : après suppression d'une tile le DOM change, on identifie la suivante par correspondance de texte
+            const subtitle = tilesToDelete[i].querySelector('.apply-flow-profile-item-tile__summary-subtitle')?.textContent?.trim() || '';
+            // Retrouver la tile dans le DOM courant (elle peut avoir bougé)
+            const currentTiles = Array.from(eduContainer.querySelectorAll('.apply-flow-profile-item-tile'));
+            const target = currentTiles.find(t => !isTaleosTile(t, school));
+            if (!target) break;
+            const delBtn = target.querySelector('button[aria-label="Delete"]');
+            if (!delBtn) { log('⚠️ JP Morgan section 3 : bouton Delete introuvable, arrêt suppression', 1); break; }
             delBtn.click();
             await sleep(700);
             // Gérer une éventuelle modale de confirmation Oracle
@@ -1069,19 +1104,28 @@
             );
             if (confirmBtn) { confirmBtn.click(); await sleep(500); }
           }
-          log('✅ JP Morgan section 3 : tiles éducation purgées', 1);
+
+          if (tilesToDelete.length > 0) {
+            log(`✅ JP Morgan section 3 : ${tilesToDelete.length} tile(s) non-Taleos supprimée(s)`, 1);
+          }
         }
 
-        // Ajouter l'entrée éducation depuis Firebase
-        const addBtn = eduContainer.querySelector('button[class*="new-tile"]');
-        if (addBtn) {
-          addBtn.click();
-          await sleep(600);
-          log("➕ JP Morgan : ajout entrée éducation depuis Firebase", 1);
-          const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
-          if (ok) state.educationFilled = true;
+        if (taloesAlreadyPresent) {
+          // La tile Taleos était déjà dans Oracle HCM → pas besoin de la re-créer
+          log('✅ JP Morgan section 3 : entrée éducation Taleos déjà présente, pas de recréation', 1);
+          state.educationFilled = true;
         } else {
-          log('⚠️ JP Morgan section 3 : bouton Add Education introuvable après purge', 1);
+          // Ajouter l'entrée éducation depuis Firebase
+          const addBtn = eduContainer.querySelector('button[class*="new-tile"]');
+          if (addBtn) {
+            addBtn.click();
+            await sleep(600);
+            log("➕ JP Morgan : ajout entrée éducation depuis Firebase", 1);
+            const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
+            if (ok) state.educationFilled = true;
+          } else {
+            log('⚠️ JP Morgan section 3 : bouton Add Education introuvable après purge', 1);
+          }
         }
       }
     }
