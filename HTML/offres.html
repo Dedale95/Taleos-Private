@@ -3450,6 +3450,11 @@
             } else {
                 companyGroupLBPExpanded = localStorage.getItem('companyGroupLBPExpanded') === 'true';
             }
+            if (restoredFilters?.companyGroupKPMGExpanded !== undefined) {
+                companyGroupKPMGExpanded = restoredFilters.companyGroupKPMGExpanded;
+            } else {
+                companyGroupKPMGExpanded = localStorage.getItem('companyGroupKPMGExpanded') === 'true';
+            }
             if (restoredFilters?.familyGroupExpanded) {
                 restoreFamilyGroupExpanded(restoredFilters.familyGroupExpanded);
             }
@@ -5147,6 +5152,7 @@
                 companyGroupAXAExpanded: companyGroupAXAExpanded,
                 companyGroupAllianzExpanded: companyGroupAllianzExpanded,
                 companyGroupLBPExpanded: companyGroupLBPExpanded,
+                companyGroupKPMGExpanded: companyGroupKPMGExpanded,
                 continentExpanded: getContinentExpandedState(),
                 countryExpanded: getCountryExpandedState(),
                 familyGroupExpanded: familyGroupExpanded,

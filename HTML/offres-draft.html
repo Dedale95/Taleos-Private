@@ -4059,6 +4059,11 @@
             } else {
                 companyGroupLBPExpanded = localStorage.getItem('companyGroupLBPExpanded') === 'true';
             }
+            if (restoredFilters?.companyGroupKPMGExpanded !== undefined) {
+                companyGroupKPMGExpanded = restoredFilters.companyGroupKPMGExpanded;
+            } else {
+                companyGroupKPMGExpanded = localStorage.getItem('companyGroupKPMGExpanded') === 'true';
+            }
             if (restoredFilters?.familyGroupExpanded) {
                 restoreFamilyGroupExpanded(restoredFilters.familyGroupExpanded);
             }
@@ -4340,6 +4345,7 @@
         const AXA_GROUP_KEY = '__AXA_GROUP__';
         const ALLIANZ_GROUP_KEY = '__ALLIANZ_GROUP__';
         const BANQUE_POSTALE_GROUP_KEY = '__LBP_GROUP__';
+        const KPMG_GROUP_KEY = '__KPMG_GROUP__';
         let companyGroupCAExpanded = false;
         let companyGroupBPCEExpanded = false;
         let companyGroupBNPExpanded = false;
@@ -4347,6 +4353,7 @@
         let companyGroupAXAExpanded = false;
         let companyGroupAllianzExpanded = false;
         let companyGroupLBPExpanded = false;
+        let companyGroupKPMGExpanded = false;
         function isCreditAgricoleSubsidiary(name) {
             if (!name || typeof name !== 'string') return false;
             const n = name.toLowerCase();
@@ -4415,6 +4422,10 @@
                 n === 'kkbb' ||
                 n === 'adeus';
         }
+        function isKPMGBrand(name) {
+            if (!name || typeof name !== 'string') return false;
+            return name.toLowerCase().trim().startsWith('kpmg');
+        }
 
         function getSelectedFamilies() {
             const container = document.getElementById('familyFilter');
@@ -4460,6 +4471,10 @@
                 const lbpBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-lbp-brand]')).map(cb => cb.value);
                 result = result.filter(v => v !== BANQUE_POSTALE_GROUP_KEY).concat(lbpBrands);
             }
+            if (checked.includes(KPMG_GROUP_KEY)) {
+                const kpmgBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-kpmg-brand]')).map(cb => cb.value);
+                result = result.filter(v => v !== KPMG_GROUP_KEY).concat(kpmgBrands);
+            }
             if (checked.includes(BNP_PARIBAS_GROUP_KEY)) {
                 const bnpBrands = Array.from(container.querySelectorAll('input[type="checkbox"][data-bnp-brand]')).map(cb => cb.value);
                 result = result.filter(v => v !== BNP_PARIBAS_GROUP_KEY).concat(bnpBrands);
@@ -4477,6 +4492,7 @@
             const prevAXA = container.querySelector('.company-group-children[data-group="axa"]');
             const prevAllianz = container.querySelector('.company-group-children[data-group="allianz"]');
             const prevLBP = container.querySelector('.company-group-children[data-group="lbp"]');
+            const prevKPMG = container.querySelector('.company-group-children[data-group="kpmg"]');
             if (prevCA) companyGroupCAExpanded = prevCA.classList.contains('visible');
             if (prevBPCE) companyGroupBPCEExpanded = prevBPCE.classList.contains('visible');
             if (prevBNP) companyGroupBNPExpanded = prevBNP.classList.contains('visible');
@@ -4484,6 +4500,7 @@
             if (prevAXA) companyGroupAXAExpanded = prevAXA.classList.contains('visible');
             if (prevAllianz) companyGroupAllianzExpanded = prevAllianz.classList.contains('visible');
             if (prevLBP) companyGroupLBPExpanded = prevLBP.classList.contains('visible');
+            if (prevKPMG) companyGroupKPMGExpanded = prevKPMG.classList.contains('visible');
             container.innerHTML = '';
 
             const caSubs = companies.filter(c => isCreditAgricoleSubsidiary(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
@@ -4493,7 +4510,8 @@
             const axaBrands = companies.filter(c => isAXABrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const allianzBrands = companies.filter(c => isAllianzBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
             const lbpBrands = companies.filter(c => isBanquePostaleBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-            const others = companies.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c) && !isAXABrand(c) && !isAllianzBrand(c) && !isBanquePostaleBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const kpmgBrands = companies.filter(c => isKPMGBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+            const others = companies.filter(c => !isCreditAgricoleSubsidiary(c) && !isBPCEBrand(c) && !isBNPParibasBrand(c) && !isCreditMutuelSubsidiary(c) && !isAXABrand(c) && !isAllianzBrand(c) && !isBanquePostaleBrand(c) && !isKPMGBrand(c)).sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
 
             const renderedBpceBrands = bpceBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0 && !checkedValues.has(c)));
             const bpceGroupChecked = checkedValues.has(BPCE_GROUP_KEY) || (renderedBpceBrands.length > 0 && renderedBpceBrands.every(c => checkedValues.has(c)));
@@ -5093,6 +5111,91 @@
                 container.appendChild(childrenDiv);
             }
 
+            const renderedKpmgBrands = kpmgBrands.filter(c => !(hideDisabled && (counts[c] || 0) === 0 && !checkedValues.has(c)));
+            const kpmgGroupChecked = checkedValues.has(KPMG_GROUP_KEY) || (renderedKpmgBrands.length > 0 && renderedKpmgBrands.every(c => checkedValues.has(c)));
+            const kpmgGroupCount = kpmgBrands.reduce((s, c) => s + (counts[c] || 0), 0);
+            if (kpmgBrands.length > 0 && (!hideDisabled || kpmgGroupCount > 0 || kpmgGroupChecked)) {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'company-group-header';
+                const expandSpan = document.createElement('span');
+                expandSpan.className = 'company-group-expand';
+                expandSpan.textContent = '▶';
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'company-group-children' + (companyGroupKPMGExpanded ? ' visible' : '');
+                childrenDiv.setAttribute('data-group', 'kpmg');
+                if (companyGroupKPMGExpanded) expandSpan.classList.add('expanded');
+                expandSpan.onclick = (e) => {
+                    e.stopPropagation();
+                    childrenDiv.classList.toggle('visible');
+                    expandSpan.classList.toggle('expanded');
+                    companyGroupKPMGExpanded = childrenDiv.classList.contains('visible');
+                    localStorage.setItem('companyGroupKPMGExpanded', companyGroupKPMGExpanded);
+                    saveFilters().catch(err => console.error('Erreur sauvegarde filtres:', err));
+                };
+                const groupLabel = document.createElement('label');
+                groupLabel.style.display = 'flex';
+                groupLabel.style.alignItems = 'center';
+                groupLabel.style.flex = '1';
+                groupLabel.style.cursor = 'pointer';
+                const groupCb = document.createElement('input');
+                groupCb.type = 'checkbox';
+                groupCb.value = KPMG_GROUP_KEY;
+                groupCb.checked = kpmgGroupChecked;
+                groupCb.onchange = () => {
+                    kpmgBrands.forEach(c => {
+                        const subCb = container.querySelector(`input[value="${c.replace(/"/g, '&quot;')}"][data-kpmg-brand]`);
+                        if (subCb && !subCb.disabled) subCb.checked = groupCb.checked;
+                    });
+                    groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                    updateActiveFiltersBadge();
+                    applyFilters();
+                };
+                groupLabel.appendChild(groupCb);
+                const span = document.createElement('span');
+                span.textContent = `Groupe KPMG (${kpmgGroupCount})`;
+                groupLabel.appendChild(span);
+                groupDiv.appendChild(groupLabel);
+                groupDiv.appendChild(expandSpan);
+                container.appendChild(groupDiv);
+                const childCheckboxes = [];
+                kpmgBrands.forEach(c => {
+                    const cnt = counts[c] || 0;
+                    if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
+                    const disabled = disabledValues.has(c);
+                    const label = document.createElement('label');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = c;
+                    cb.setAttribute('data-kpmg-brand', '1');
+                    cb.checked = checkedValues.has(c) || kpmgGroupChecked;
+                    cb.disabled = disabled;
+                    childCheckboxes.push(cb);
+                    label.appendChild(cb);
+                    const sp = document.createElement('span');
+                    sp.textContent = cnt > 0 ? `${c} (${cnt})` : c;
+                    label.appendChild(sp);
+                    if (disabled) label.classList.add('disabled');
+                    childrenDiv.appendChild(label);
+                });
+                childCheckboxes.forEach(cb => {
+                    cb.onchange = () => {
+                        groupCb.checked = childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                        updateActiveFiltersBadge();
+                        applyFilters();
+                    };
+                });
+                groupDiv.addEventListener('click', (e) => {
+                    if (e.target === expandSpan || expandSpan.contains(e.target)) return;
+                    if (groupLabel.contains(e.target)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const allChecked = childCheckboxes.length > 0 && childCheckboxes.every(cb2 => cb2.disabled || cb2.checked);
+                    groupCb.checked = !allChecked;
+                    groupCb.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                container.appendChild(childrenDiv);
+            }
+
             others.forEach(c => {
                 const cnt = counts[c] || 0;
                 if (hideDisabled && cnt === 0 && !checkedValues.has(c)) return;
@@ -5656,6 +5759,7 @@
                 companyGroupAXAExpanded: companyGroupAXAExpanded,
                 companyGroupAllianzExpanded: companyGroupAllianzExpanded,
                 companyGroupLBPExpanded: companyGroupLBPExpanded,
+                companyGroupKPMGExpanded: companyGroupKPMGExpanded,
                 continentExpanded: getContinentExpandedState(),
                 countryExpanded: getCountryExpandedState(),
                 familyGroupExpanded: familyGroupExpanded,
