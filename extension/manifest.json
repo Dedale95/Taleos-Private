@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.25",
-  "version_name": "1.2.25-jpmorgan-fix-quotes-syntax",
+  "version": "1.2.26",
+  "version_name": "1.2.26-jpmorgan-degree-simple-click",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

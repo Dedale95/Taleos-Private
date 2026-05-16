@@ -986,72 +986,68 @@
     log(`📋 fillEducationInlineForm formEl="${formEl.className.slice(0, 60)}" degree='${degree}' school='${school}' month='${gradMonth}' year='${gradYear}'`, 1);
 
     // ── Diplôme ─────────────────────────────────────────────────────────────
-    // Le champ Degree est un cx-select en lecture seule (on ne peut que choisir dans la liste).
-    // On l'identifie par plusieurs sélecteurs, puis on ouvre le dropdown via openCxDropdown().
+    // cx-select DISABLED : cliquer le container pour ouvrir la liste,
+    // puis cliquer l'option via MouseEvent complet (mousedown+mouseup+click).
+    // Blueprint : options dans .cx-select__list-item--content (PAS role="option").
     let degreeOk = !degree; // true si pas de valeur cible (optionnel)
     if (degree) {
-      // Trouver l'input du champ Degree (multiples sélecteurs Oracle connus)
-      const degSels = [
-        'input[name="contentItemId"]',
-        'input[name*="degree" i]',
-        'input[id*="contentItemId" i]',
-        'input[aria-label*="degree" i]',
-        'input.cx-select-input--disabled',
-        'input.cx-select-input',
-      ];
-      let degreeInput = null;
-      for (const sel of degSels) {
-        degreeInput = formEl.querySelector(sel) || document.querySelector(sel);
-        if (degreeInput) { log(`   [degree] trouvé via "${sel}" classes="${degreeInput.className.slice(0,50)}"`, 2); break; }
-      }
-      // Fallback label-based
-      if (!degreeInput) {
-        const allLabels = Array.from(document.querySelectorAll('label, [class*="label"], span'));
-        const degLabel = allLabels.find((l) => /^\s*degree[\s*]*$/i.test(l.textContent.trim()));
-        if (degLabel) {
-          const id = degLabel.htmlFor || degLabel.getAttribute('for');
-          if (id) degreeInput = document.getElementById(id);
-          if (!degreeInput) {
-            const row = degLabel.closest('[class*="row"], [class*="field"], [class*="cx-select"]');
-            degreeInput = row?.querySelector('input') || null;
-          }
-          if (degreeInput) log(`   [degree] trouvé via label fallback`, 2);
-        }
-      }
-      log(`   [degree] input trouvé=${!!degreeInput}`, 1);
+      const degreeInput =
+        formEl.querySelector('input[name="contentItemId"]') ||
+        document.querySelector('input[name="contentItemId"]') ||
+        formEl.querySelector('input.cx-select-input--disabled') ||
+        document.querySelector('input.cx-select-input--disabled');
+
+      log(`   [degree] input trouvé=${!!degreeInput} cible="${degree}"`, 1);
 
       if (degreeInput) {
         const currentDeg = getValue(degreeInput);
-        const degNorm = normText(degree).replace(/['']/g, "'");
-        if (normText(currentDeg).replace(/['']/g, "'") === degNorm || normText(currentDeg).replace(/['']/g, "'").includes(degNorm)) {
+        const targetNorm = normText(degree).replace(/['']/g, "'");
+        const currentNorm = normText(currentDeg).replace(/['']/g, "'");
+        if (currentNorm && (currentNorm === targetNorm || currentNorm.includes(targetNorm) || targetNorm.includes(currentNorm))) {
           log(`✅ Diplôme : '${currentDeg}' -> Skip`, 1);
           degreeOk = true;
         } else {
-          for (let attempt = 0; attempt < 3 && !degreeOk; attempt++) {
-            const opened = await openCxDropdown(degreeInput);
-            log(`   [degree] dropdown ouvert=${opened} (tentative ${attempt + 1})`, 2);
-            if (!opened) {
-              // Dernier recours : clic simple sur le container
-              (degreeInput.closest('.cx-select-container') || degreeInput).click();
+          // Container cx-select à cliquer pour ouvrir le dropdown
+          const container =
+            degreeInput.closest('.cx-select-container') ||
+            degreeInput.closest('[class*="cx-select"]') ||
+            degreeInput.parentElement;
+
+          for (let attempt = 0; attempt < 4 && !degreeOk; attempt++) {
+            // Un seul clic sur le container suffit (pas de séquence mousedown/up → risque de toggle)
+            container.click();
+            await sleep(1500); // Oracle HCM peut être lent à rendre la liste
+
+            // Collecter toutes les options visibles
+            const items = Array.from(document.querySelectorAll(
+              '.cx-select__list-item--content, [class*="cx-select__list-item"], [role="option"]'
+            )).filter(el => isElementVisible(el) && el.textContent.trim());
+
+            log(`   [degree] tentative ${attempt + 1}: ${items.length} options. "${items.slice(0, 6).map(e => e.textContent.trim()).join(' | ')}"`, 1);
+
+            const match = items.find(el => {
+              const t = normText(el.textContent || '').replace(/['']/g, "'");
+              return t === targetNorm || t.includes(targetNorm) || targetNorm.includes(t);
+            });
+
+            if (match) {
+              // Séquence MouseEvent complète pour garantir la sélection Oracle HCM
+              for (const type of ['mousedown', 'mouseup', 'click']) {
+                match.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+              }
+              await sleep(500);
+              degreeOk = true;
+              log(`✅ Diplôme : '${match.textContent.trim()}' sélectionné`, 1);
+            } else {
+              // Fermer et réessayer
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
               await sleep(800);
             }
-            const picked = await pickVisibleOption(degree) || await pickVisibleOption(degree.replace(/'/g, '’'));
-            if (picked) {
-              log(`✏️ Diplôme : → '${degree}' (tentative ${attempt + 1})`, 1);
-              degreeOk = true;
-            } else {
-              log(`⚠️ Diplôme tentative ${attempt + 1} : options visibles : ${
-                Array.from(document.querySelectorAll('[class*="cx-select__list-item"], [role="option"]'))
-                  .map(e => e.textContent.trim().slice(0, 30)).join(' | ').slice(0, 200) || '(aucune)'
-              }`, 1);
-              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-              await sleep(400);
-            }
           }
-          if (!degreeOk) log(`❌ Diplôme : échec après 3 tentatives — SAVE bloqué`, 1);
+          if (!degreeOk) log(`❌ Diplôme : échec après 4 tentatives — SAVE bloqué`, 1);
         }
       } else {
-        log(`⚠️ Diplôme : aucun sélecteur ne trouve le champ dans le formulaire`, 1);
+        log(`⚠️ Diplôme : input[name="contentItemId"] introuvable dans le formulaire`, 1);
       }
     }
 
