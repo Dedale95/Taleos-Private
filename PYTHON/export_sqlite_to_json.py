@@ -46,6 +46,7 @@ GOLDMAN_SACHS_DB = PYTHON_DIR / "goldman_sachs_jobs.db"
 KPMG_DB          = PYTHON_DIR / "kpmg_jobs.db"
 AXA_DB           = PYTHON_DIR / "axa_jobs.db"
 HSBC_DB          = PYTHON_DIR / "hsbc_jobs.db"
+EY_DB            = PYTHON_DIR / "ey_jobs.db"
 
 
 def write_json(path: Path, data, pretty: bool = False):
@@ -520,6 +521,7 @@ def main():
         ("KPMG Global",  KPMG_DB),
         ("AXA",          AXA_DB),
         ("HSBC",         HSBC_DB),
+        ("EY",           EY_DB),
     ]
 
     # Mode strict pour éviter d'exporter des données BNP obsolètes en cas d'échec scraper/base manquante.
