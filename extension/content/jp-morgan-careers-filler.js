@@ -940,26 +940,37 @@
     }
 
     // ── École (cx-select autocomplete serveur) ───────────────────────────────
+    // NOTE : Oracle HCM accepte une saisie libre même sans correspondance dans sa base.
+    // Si aucune suggestion ne correspond, blur() confirme quand même la valeur tapée.
+    // BUG CORRIGÉ : setInputValue() appelle blur() immédiatement → ferme les suggestions
+    // avant pickVisibleOption → on type sans blur, on attend les suggestions, puis on blur.
     if (school) {
       const schoolInput = formEl.querySelector('input[name="educationalEstablishment"]') ||
         document.querySelector('input[name="educationalEstablishment"]');
       if (schoolInput) {
         const currentSchool = getValue(schoolInput);
-        if (norm(currentSchool) !== norm(school)) {
+        if (normText(currentSchool) === normText(school)) {
+          log(`✅ École : '${currentSchool}' -> Skip`, 1);
+        } else {
+          // Ouvrir le champ et taper sans blur pour laisser les suggestions s'afficher
           schoolInput.click();
           schoolInput.focus?.();
           await sleep(200);
-          setInputValue(schoolInput, school);
-          await sleep(700); // attendre suggestions serveur
+          // Injection native sans blur (contrairement à setInputValue qui blur trop tôt)
+          const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          if (nativeSetter) nativeSetter.call(schoolInput, school);
+          else schoolInput.value = school;
+          schoolInput.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(1000); // attendre les suggestions serveur (réseau)
           const picked = await pickVisibleOption(school);
-          if (!picked) {
-            // Aucune suggestion : confirmer la valeur tapée
-            schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+          if (picked) {
+            log(`✏️ École : '${school}' → suggestion sélectionnée`, 1);
+          } else {
+            // Aucune correspondance dans la base Oracle → texte libre accepté par blur
             schoolInput.dispatchEvent(new Event('change', { bubbles: true }));
+            schoolInput.blur();
+            log(`✏️ École : '${school}' → aucune suggestion Oracle, valeur libre confirmée par blur`, 1);
           }
-          log(`✏️ École : → ${school}`, 1);
-        } else {
-          log(`✅ École : '${currentSchool}' -> Skip`, 1);
         }
       }
     }

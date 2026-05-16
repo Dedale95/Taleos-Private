@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.21",
-  "version_name": "1.2.21-jpmorgan-field-fix",
+  "version": "1.2.22",
+  "version_name": "1.2.22-jpmorgan-school-freetext",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

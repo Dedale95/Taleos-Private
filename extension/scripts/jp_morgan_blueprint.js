@@ -98,12 +98,21 @@
       // Formulaire inline ÉDUCATION (s'ouvre dans .profile-item-content--form) :
       //   input[name="contentItemId"]          — Diplôme (cx-select, DISABLED → cliquer .cx-select-container)
       //   input[name="educationalEstablishment"] — École (cx-select autocomplete, role=combobox)
+      //     → Tape le nom, attend les suggestions (réseau). Si aucune suggestion ne correspond,
+      //       Oracle HCM ACCEPTE quand même la valeur tapée (texte libre) après blur().
+      //       Ne PAS utiliser setInputValue() qui appelle blur() trop tôt (avant les suggestions).
+      //       Séquence correcte : nativeSetter+input event → sleep(1000) → pickOption OU blur.
       //   input[name="endDate"] [0] (id=month-endDate-N) — Mois de fin (cx-select, role=combobox)
       //   input[name="endDate"] [1] (id=year-endDate-N)  — Année de fin (cx-select, role=combobox)
       //   input[name="countryCode"]            — Pays (cx-select, role=combobox)
       //   input[name="areaOfStudy"]            — Domaine d'études (texte libre, class=input-row__control)
       //   button.save-btn                      — Sauvegarder
       //   button.cancel-btn                    — Annuler
+      //
+      // Tile après sauvegarde éducation :
+      //   .apply-flow-profile-item-tile__summary-title   = diplôme (ex. "Master's Degree")
+      //   .apply-flow-profile-item-tile__summary-subtitle = école + date OU date seule si école vide
+      //   → isTaleosTile() vérifie que le nom d'école Firebase apparaît dans le sous-titre
       //
       // Formulaire inline EXPÉRIENCE (même structure) :
       //   input[name="employerName"]           — Entreprise (texte libre)
