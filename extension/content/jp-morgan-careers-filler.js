@@ -922,21 +922,89 @@
    *   input[name="areaOfStudy"]            — Domaine d'études (texte libre)
    *   button.save-btn                      — Sauvegarder
    */
+  /**
+   * Trouve l'input du champ Diplôme dans le formulaire inline éducation Oracle HCM.
+   * Oracle peut utiliser plusieurs noms d'attribut selon la version du formulaire.
+   * Fallback final : 1er input cx-select-input--disabled dans le formulaire.
+   */
+  function findDegreeInput(formEl) {
+    // Sélecteurs Oracle connus, du plus précis au plus générique
+    const selectors = [
+      'input[name="contentItemId"]',
+      'input[name*="degree" i]',
+      'input[id*="contentItemId" i]',
+      'input[aria-label*="degree" i]',
+    ];
+    for (const sel of selectors) {
+      const el = formEl.querySelector(sel) || document.querySelector(sel);
+      if (el) return el;
+    }
+    // Fallback : chercher le label "Degree" et remonter au cx-select associé
+    const labels = Array.from((formEl || document).querySelectorAll('label, [class*="label"]'));
+    const degLabel = labels.find((l) => /^\s*degree\s*\*/i.test(l.textContent.trim()) || /^\s*degree\s*$/i.test(l.textContent.trim()));
+    if (degLabel) {
+      const forid = degLabel.htmlFor || degLabel.getAttribute('for');
+      if (forid) {
+        const byId = document.getElementById(forid);
+        if (byId) return byId;
+      }
+      const container = degLabel.closest('[class*="form-row"], [class*="cx-select"], [class*="input-row"]');
+      if (container) {
+        const inp = container.querySelector('input.cx-select-input, input.cx-select-input--disabled, input[role="combobox"]');
+        if (inp) return inp;
+      }
+    }
+    // Dernier recours : 1er cx-select disabled du formulaire (Degree est toujours le premier champ)
+    return formEl.querySelector('input.cx-select-input--disabled') ||
+           formEl.querySelector('input.cx-select-input') || null;
+  }
+
   async function fillEducationInlineForm(degree, school, gradMonth, gradYear, country, areaOfStudy) {
-    await sleep(300);
-    const formEl = document.querySelector('.profile-item-content--form');
+    // Attendre que le formulaire soit rendu (Oracle HCM peut prendre >600 ms après le clic ADD)
+    let formEl = null;
+    for (let attempt = 0; attempt < 6 && !formEl; attempt++) {
+      await sleep(400);
+      formEl = document.querySelector('.profile-item-content--form');
+    }
     if (!formEl) {
-      log('⚠️ JP Morgan : formulaire inline éducation non apparu', 1);
+      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 2,4 s', 1);
       return false;
     }
     log(`📋 fillEducationInlineForm : degree='${degree}' school='${school}' gradMonth='${gradMonth}' gradYear='${gradYear}' country='${country}'`, 1);
 
-    // ── Diplôme (cx-select disabled → clic sur .cx-select-container) ───────
+    // ── Diplôme (cx-select disabled → clic container, sleep suffisant, retry) ─
+    let degreeOk = !degree; // si pas de valeur cible, on considère OK (pas requis par la logique)
     if (degree) {
-      const degreeInput = formEl.querySelector('input[name="contentItemId"]') ||
-        document.querySelector('input[name="contentItemId"]');
-      log(`   [degree] input trouvé=${!!degreeInput} classes="${degreeInput?.className || '—'}" readOnly=${degreeInput?.readOnly} disabled=${degreeInput?.disabled}`, 2);
-      await selectCxDropdownInForm('Diplome', degreeInput, degree, [degree.replace(/'/g, '’')]);
+      const degreeInput = findDegreeInput(formEl);
+      log(`   [degree] input trouvé=${!!degreeInput} classes="${degreeInput?.className || '—'}" disabled=${degreeInput?.disabled}`, 2);
+      if (degreeInput) {
+        // Vérifier si déjà rempli correctement
+        const currentDeg = getValue(degreeInput);
+        if (normText(currentDeg) === normText(degree) || normText(currentDeg).includes(normText(degree).replace(/['']/g, ''))) {
+          log(`✅ Diplôme : '${currentDeg}' -> Skip`, 1);
+          degreeOk = true;
+        } else {
+          // Ouvrir le dropdown (cx-select--disabled → clic container) avec retry
+          for (let attempt = 0; attempt < 3 && !degreeOk; attempt++) {
+            const cxContainer = degreeInput.closest('.cx-select-container');
+            if (cxContainer) cxContainer.click(); else degreeInput.click();
+            await sleep(600); // oracle HCM peut prendre 500+ ms pour rendre la liste
+            const picked = await pickVisibleOption(degree) || await pickVisibleOption(degree.replace(/'/g, '’'));
+            if (picked) {
+              log(`✏️ Diplôme : → '${degree}' (tentative ${attempt + 1})`, 1);
+              degreeOk = true;
+            } else {
+              log(`⚠️ Diplôme tentative ${attempt + 1} : aucune option '${degree}' visible`, 1);
+              // Fermer le dropdown avant retry
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+              await sleep(300);
+            }
+          }
+          if (!degreeOk) log(`❌ Diplôme : échec après 3 tentatives — SAVE non déclenché`, 1);
+        }
+      } else {
+        log(`⚠️ Diplôme : champ introuvable dans le formulaire — impossible de remplir`, 1);
+      }
     }
 
     // ── École (cx-select autocomplete serveur) ───────────────────────────────
@@ -1004,7 +1072,12 @@
       else log("ℹ️ Domaine d'études : non renseigné dans Firebase -> Skip", 1);
     }
 
-    // ── Sauvegarder ──────────────────────────────────────────────────────────
+    // ── Sauvegarder — GARDE : ne pas cliquer Save si Degree obligatoire est vide ──
+    // Oracle refuserait le formulaire et le laisserait ouvert avec l'erreur rouge.
+    if (degree && !degreeOk) {
+      log('❌ JP Morgan : Degree toujours vide → SAVE annulé pour éviter la boucle d\'erreur', 1);
+      return false;
+    }
     const saveBtn = document.querySelector('button.save-btn');
     if (saveBtn) {
       saveBtn.click();
