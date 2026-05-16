@@ -39,6 +39,7 @@ on:
           - goldman_sachs
           - axa
           - kpmg
+          - hsbc
 
 jobs:
   scrape:
@@ -123,6 +124,12 @@ jobs:
             script: kpmg_global_scraper.py
             db_file: kpmg_jobs.db
             timeout_minutes: 90
+            playwright_browser: ""
+          - name: HSBC
+            key: hsbc
+            script: hsbc_scraper.py
+            db_file: hsbc_jobs.db
+            timeout_minutes: 60
             playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
