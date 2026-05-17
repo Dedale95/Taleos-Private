@@ -22,6 +22,7 @@
     nextSection1:        false,
     nextSection2:        false,
     submitSection3:      false,
+    alreadySent:         false,
     attachmentsCleared:  false,   // one-shot : suppression avant réupload
     resumeUploadDone:    false,
     coverUploadDone:     false,
@@ -924,7 +925,20 @@
         case 'section_2':  return await handleSection2(profile);
         case 'section_3':  return await handleSection3(profile);
         case 'already_applied':
-          log('ℹ️ Goldman Sachs : candidature déjà soumise pour ce poste');
+          if (!state.alreadySent) {
+            state.alreadySent = true;
+            log('ℹ️ Goldman Sachs : candidature déjà soumise pour ce poste');
+            ensureBanner('⚠️ Goldman Sachs — Vous avez déjà postulé à cette offre. Candidature ignorée.');
+            await chrome.runtime.sendMessage({
+              action: 'candidature_already_applied',
+              bankId: 'goldman_sachs',
+              jobId: pending.jobId || '',
+              jobTitle: pending.jobTitle || '',
+              companyName: 'Goldman Sachs',
+              offerUrl: pending.offerUrl || location.href,
+            }).catch(() => null);
+            await chrome.storage.local.remove([PENDING_KEY, TAB_KEY]);
+          }
           return;
         case 'my_profile': return await handleSuccess(pending);
         default:

@@ -217,7 +217,12 @@
 
     // Priorités absolues : succès, déjà candidaté, PIN
     if (text.includes(normalizeText(TEXT.success[0]))) return { key: 'success', score: 100, label: PAGE_DEFS.success.label };
-    if (text.includes(normalizeText(TEXT.alreadyApplied[0]))) return { key: 'already_applied', score: 100, label: PAGE_DEFS.already_applied.label };
+    // Détection déjà candidaté : innerText + textContent (shadow DOM / aria-live)
+    const rawText = normalizeText(doc.body?.textContent || '');
+    if (text.includes('you already applied') || rawText.includes('you already applied') ||
+        queryVisible(doc, '[class*="already"], [class*="alreadyApplied"]')) {
+      return { key: 'already_applied', score: 100, label: PAGE_DEFS.already_applied.label };
+    }
     // PIN avant email (même URL, texte différent)
     if (/\/apply\/email/.test(pathname) && (
       queryVisible(doc, '#pin-code-1') || queryVisible(doc, 'input[id*="pin-code"]') ||

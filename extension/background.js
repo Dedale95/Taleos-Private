@@ -1653,6 +1653,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  if (msg.action === 'candidature_already_applied') {
+    (async () => {
+      await finalizeApplyRunForTab(sender.tab?.id, 'already_applied', {
+        failureType: 'already_applied',
+        failureMessage: 'Candidature déjà soumise pour cette offre'
+      }).catch(() => null);
+      clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
+      trackError('already_applied', 'Candidature déjà soumise', msg.bankId, msg.jobId, msg.offerUrl).catch(() => {});
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
   if (msg.action === 'candidature_failure') {
     (async () => {
       const { offerExpired, jobId, jobTitle, error } = msg;
