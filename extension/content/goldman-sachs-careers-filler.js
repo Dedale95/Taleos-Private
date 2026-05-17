@@ -228,47 +228,71 @@
 
   // ── Pill buttons / Radio ──────────────────────────────────────────────────────
 
+  function normPill(v) {
+    // Normalise en ignorant les espaces, tirets, apostrophes, + et caractères spéciaux
+    return String(v || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/['''‘’]/g, "'")
+      .replace(/[-–—]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
   function findQuestionContainer(textNeedle) {
-    const target = norm(textNeedle);
-    const nodes = document.querySelectorAll('section, fieldset, .oj-form-layout, .oj-panel, .oj-flex, div');
-    for (const node of nodes) {
-      const text = norm(node.textContent || '');
-      if (!text || !text.includes(target)) continue;
-      if (node.querySelector('button, [role="radio"], [aria-pressed]')) return node;
+    const target = normPill(textNeedle);
+    // Chercher du nœud le plus précis (fieldset/section) au plus large (div)
+    const selectors = ['fieldset', 'section', '.oj-form-layout', '.oj-panel', '.oj-flex-item', '.oj-flex', 'div'];
+    for (const sel of selectors) {
+      for (const node of document.querySelectorAll(sel)) {
+        const text = normPill(node.textContent || '');
+        if (!text.includes(target)) continue;
+        if (node.querySelector('button, [role="radio"], [role="button"], [aria-pressed]')) return node;
+      }
     }
     return null;
   }
 
   function isPillSelected(pill) {
+    if (pill.getAttribute('aria-checked') === 'true') return true;
+    if (pill.getAttribute('aria-pressed') === 'true') return true;
+    if (pill.classList.contains('selected') || pill.classList.contains('oj-selected') || pill.classList.contains('is-selected')) return true;
     const style = globalThis.getComputedStyle ? getComputedStyle(pill) : null;
     const bg = style?.backgroundColor || '';
-    const isUnselected = bg === 'rgba(0, 0, 0, 0)' || bg === '' || bg === 'transparent' || bg === 'rgb(255, 255, 255)';
-    return !isUnselected
-      || pill.getAttribute('aria-checked') === 'true'
-      || pill.getAttribute('aria-pressed') === 'true'
-      || pill.classList.contains('selected')
-      || pill.classList.contains('oj-selected')
-      || pill.classList.contains('is-selected');
+    // Blanc/transparent = non sélectionné
+    const unselected = ['rgba(0, 0, 0, 0)', '', 'transparent', 'rgb(255, 255, 255)'];
+    return !unselected.includes(bg);
   }
 
-  function auditAndClickPill(label, questionText, desiredValue) {
+  async function auditAndClickPill(label, questionText, desiredValue) {
     if (!desiredValue) return false;
-    const container = findQuestionContainer(questionText) || document;
-    const pills = Array.from(container.querySelectorAll('button, [role="radio"], [aria-pressed]'));
-    const target = norm(desiredValue);
-    for (const pill of pills) {
-      const pillText = norm(pill.innerText || pill.textContent || '');
-      if (!pillText || pillText !== target) continue;
-      if (isPillSelected(pill)) {
-        log(`✅ ${label} : '${pill.innerText?.trim()}' -> Skip`, 1);
-        return true;
-      }
-      log(`✏️ ${label} : -> '${desiredValue}'`, 1);
-      pill.click();
+    const container = findQuestionContainer(questionText);
+    if (!container) {
+      log(`⚠️ ${label} : section "${questionText}" introuvable`, 1);
+      return false;
+    }
+    const pills = Array.from(container.querySelectorAll('button, [role="radio"], [role="button"], [aria-pressed]'));
+    const target = normPill(desiredValue);
+    // Priorité : correspondance exacte, sinon partielle (début ou contenu)
+    const pill = pills.find(p => {
+      const t = normPill(p.innerText || p.textContent || '');
+      return t && (t === target || t.startsWith(target) || target.startsWith(t));
+    });
+    if (!pill) {
+      log(`⚠️ ${label} : option '${desiredValue}' introuvable pour "${questionText}"`, 1);
+      return false;
+    }
+    if (isPillSelected(pill)) {
+      log(`✅ ${label} : '${pill.innerText?.trim()}' -> Skip`, 1);
       return true;
     }
-    log(`⚠️ ${label} : option '${desiredValue}' introuvable pour "${questionText}"`, 1);
-    return false;
+    log(`✏️ ${label} : -> '${desiredValue}'`, 1);
+    // Oracle CE nécessite mousedown + mouseup + click pour enregistrer la sélection
+    for (const type of ['mousedown', 'mouseup', 'click']) {
+      pill.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    }
+    await sleep(200);
+    return true;
   }
 
   // ── OJ Combobox (Oracle JET dropdown) ────────────────────────────────────────
@@ -498,45 +522,51 @@
       '< 1 an':    'Less than 1 year',
       '1 - 5 ans': '1 - 3 years',
       '6 - 10 ans':'3+ years',
-      '> 10 ans':  '3+ years'
+      '> 10 ans':  '3+ years',
     };
     const expValue = expMap[profile.experience_level] || '3+ years';
-    auditAndClickPill('Années d\'expérience', 'years of relevant experience', expValue);
+    await auditAndClickPill('Années d\'expérience', 'years of relevant experience', expValue);
 
     // ── Work Authorization ──────────────────────────────────────────────────
-    auditAndClickPill('Work auth pays', 'work authorisation for the countries', 'Yes');
+    await auditAndClickPill('Work auth pays', 'work authorisation for the countries', 'Yes');
 
     const authTypes = Array.isArray(profile.work_authorization_type) ? profile.work_authorization_type : [];
     for (const authType of authTypes) {
-      auditAndClickPill(`Work auth type: ${authType}`, 'which of the following apply to you', authType);
+      await auditAndClickPill(`Work auth type: ${authType}`, 'which of the following apply to you', authType);
     }
 
-    auditAndClickPill('Visa sponsorship', 'require visa sponsorship', 'No');
+    await auditAndClickPill('Visa sponsorship', 'require visa sponsorship', 'No');
 
     // ── Disclosures ─────────────────────────────────────────────────────────
-    // GS history (réutilise profile.deloitte_worked pour l'instant — champ dédié GS à créer si besoin)
     const gsHistoryValue = profile.gs_previously_worked === 'yes'
       ? 'Yes - Full Time Employee'
       : (profile.gs_previously_interned === 'yes' ? 'Yes - Intern' : 'No');
-    auditAndClickPill('GS history', 'previously interned or worked at goldman sachs', gsHistoryValue);
+    await auditAndClickPill('GS history', 'previously interned or worked at goldman sachs', gsHistoryValue);
 
-    auditAndClickPill('PwC/Mazars', 'pricewaterhousecoopers', 'No');
-    auditAndClickPill('Contingent worker', 'current contingent worker at goldman sachs', 'No');
-    auditAndClickPill('Government/regulatory', 'government, regulatory, or intergovernmental', 'No');
+    // PwC/Mazars — question longue, on cherche avec plusieurs needles
+    const pwcClicked =
+      await auditAndClickPill('PwC/Mazars', 'pricewaterhousecoopers, mazars', 'No') ||
+      await auditAndClickPill('PwC/Mazars', 'pricewaterhousecoopers', 'No') ||
+      await auditAndClickPill('PwC/Mazars', 'pwc', 'No');
+    if (!pwcClicked) log('⚠️ PwC/Mazars : question introuvable', 1);
+
+    await auditAndClickPill('Contingent worker', 'current contingent worker at goldman sachs', 'No');
+    await auditAndClickPill('Government/regulatory', 'government, regulatory, or intergovernmental', 'No');
+
+    // ── Genre (toujours présent, indépendant du consentement diversité) ─────
+    await auditAndClickPill('Genre', 'please indicate your gender', profile.gender || 'Prefer not to say');
 
     // ── Diversité / Identité ────────────────────────────────────────────────
     const diversityConsent = profile.gs_diversity_consent || 'I do not consent';
-    auditAndClickPill('Consentement diversité', 'sexual orientation and gender identity data', diversityConsent);
+    await auditAndClickPill('Consentement diversité', 'sexual orientation and gender identity data', diversityConsent);
 
-    if (norm(diversityConsent).includes('consent') && !norm(diversityConsent).includes('do not')) {
-      // Remplir les champs diversité uniquement si consentement donné
-      auditAndClickPill('Genre', 'please indicate your gender', profile.gender || 'Prefer not to say');
-      auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
-      auditAndClickPill('Orientation sexuelle', 'please indicate your sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
-      auditAndClickPill('Pronoms', 'please indicate your pronouns', profile.pronouns || 'Prefer Not To Say');
+    if (normPill(diversityConsent).includes('i consent') && !normPill(diversityConsent).includes('do not')) {
+      await auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
+      await auditAndClickPill('Orientation sexuelle', 'please indicate your sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
+      await auditAndClickPill('Pronoms', 'please indicate your pronouns', profile.pronouns || 'Prefer Not To Say');
     }
 
-    auditAndClickPill('Handicap', 'consider yourself to have a disability', profile.gs_disability || 'Prefer not to say');
+    await auditAndClickPill('Handicap', 'consider yourself to have a disability', profile.gs_disability || 'Prefer not to say');
 
     // Race / Ethnicité (OJ combobox)
     if (profile.gs_race_ethnicity) {
@@ -549,8 +579,8 @@
       }
     }
 
-    // ── Bouton Next ─────────────────────────────────────────────────────────
-    await sleep(300);
+    // ── Bouton Next — attendre 2 s que Oracle enregistre toutes les sélections ──
+    await sleep(2000);
     const nextBtn = findButtonByText('Next');
     if (nextBtn && !state.nextSection2) {
       state.nextSection2 = true;
@@ -574,6 +604,84 @@
     };
     const pageText = norm(document.body?.innerText || '');
 
+    /**
+     * Remplit le combobox langue dans la DERNIÈRE ligne langue visible.
+     * Oracle ajoute une nouvelle ligne au DOM après chaque clic "Add Language".
+     * On cible spécifiquement le dernier input[role="combobox"] dans la section langues
+     * pour éviter de toucher le champ code pays téléphone (qui a aussi value "+33").
+     */
+    async function fillLanguageRow(langName, level) {
+      // Attendre que la nouvelle ligne apparaisse
+      await sleep(700);
+      // Trouver toutes les lignes de langue (chaque ligne contient un combobox langue + éventuellement proficiency)
+      // On cible les inputs combobox qui ne sont PAS dans une zone téléphone
+      const allCombos = Array.from(document.querySelectorAll('input[role="combobox"], [role="combobox"] input'))
+        .filter(inp => {
+          // Exclure les champs dans un container qui contient "phone" ou "country code" ou "+33"
+          const container = inp.closest('tr, .oj-flex-item, .oj-flex, fieldset, section, div') || inp.parentElement;
+          const ctxt = norm(container?.textContent || '');
+          if (ctxt.includes('phone') || ctxt.includes('country code')) return false;
+          // Exclure les champs dont la valeur ressemble à un code téléphone (+XX)
+          const val = String(inp.value || '');
+          if (/^\+\d{1,4}$/.test(val.trim())) return false;
+          return isElementVisible(inp);
+        });
+
+      // Le dernier combobox visible est la nouvelle ligne langue
+      const langCombo = allCombos[allCombos.length - 1] || null;
+      if (!langCombo) {
+        log(`⚠️ Langue : combobox introuvable après "Add Language"`, 1);
+        return false;
+      }
+
+      // Remplir langue
+      const curLang = getValue(langCombo);
+      if (norm(curLang) !== norm(langName)) {
+        log(`✏️ Langue : '${curLang || '(vide)'}' -> '${langName}'`, 1);
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        if (setter) setter.call(langCombo, langName); else langCombo.value = langName;
+        langCombo.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(600);
+        const opts = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result'));
+        const match = opts.find(o => norm(o.textContent || '').includes(norm(langName)));
+        if (match) {
+          for (const t of ['mousedown', 'mouseup', 'click']) {
+            match.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
+          }
+          await sleep(400);
+        }
+      }
+
+      // Remplir niveau si présent — chercher le combobox proficiency DANS la même ligne
+      if (level) {
+        const row = langCombo.closest('tr, .oj-flex, .oj-flex-item, div') || langCombo.parentElement;
+        const profCombo = Array.from((row?.querySelectorAll('input[role="combobox"], [role="combobox"] input') || []))
+          .find(inp => inp !== langCombo && isElementVisible(inp));
+        if (profCombo) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          if (setter) setter.call(profCombo, level); else profCombo.value = level;
+          profCombo.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(500);
+          const opts = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result'));
+          const match = opts.find(o => norm(o.textContent || '').includes(norm(level)));
+          if (match) {
+            for (const t of ['mousedown', 'mouseup', 'click']) {
+              match.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
+            }
+            await sleep(300);
+          }
+        } else {
+          log(`⚠️ OJ Combobox 'proficiency' introuvable dans la ligne`, 1);
+        }
+      }
+      return true;
+    }
+
+    const levelMap = {
+      'Natif': 'Native', 'Courant': 'Fluent', 'Avancé': 'Advanced',
+      'Intermédiaire': 'Intermediate', 'Débutant': 'Beginner'
+    };
+
     for (const lang of languages) {
       const langName = langMap[lang.language] || lang.language || lang.name || '';
       if (!langName) continue;
@@ -581,18 +689,9 @@
         const addBtn = findButtonByText('Add Language') || findButtonByText('ADD LANGUAGE');
         if (addBtn) {
           addBtn.click();
-          await sleep(600);
-          await fillOJCombobox('language', langName);
-          // Niveau de langue si présent
-          if (lang.level || lang.proficiency) {
-            const levelMap = {
-              'Natif': 'Native', 'Courant': 'Fluent', 'Avancé': 'Advanced',
-              'Intermédiaire': 'Intermediate', 'Débutant': 'Beginner'
-            };
-            const level = levelMap[lang.level] || levelMap[lang.proficiency] || lang.level || lang.proficiency || '';
-            if (level) await fillOJCombobox('proficiency', level);
-          }
-          log(`✅ Langue ajoutée : ${langName}`, 1);
+          const level = levelMap[lang.level] || levelMap[lang.proficiency] || lang.level || lang.proficiency || '';
+          const ok = await fillLanguageRow(langName, level);
+          if (ok) log(`✅ Langue ajoutée : ${langName}`, 1);
         } else {
           log(`⚠️ Langue : bouton "Add Language" introuvable`, 1);
         }
