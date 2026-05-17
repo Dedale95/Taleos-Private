@@ -1655,13 +1655,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'candidature_already_applied') {
     (async () => {
-      await finalizeApplyRunForTab(sender.tab?.id, 'already_applied', {
-        failureType: 'already_applied',
-        failureMessage: 'Candidature déjà soumise pour cette offre'
+      const tabIdToClose = sender.tab?.id;
+      const runInfo = await finalizeApplyRunForTab(tabIdToClose, 'already_applied', {
+        successType: 'already_applied',
+        successMessage: 'Candidature déjà soumise pour cette offre'
       }).catch(() => null);
-      clearPendingStateForBank(msg.bankId, sender.tab?.id).catch(() => {});
-      trackError('already_applied', 'Candidature déjà soumise', msg.bankId, msg.jobId, msg.offerUrl).catch(() => {});
-      sendResponse({ ok: true });
+      clearPendingStateForBank(msg.bankId, tabIdToClose).catch(() => {});
+      saveCandidatureAndNotifyTaleos({
+        ...msg,
+        successType: 'already_applied',
+        successMessage: 'Candidature déjà soumise pour cette offre',
+        applyRunId: runInfo?.runId || '',
+        extensionVersion: runInfo?.extensionVersion || getExtensionVersionForGa4().extension_version,
+        extensionVersionName: runInfo?.extensionVersionName || getExtensionVersionForGa4().extension_version_name
+      }, tabIdToClose).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
     })();
     return true;
   }
