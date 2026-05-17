@@ -2321,6 +2321,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
   if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (bid === 'bnp_paribas' || url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp';
+  if (bid === 'goldman_sachs' || url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
   return 'other';
 }
 
