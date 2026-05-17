@@ -894,6 +894,12 @@
   }
 
   async function handleSection3(profile) {
+    // Guard : Submit déjà cliqué → ne plus toucher aux langues, attendre navigation
+    if (state.submitSection3) {
+      ensureBanner('⏳ Goldman Sachs — Submit envoyé, attente de confirmation…');
+      return;
+    }
+
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 3 (langues & signature)...');
     const report = blueprint?.getStructureReport?.('section_3');
     if (report) log(`Blueprint GS section 3: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);

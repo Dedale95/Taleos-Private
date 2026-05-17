@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.47",
-  "version_name": "1.2.47-gs-already-applied-close-tab",
+  "version": "1.2.48",
+  "version_name": "1.2.48-gs-fix-lang-loop-after-submit",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
