@@ -23,6 +23,7 @@
     nextSection2:        false,
     submitSection3:      false,
     alreadySent:         false,
+    workAuthDone:        false,
     attachmentsCleared:  false,   // one-shot : suppression avant réupload
     resumeUploadDone:    false,
     coverUploadDone:     false,
@@ -568,10 +569,15 @@
     // Valeurs attendues par GS : "National" | "Lawful Permanent Resident" |
     //   "EEA/Swiss National applying to work in an EEA location/Switzerland" |
     //   "Another Visa or Work / Residence Permit"
-    const rawAuthTypes = profile.gs_work_auth_type || profile.work_authorization_type;
-    const authTypes = Array.isArray(rawAuthTypes) ? rawAuthTypes : (rawAuthTypes ? [rawAuthTypes] : []);
-    for (const authType of authTypes) {
-      await auditAndClickPill(`Work auth type: ${authType}`, 'which of the following apply to you', authType);
+    // Radio group (choix unique) — on ne clique que la PREMIÈRE valeur, one-shot guard
+    if (!state.workAuthDone) {
+      const rawAuthTypes = profile.gs_work_auth_type || profile.work_authorization_type;
+      const authTypesArr = Array.isArray(rawAuthTypes) ? rawAuthTypes : (rawAuthTypes ? [rawAuthTypes] : []);
+      const authType = authTypesArr[0]; // radio → un seul choix
+      if (authType) {
+        const clicked = await auditAndClickPill(`Work auth type: ${authType}`, 'which of the following apply to you', authType);
+        if (clicked) state.workAuthDone = true;
+      }
     }
 
     await auditAndClickPill('Visa sponsorship', 'require visa sponsorship', 'No');
@@ -599,11 +605,10 @@
     const diversityConsent = profile.gs_diversity_consent || 'I do not consent';
     await auditAndClickPill('Consentement diversité', 'sexual orientation and gender identity data', diversityConsent);
 
-    if (normPill(diversityConsent).includes('i consent') && !normPill(diversityConsent).includes('do not')) {
-      await auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
-      await auditAndClickPill('Orientation sexuelle', 'please indicate your sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
-      await auditAndClickPill('Pronoms', 'please indicate your pronouns', profile.pronouns || 'Prefer Not To Say');
-    }
+    // Ces questions sont REQUISES même avec "I do not consent" — pas de garde consent
+    await auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
+    await auditAndClickPill('Orientation sexuelle', 'sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
+    await auditAndClickPill('Pronoms', 'pronouns', profile.gs_pronouns || profile.pronouns || 'Prefer Not To Say');
 
     await auditAndClickPill('Handicap', 'consider yourself to have a disability', profile.gs_disability || 'Prefer not to say');
 
