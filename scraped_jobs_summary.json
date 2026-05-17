@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-17T08:16:54.805228+00:00",
-  "total_jobs": 21142,
+  "generated_at": "2026-05-17T16:22:32.082776+00:00",
+  "total_jobs": 22102,
   "counts_by_group": {
     "J.P. Morgan": 7412,
     "Groupe BNP Paribas": 4603,
@@ -9,13 +9,18 @@
     "Groupe Société Générale": 1574,
     "Goldman Sachs": 1449,
     "Groupe Crédit Mutuel": 795,
+    "AXA": 766,
     "Deloitte": 397,
     "KPMG": 277,
     "ODDO BHF": 203,
     "Bpifrance": 192,
+    "La Banque Postale": 160,
+    "La Banque Postale Assurances": 26,
+    "La Banque Postale Leasing & Factoring": 8,
     "Non spécifié": 1
   },
   "freshness_by_group": {
+    "AXA": "2026-05-17 18:17:41",
     "Bpifrance": "2026-05-17 07:44:49",
     "Deloitte": "2026-05-17 07:38:18",
     "Goldman Sachs": "2026-05-17 07:48:28",
@@ -26,6 +31,9 @@
     "Groupe Société Générale": "2026-05-17 08:01:53",
     "J.P. Morgan": "2026-05-17 07:47:39",
     "KPMG": "2026-05-17 07:51:16",
+    "La Banque Postale": "2026-05-17 16:18:35",
+    "La Banque Postale Assurances": "2026-05-17 16:18:35",
+    "La Banque Postale Leasing & Factoring": "2026-05-17 16:18:35",
     "Non spécifié": "2026-05-17 07:37:24",
     "ODDO BHF": "2026-05-17 07:47:43"
   }
