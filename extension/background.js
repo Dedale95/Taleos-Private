@@ -24,8 +24,21 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.runtime.onInstalled.addListener((details) => {
   chrome.alarms.create('taleos-keepalive', { periodInMinutes: 4 });
   if (details.reason === 'update') {
-    // 1. Recharger les pages Taleos (control panel)
-    const patterns = ['https://*.taleos.co/*', 'http://localhost/*', 'http://127.0.0.1/*'];
+    // 1. Recharger l'onglet actif mémorisé par le popup avant chrome.runtime.reload()
+    chrome.storage.local.get(['taleos_reload_active_tab'], (s) => {
+      const tabId = s.taleos_reload_active_tab;
+      if (tabId) {
+        chrome.storage.local.remove(['taleos_reload_active_tab']);
+        chrome.tabs.reload(tabId, {}, () => { chrome.runtime.lastError; });
+      }
+    });
+    // 2. Recharger toutes les pages Taleos encore ouvertes (taleos.co, localhost, github.io…)
+    const patterns = [
+      'https://*.taleos.co/*',
+      'https://*.github.io/*',
+      'http://localhost/*',
+      'http://127.0.0.1/*',
+    ];
     patterns.forEach((url) => {
       chrome.tabs.query({ url }, (tabs) => {
         tabs.forEach((tab) => { try { chrome.tabs.reload(tab.id); } catch (_) {} });

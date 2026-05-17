@@ -378,6 +378,13 @@ async function init() {
       btnLogin.disabled = true;
       btnLogin.textContent = '⏳ Rechargement…';
     }
+    // Mémoriser l'onglet actif pour que le background le recharge après le reload
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab?.id) {
+        await chrome.storage.local.set({ taleos_reload_active_tab: activeTab.id });
+      }
+    } catch (_) {}
     if (chrome?.runtime?.reload) chrome.runtime.reload();
   };
   document.getElementById('reload-btn')?.addEventListener('click', () => { void doReload(); });
