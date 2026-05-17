@@ -12,7 +12,6 @@
 
   let isRunning = false;
   let currentTabIdPromise = null;
-  let logged = new Set();
 
   // ── État session (one-shot guards) ──────────────────────────────────────────
   let state = {
@@ -36,8 +35,6 @@
 
   function log(message, indent = 0) {
     const text = `${'   '.repeat(indent)}${message}`;
-    if (logged.has(text)) return;
-    logged.add(text);
     console.log(`${LOG_PREFIX} ${text}`);
   }
 
@@ -129,7 +126,11 @@
   function findBySelectors(selectors, root = document) {
     for (const sel of selectors) {
       const el = visible(sel, root) || root.querySelector(sel);
-      if (el) return el;
+      if (el) {
+        console.log(`${LOG_PREFIX}    [findBySelectors] ✅ "${sel}" → <${el.tagName}${el.id ? '#' + el.id : ''}${el.className ? ' class="' + [...el.classList].slice(0, 3).join(' ') + '"' : ''}>`);
+        return el;
+      }
+      console.log(`${LOG_PREFIX}    [findBySelectors] ❌ "${sel}" → rien`);
     }
     return null;
   }
@@ -244,75 +245,120 @@
   function findQuestionContainer(textNeedle) {
     const target = normPill(textNeedle);
     const PILL_SEL = 'button.cx-select-pill-section, button[aria-pressed], [role="radio"]';
+    console.log(`${LOG_PREFIX}    [findQ] Recherche container pour : "${target}"`);
 
     // 1. Priorité : .input-row — container exact par question dans Oracle HCM CE
-    //    (ex : "Have you previously interned…" → div.input-row avec 4 pills)
-    for (const row of document.querySelectorAll('.input-row')) {
-      if (!normPill(row.textContent || '').includes(target)) continue;
-      if (row.querySelector(PILL_SEL)) return row;
+    const inputRows = document.querySelectorAll('.input-row');
+    console.log(`${LOG_PREFIX}    [findQ] Strat 1 (.input-row) : ${inputRows.length} rows disponibles`);
+    for (const row of inputRows) {
+      const rowText = normPill(row.textContent || '');
+      if (!rowText.includes(target)) continue;
+      if (row.querySelector(PILL_SEL)) {
+        const pills = row.querySelectorAll(PILL_SEL);
+        console.log(`${LOG_PREFIX}    [findQ] ✅ Strat 1 → .input-row avec ${pills.length} pill(s) | texte="${rowText.slice(0, 80)}"`);
+        return row;
+      }
     }
 
-    // 2. apply-flow-block dédié — blocs Oracle avec peu de pills (≤6) : gov/regulatory, contact info…
-    for (const block of document.querySelectorAll('apply-flow-block')) {
+    // 2. apply-flow-block dédié
+    const blocks = document.querySelectorAll('apply-flow-block');
+    console.log(`${LOG_PREFIX}    [findQ] Strat 2 (apply-flow-block) : ${blocks.length} blocs disponibles`);
+    for (const block of blocks) {
       if (!normPill(block.textContent || '').includes(target)) continue;
       if (!block.querySelector(PILL_SEL)) continue;
-      if (block.querySelectorAll('button.cx-select-pill-section').length <= 6) return block;
+      const pillCount = block.querySelectorAll('button.cx-select-pill-section').length;
+      if (pillCount <= 6) {
+        console.log(`${LOG_PREFIX}    [findQ] ✅ Strat 2 → apply-flow-block avec ${pillCount} pill(s) | class="${block.className}"`);
+        return block;
+      }
+      console.log(`${LOG_PREFIX}    [findQ] ⏭️ Strat 2 : block ignoré (${pillCount} pills > 6)`);
     }
 
-    // 3. Fallback TreeWalker : trouver le nœud texte le plus précis, remonter au premier ancêtre avec pills
+    // 3. Fallback TreeWalker
+    console.log(`${LOG_PREFIX}    [findQ] Strat 3 (TreeWalker) en cours...`);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       if (!normPill(walker.currentNode.textContent || '').includes(target)) continue;
       let el = walker.currentNode.parentElement;
       while (el && el !== document.body) {
-        if (el.querySelector(PILL_SEL)) return el;
+        if (el.querySelector(PILL_SEL)) {
+          const pills = el.querySelectorAll(PILL_SEL);
+          console.log(`${LOG_PREFIX}    [findQ] ✅ Strat 3 (TreeWalker) → <${el.tagName} class="${[...el.classList].slice(0, 3).join(' ')}">, ${pills.length} pill(s)`);
+          return el;
+        }
         el = el.parentElement;
       }
     }
+
+    console.log(`${LOG_PREFIX}    [findQ] ❌ Aucun container trouvé pour "${target}"`);
     return null;
   }
 
-  function isPillSelected(pill) {
-    if (pill.getAttribute('aria-checked') === 'true') return true;
-    if (pill.getAttribute('aria-pressed') === 'true') return true;
-    // Classe Oracle HCM CE (cx-select-pill-section--selected) + classes génériques
+  function isPillSelected(pill, verbose = false) {
+    if (pill.getAttribute('aria-checked') === 'true') {
+      if (verbose) console.log(`${LOG_PREFIX}       [isPillSelected] ✅ aria-checked=true`);
+      return true;
+    }
+    if (pill.getAttribute('aria-pressed') === 'true') {
+      if (verbose) console.log(`${LOG_PREFIX}       [isPillSelected] ✅ aria-pressed=true`);
+      return true;
+    }
     const cls = pill.classList;
     if (cls.contains('cx-select-pill-section--selected') ||
-        cls.contains('selected') || cls.contains('oj-selected') || cls.contains('is-selected')) return true;
+        cls.contains('selected') || cls.contains('oj-selected') || cls.contains('is-selected')) {
+      if (verbose) console.log(`${LOG_PREFIX}       [isPillSelected] ✅ class sélection détectée : ${[...cls].join(' ')}`);
+      return true;
+    }
     const style = globalThis.getComputedStyle ? getComputedStyle(pill) : null;
     const bg = style?.backgroundColor || '';
     const unselected = ['rgba(0, 0, 0, 0)', '', 'transparent', 'rgb(255, 255, 255)'];
-    return !unselected.includes(bg);
+    const result = !unselected.includes(bg);
+    if (verbose) console.log(`${LOG_PREFIX}       [isPillSelected] bg="${bg}" → ${result ? '✅ SELECTED (bgcolor)' : '⬜ non-sélectionné'}`);
+    return result;
   }
 
   async function auditAndClickPill(label, questionText, desiredValue) {
-    if (!desiredValue) return false;
+    if (!desiredValue) { console.log(`${LOG_PREFIX}    [auditAndClickPill] "${label}" skippé (desiredValue vide)`); return false; }
+    console.log(`${LOG_PREFIX}    [auditAndClickPill] ── "${label}" | question="${questionText}" | cible="${desiredValue}" ──`);
+
     const container = findQuestionContainer(questionText);
     if (!container) {
       log(`⚠️ ${label} : section "${questionText}" introuvable`, 1);
       return false;
     }
+
     const pills = Array.from(container.querySelectorAll('button, [role="radio"], [role="button"], [aria-pressed]'));
+    console.log(`${LOG_PREFIX}    [auditAndClickPill] ${pills.length} pill(s) dans le container :`);
+    pills.forEach((p, i) => {
+      const txt = (p.innerText || p.textContent || '').replace(/\s+/g, ' ').trim();
+      const sel = isPillSelected(p, false);
+      console.log(`${LOG_PREFIX}       [pill ${i}] "${txt}" | aria-pressed=${p.getAttribute('aria-pressed')} | aria-checked=${p.getAttribute('aria-checked')} | selected=${sel} | bg="${(getComputedStyle(p).backgroundColor || '')}"`);
+    });
+
     const target = normPill(desiredValue);
-    // Priorité : correspondance exacte, sinon partielle (début ou contenu)
     const pill = pills.find(p => {
       const t = normPill(p.innerText || p.textContent || '');
       return t && (t === target || t.startsWith(target) || target.startsWith(t));
     });
     if (!pill) {
       log(`⚠️ ${label} : option '${desiredValue}' introuvable pour "${questionText}"`, 1);
+      console.log(`${LOG_PREFIX}    [auditAndClickPill] target normalisé="${target}" — aucun match parmi : ${pills.map(p => `"${normPill(p.innerText || p.textContent || '')}"`).join(', ')}`);
       return false;
     }
-    if (isPillSelected(pill)) {
-      log(`✅ ${label} : '${pill.innerText?.trim()}' -> Skip`, 1);
+    console.log(`${LOG_PREFIX}    [auditAndClickPill] Pill match trouvé : "${(pill.innerText || '').trim()}"`);
+    if (isPillSelected(pill, true)) {
+      log(`✅ ${label} : '${(pill.innerText || '').trim()}' -> déjà sélectionné, Skip`, 1);
       return true;
     }
-    log(`✏️ ${label} : -> '${desiredValue}'`, 1);
+    log(`✏️ ${label} : clic sur '${desiredValue}'`, 1);
     // Oracle CE nécessite mousedown + mouseup + click pour enregistrer la sélection
     for (const type of ['mousedown', 'mouseup', 'click']) {
       pill.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
     }
     await sleep(200);
+    // Vérifier l'état après clic
+    const nowSelected = isPillSelected(pill, true);
+    console.log(`${LOG_PREFIX}    [auditAndClickPill] État après clic : ${nowSelected ? '✅ sélectionné' : '⚠️ toujours non-sélectionné'}`);
     return true;
   }
 
@@ -320,19 +366,22 @@
 
   async function fillOJCombobox(labelOrSelector, value) {
     if (!value) return false;
+    console.log(`${LOG_PREFIX}    [fillOJCombobox] ── label/selector="${labelOrSelector}" | valeur cible="${value}" ──`);
     let input = null;
     if (labelOrSelector.startsWith('#') || labelOrSelector.startsWith('[') || labelOrSelector.startsWith('.')) {
       input = visible(labelOrSelector) || document.querySelector(labelOrSelector);
+      console.log(`${LOG_PREFIX}    [fillOJCombobox] Sélecteur CSS direct → ${input ? `<${input.tagName}${input.id ? '#' + input.id : ''} value="${input.value}">` : 'null'}`);
     }
     if (!input) {
       const target = norm(labelOrSelector);
       const labels = Array.from(document.querySelectorAll('label, span, div, oj-label')).filter((el) => {
         return norm(el.textContent || '') === target || norm(el.textContent || '').includes(target);
       });
+      console.log(`${LOG_PREFIX}    [fillOJCombobox] ${labels.length} label(s) trouvé(s) pour "${target}"`);
       for (const lbl of labels) {
         const root = lbl.closest('.oj-form-layout, .oj-flex-item, .oj-form, .oj-panel, div') || lbl.parentElement;
         const found = root?.querySelector?.('input[role="combobox"], input[type="text"], [role="combobox"] input');
-        if (found) { input = found; break; }
+        if (found) { input = found; console.log(`${LOG_PREFIX}    [fillOJCombobox] Input trouvé via label : <${input.tagName}${input.id ? '#' + input.id : ''} value="${input.value}">`); break; }
       }
     }
     if (!input) { log(`⚠️ OJ Combobox '${labelOrSelector}' introuvable`, 1); return false; }
@@ -342,22 +391,27 @@
       log(`✅ OJ Combobox '${labelOrSelector}' : '${current}' -> Skip`, 1);
       return true;
     }
-    log(`✏️ OJ Combobox '${labelOrSelector}' : '${current}' -> '${value}'`, 1);
+    log(`✏️ OJ Combobox '${labelOrSelector}' : '${current || '(vide)'}' -> '${value}'`, 1);
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     if (setter) setter.call(input, value);
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(500);
-    // Cliquer sur la première option correspondante
+    // Lister toutes les options du dropdown
     const options = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result, .oj-listview-item'));
+    console.log(`${LOG_PREFIX}    [fillOJCombobox] ${options.length} option(s) dans le dropdown :`);
+    options.slice(0, 25).forEach((o, i) => console.log(`${LOG_PREFIX}       [opt ${i}] "${(o.textContent || '').replace(/\s+/g, ' ').trim()}"`));
+    if (options.length > 25) console.log(`${LOG_PREFIX}       ... et ${options.length - 25} autres`);
     const match = options.find(el => norm(el.textContent || '').includes(norm(value)));
     if (match) {
+      console.log(`${LOG_PREFIX}    [fillOJCombobox] ✅ Match sélectionné : "${(match.textContent || '').trim()}"`);
       for (const type of ['mousedown', 'mouseup', 'click']) {
         match.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
       }
       await sleep(300);
       return true;
     }
+    console.log(`${LOG_PREFIX}    [fillOJCombobox] ⚠️ Aucune option ne contient "${norm(value)}" — fallback Enter`);
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
     await sleep(200);
     return true;
@@ -482,6 +536,8 @@
     }
 
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 1)');
+    console.log(`${LOG_PREFIX}    [Profile S1] email="${profile.auth_email || profile.email}" | linkedin="${profile.linkedin_url}" | cv_storage_path="${profile.cv_storage_path}" | cv_filename="${profile.cv_filename}" | letter_storage_path="${profile.letter_storage_path || profile.lm_storage_path}" | letter_filename="${profile.letter_filename || profile.lm_filename}"`);
+    console.log(`${LOG_PREFIX}    [State S1] attachmentsCleared=${state.attachmentsCleared} | resumeUploadDone=${state.resumeUploadDone} | coverUploadDone=${state.coverUploadDone} | nextSection1=${state.nextSection1}`);
 
     // Email pré-rempli (vérification/correction)
     const emailInput = findBySelectors(['input[type="email"]', 'input#primary-email-0', 'input[name="primary-email"]']);
@@ -547,6 +603,8 @@
     const report = blueprint?.getStructureReport?.('section_2');
     if (report) log(`Blueprint GS section 2: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 2)');
+    console.log(`${LOG_PREFIX}    [Profile S2] experience_level="${profile.experience_level}" | gs_work_auth_type=${JSON.stringify(profile.gs_work_auth_type)} | work_authorization_type=${JSON.stringify(profile.work_authorization_type)} | gender="${profile.gender}" | gs_diversity_consent="${profile.gs_diversity_consent}" | gs_transgender="${profile.gs_transgender}" | gs_sexual_orientation="${profile.gs_sexual_orientation}" | gs_pronouns="${profile.gs_pronouns}" | pronouns="${profile.pronouns}" | gs_disability="${profile.gs_disability}" | gs_race_ethnicity="${profile.gs_race_ethnicity}" | gs_previously_worked="${profile.gs_previously_worked}" | gs_previously_interned="${profile.gs_previously_interned}"`);
+    console.log(`${LOG_PREFIX}    [State S2] workAuthDone=${state.workAuthDone} | nextSection2=${state.nextSection2}`);
 
     // ── Expérience ──────────────────────────────────────────────────────────
     const expMap = {
@@ -772,7 +830,8 @@
 
   async function handleLanguages(profile) {
     const languages = Array.isArray(profile.languages) ? profile.languages : [];
-    if (!languages.length) return;
+    console.log(`${LOG_PREFIX}    [handleLanguages] ${languages.length} langue(s) Firebase : ${JSON.stringify(languages.map(l => ({ name: resolveLangName(l), level: l.level || l.proficiency || l.niveau || '' })))}`);
+    if (!languages.length) { console.log(`${LOG_PREFIX}    [handleLanguages] Aucune langue à traiter, sortie.`); return; }
 
     // ── 1. Supprimer les tiles fantômes ("Unnamed Language" / validation error) ──
     const getLangBlock = () => Array.from(document.querySelectorAll('apply-flow-block'))
@@ -782,7 +841,9 @@
 
     const langBlockNow = getLangBlock();
     if (langBlockNow) {
-      for (const tile of getRootTiles(langBlockNow)) {
+      const existingTiles = getRootTiles(langBlockNow);
+      console.log(`${LOG_PREFIX}    [handleLanguages] ${existingTiles.length} tile(s) existante(s) : ${existingTiles.map(t => `"${t.querySelector('.apply-flow-profile-item-tile__summary-title')?.innerText?.trim() || 'Unnamed'}"`).join(', ')}`);
+      for (const tile of existingTiles) {
         const hasError = !!tile.querySelector('.apply-flow-profile-item-tile__summary-validation');
         const titleText = tile.querySelector('.apply-flow-profile-item-tile__summary-title')?.innerText?.trim() || '';
         if (hasError || /unnamed/i.test(titleText)) {
@@ -837,6 +898,7 @@
     const report = blueprint?.getStructureReport?.('section_3');
     if (report) log(`Blueprint GS section 3: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 3)');
+    console.log(`${LOG_PREFIX}    [Profile S3] first_name="${profile.first_name || profile.firstname}" | last_name="${profile.last_name || profile.lastname}" | languages=${JSON.stringify(profile.languages)} | submitSection3=${state.submitSection3}`);
 
     // ── Langues ─────────────────────────────────────────────────────────────
     await handleLanguages(profile);
@@ -911,7 +973,10 @@
 
       const profile = pending.profile || {};
       const detected = blueprint?.detectPage?.() || { key: 'unknown', label: 'Inconnue' };
-      log(`🚀 Démarrage Goldman Sachs sur ${detected.key} (${location.pathname})`);
+      log(`🚀 Démarrage Goldman Sachs sur ${detected.key} (score=${detected.score}) — ${location.pathname}`);
+      console.log(`${LOG_PREFIX} [run] État guards : ${JSON.stringify(state)}`);
+      console.log(`${LOG_PREFIX} [run] Profile keys disponibles : ${Object.keys(profile).join(', ')}`);
+      console.log(`${LOG_PREFIX} [run] pending.jobId="${pending.jobId}" | jobTitle="${pending.jobTitle}" | tabId=${pending.tabId}`);
       await blueprint?.recordLog?.({ page: detected.key, href: location.href });
 
       // Vérifier succès en premier
