@@ -374,7 +374,7 @@
     }
     if (!input) {
       const target = norm(labelOrSelector);
-      const labels = Array.from(document.querySelectorAll('label, span, div, oj-label')).filter((el) => {
+      const labels = Array.from(document.querySelectorAll('label, oj-label')).filter((el) => {
         return norm(el.textContent || '') === target || norm(el.textContent || '').includes(target);
       });
       console.log(`${LOG_PREFIX}    [fillOJCombobox] ${labels.length} label(s) trouvé(s) pour "${target}"`);
@@ -665,14 +665,14 @@
 
     // Ces questions sont REQUISES même avec "I do not consent" — pas de garde consent
     await auditAndClickPill('Transgenre', 'identify as transgender', profile.gs_transgender || 'I prefer not to say');
-    await auditAndClickPill('Orientation sexuelle', 'sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
+    await auditAndClickPill('Orientation sexuelle', 'please indicate your sexual orientation', profile.gs_sexual_orientation || 'Prefer not to say');
     await auditAndClickPill('Pronoms', 'pronouns', profile.gs_pronouns || profile.pronouns || 'Prefer Not To Say');
 
     await auditAndClickPill('Handicap', 'consider yourself to have a disability', profile.gs_disability || 'Prefer not to say');
 
     // Race / Ethnicité (OJ combobox) — label réel peut être "Race/Ethnicity" (sans espaces)
     if (profile.gs_race_ethnicity) {
-      await fillOJCombobox('race', profile.gs_race_ethnicity);
+      await fillOJCombobox('Race/Ethnicity', profile.gs_race_ethnicity);
       if (profile.gs_race_ethnicity === 'Two or more races') {
         const origins = Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [];
         for (let i = 0; i < origins.length && i < 3; i++) {
@@ -764,10 +764,10 @@
 
     // 1. Combobox "Language"
     const langRow = Array.from(document.querySelectorAll('.input-row')).find(r => {
-      const lbl = r.querySelector('label')?.innerText?.trim();
-      return lbl === 'Language' && isElementVisible(r);
+      const lbl = r.querySelector('label, oj-label')?.innerText?.trim();
+      return (lbl === 'Language' || lbl === 'Langue') && isElementVisible(r);
     });
-    const langCombo = langRow?.querySelector('input[role="combobox"], [role="combobox"] input');
+    const langCombo = langRow?.querySelector('input[role="combobox"], input.oj-inputtext-input, [role="combobox"] input, input[type="text"]');
     if (!langCombo) { log(`⚠️ Langue : combobox "Language" introuvable`, 1); return false; }
 
     if (norm(getValue(langCombo)) !== norm(langName)) {
