@@ -321,30 +321,44 @@
   // ─── Handlers par page ───────────────────────────────────────────────────────
 
   async function handleOfferPage() {
-    // Guard one-shot : le bouton Apply sur higher.gs.com ouvre un nouvel onglet
-    // (target="_blank"). Sans ce guard, le setInterval reclique toutes les 1,5 s
-    // et ouvre des dizaines d'onglets Oracle HCM CX.
     if (state.offerPageClicked) return;
 
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : navigation vers le formulaire...');
-    // L'URL Apply est dans le href de l'anchor <a href="...hdpc.fa.us2.oraclecloud.com/.../apply/email">
-    const applyLink = document.querySelector('a[href*="hdpc.fa.us2.oraclecloud.com"][href*="/apply/email"]');
-    if (applyLink) {
+
+    // Cas 1 : lien <a href="...hdpc.fa.us2.oraclecloud.com/.../apply/email"> directement accessible.
+    // On utilise location.href pour rester dans le MÊME onglet (le lien a target="_blank").
+    const applyLink = document.querySelector('a[href*="hdpc.fa.us2.oraclecloud.com"][href*="/apply/"]')
+      || document.querySelector('a[href*="hdpc.fa.us2.oraclecloud.com"]');
+    if (applyLink?.href) {
       state.offerPageClicked = true;
-      log('🔗 Goldman Sachs → navigation via lien Apply direct');
-      applyLink.click();
+      log('🔗 Goldman Sachs → injection href dans onglet courant : ' + applyLink.href);
+      location.href = applyLink.href;
       return;
     }
-    // Fallback : bouton Apply textuel
+
+    // Cas 2 : bouton Apply GS (JS-driven, ouvre window.open).
+    // On intercepte window.open pour récupérer l'URL et naviguer dans l'onglet courant.
     const applyBtn = Array.from(document.querySelectorAll('a, button')).find(
-      el => /^\s*apply\s*$/i.test(el.textContent || '')
+      el => /^\s*apply\s*$/i.test(el.textContent || '') && isElementVisible(el)
     );
     if (applyBtn) {
       state.offerPageClicked = true;
+      log('🔗 Goldman Sachs → interception window.open via bouton Apply');
+      const origOpen = window.open.bind(window);
+      window.open = function (url, target, features) {
+        window.open = origOpen; // restaurer immédiatement
+        if (url) {
+          log('🔗 Goldman Sachs → window.open intercepté → location.href = ' + url);
+          location.href = url;
+        } else {
+          origOpen(url, target, features);
+        }
+      };
       applyBtn.click();
-      log('🔗 Goldman Sachs → clic sur bouton Apply');
+      // Timeout de sécurité : si window.open n'a pas été appelé en 3 s, restaurer
+      setTimeout(() => { if (window.open !== origOpen) window.open = origOpen; }, 3000);
     } else {
-      log('⚠️ Goldman Sachs → bouton Apply introuvable sur la page offre');
+      log('⚠️ Goldman Sachs → lien/bouton Apply introuvable sur la page offre');
     }
   }
 

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.33",
-  "version_name": "1.2.33-fix-gs-tabs-explosion",
+  "version": "1.2.34",
+  "version_name": "1.2.34-fix-gs-same-tab-navigation",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
