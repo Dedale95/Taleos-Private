@@ -16,6 +16,7 @@
 
   // ── État session (one-shot guards) ──────────────────────────────────────────
   let state = {
+    offerPageClicked:    false,   // one-shot : clic Apply sur higher.gs.com (évite onglets multiples)
     emailSubmitted:      false,
     privacyAgreed:       false,
     nextSection1:        false,
@@ -320,10 +321,16 @@
   // ─── Handlers par page ───────────────────────────────────────────────────────
 
   async function handleOfferPage() {
+    // Guard one-shot : le bouton Apply sur higher.gs.com ouvre un nouvel onglet
+    // (target="_blank"). Sans ce guard, le setInterval reclique toutes les 1,5 s
+    // et ouvre des dizaines d'onglets Oracle HCM CX.
+    if (state.offerPageClicked) return;
+
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : navigation vers le formulaire...');
     // L'URL Apply est dans le href de l'anchor <a href="...hdpc.fa.us2.oraclecloud.com/.../apply/email">
     const applyLink = document.querySelector('a[href*="hdpc.fa.us2.oraclecloud.com"][href*="/apply/email"]');
     if (applyLink) {
+      state.offerPageClicked = true;
       log('🔗 Goldman Sachs → navigation via lien Apply direct');
       applyLink.click();
       return;
@@ -333,6 +340,7 @@
       el => /^\s*apply\s*$/i.test(el.textContent || '')
     );
     if (applyBtn) {
+      state.offerPageClicked = true;
       applyBtn.click();
       log('🔗 Goldman Sachs → clic sur bouton Apply');
     } else {
