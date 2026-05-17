@@ -396,15 +396,32 @@ def read_from_db(db_path, company_name, live_only=True):
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row  # Permet d'accéder aux colonnes par nom
         status_filter = "AND status = 'Live'" if live_only else ""
+
+        # Colonnes souhaitées dans l'export — certains scrapers récents n'ont pas
+        # toutes les colonnes optionnelles (ex: duration, training_specialization).
+        # On utilise PRAGMA table_info pour ne sélectionner que les colonnes existantes
+        # et remplacer les absentes par NULL afin d'éviter les "no such column".
+        WANTED_COLS = [
+            "job_id", "job_title", "contract_type", "publication_date", "location",
+            "job_family", "duration", "management_position", "status",
+            "education_level", "experience_level", "training_specialization",
+            "technical_skills", "behavioral_skills", "tools", "languages",
+            "job_description", "company_name", "company_description", "job_url",
+            "first_seen", "last_updated",
+        ]
+        existing_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        select_parts = [
+            col if col in existing_cols else f"NULL AS {col}"
+            for col in WANTED_COLS
+        ]
+        select_clause = ", ".join(select_parts)
+
         cursor = conn.execute(f"""
-            SELECT 
-                job_id, job_title, contract_type, publication_date, location,
-                job_family, duration, management_position, status,
-                education_level, experience_level, training_specialization,
-                technical_skills, behavioral_skills, tools, languages,
-                job_description, company_name, company_description, job_url,
-                first_seen, last_updated
-            FROM jobs 
+            SELECT {select_clause}
+            FROM jobs
             WHERE is_valid = 1 {status_filter}
             ORDER BY last_updated DESC
         """)
