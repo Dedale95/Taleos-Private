@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Read manifest version
         id: manifest
@@ -23,7 +25,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build test package
+      - name: Build package
         run: |
           mkdir -p build
           cp -R extension build/taleos-extension
@@ -36,4 +38,44 @@ jobs:
           name: taleos-extension-${{ steps.manifest.outputs.version }}
           path: build/taleos-extension-${{ steps.manifest.outputs.version }}.zip
           if-no-files-found: error
+
+      - name: Copy ZIP to HTML/downloads and update version JSON
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.manifest.outputs.version }}"
+          VERSION_NAME="${{ steps.manifest.outputs.version_name }}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          DOWNLOAD_URL="https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-${VERSION}.zip"
+
+          mkdir -p HTML/downloads
+          cp "build/taleos-extension-${VERSION}.zip" "HTML/downloads/taleos-extension-${VERSION}.zip"
+
+          # Garder seulement les 3 derniers ZIPs pour limiter la taille du dépôt
+          cd HTML/downloads
+          ls -t taleos-extension-*.zip 2>/dev/null | tail -n +4 | xargs -r rm --
+          cd ../..
+
+          # Mettre à jour le fichier de version
+          cat > HTML/extension-version.json << EOF
+          {
+            "version": "${VERSION}",
+            "version_name": "${VERSION_NAME}",
+            "published_at": "${DATE}",
+            "release_notes": "Voir le changelog sur le dépôt GitHub.",
+            "download_url": "${DOWNLOAD_URL}"
+          }
+          EOF
+
+      - name: Commit and push version files
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add HTML/extension-version.json HTML/downloads/
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: publish extension v${{ steps.manifest.outputs.version }}"
+            git push
+          fi
 

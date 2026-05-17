@@ -1018,6 +1018,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  if (msg.action === 'reload_extension') {
+    sendResponse({ ok: true });
+    setTimeout(() => { chrome.runtime.reload(); }, 300);
+    return true;
+  }
   if (msg.action === 'taleos_get_current_tab_id') {
     sendResponse({ tabId: sender.tab?.id || null });
     return true;

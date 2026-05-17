@@ -241,13 +241,30 @@
 
   function findQuestionContainer(textNeedle) {
     const target = normPill(textNeedle);
-    // Chercher du nœud le plus précis (fieldset/section) au plus large (div)
-    const selectors = ['fieldset', 'section', '.oj-form-layout', '.oj-panel', '.oj-flex-item', '.oj-flex', 'div'];
-    for (const sel of selectors) {
-      for (const node of document.querySelectorAll(sel)) {
-        const text = normPill(node.textContent || '');
-        if (!text.includes(target)) continue;
-        if (node.querySelector('button, [role="radio"], [role="button"], [aria-pressed]')) return node;
+    const PILL_SEL = 'button.cx-select-pill-section, button[aria-pressed], [role="radio"]';
+
+    // 1. Priorité : .input-row — container exact par question dans Oracle HCM CE
+    //    (ex : "Have you previously interned…" → div.input-row avec 4 pills)
+    for (const row of document.querySelectorAll('.input-row')) {
+      if (!normPill(row.textContent || '').includes(target)) continue;
+      if (row.querySelector(PILL_SEL)) return row;
+    }
+
+    // 2. apply-flow-block dédié — blocs Oracle avec peu de pills (≤6) : gov/regulatory, contact info…
+    for (const block of document.querySelectorAll('apply-flow-block')) {
+      if (!normPill(block.textContent || '').includes(target)) continue;
+      if (!block.querySelector(PILL_SEL)) continue;
+      if (block.querySelectorAll('button.cx-select-pill-section').length <= 6) return block;
+    }
+
+    // 3. Fallback TreeWalker : trouver le nœud texte le plus précis, remonter au premier ancêtre avec pills
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      if (!normPill(walker.currentNode.textContent || '').includes(target)) continue;
+      let el = walker.currentNode.parentElement;
+      while (el && el !== document.body) {
+        if (el.querySelector(PILL_SEL)) return el;
+        el = el.parentElement;
       }
     }
     return null;
@@ -256,10 +273,12 @@
   function isPillSelected(pill) {
     if (pill.getAttribute('aria-checked') === 'true') return true;
     if (pill.getAttribute('aria-pressed') === 'true') return true;
-    if (pill.classList.contains('selected') || pill.classList.contains('oj-selected') || pill.classList.contains('is-selected')) return true;
+    // Classe Oracle HCM CE (cx-select-pill-section--selected) + classes génériques
+    const cls = pill.classList;
+    if (cls.contains('cx-select-pill-section--selected') ||
+        cls.contains('selected') || cls.contains('oj-selected') || cls.contains('is-selected')) return true;
     const style = globalThis.getComputedStyle ? getComputedStyle(pill) : null;
     const bg = style?.backgroundColor || '';
-    // Blanc/transparent = non sélectionné
     const unselected = ['rgba(0, 0, 0, 0)', '', 'transparent', 'rgb(255, 255, 255)'];
     return !unselected.includes(bg);
   }
@@ -452,6 +471,14 @@
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 1 (documents & infos)...');
     const report = blueprint?.getStructureReport?.('section_1');
     if (report) log(`Blueprint GS section 1: ${report.ok ? 'OK' : 'KO'} (${report.matchedSelectors.length} sélecteurs)`);
+
+    // Si la page n'est pas encore prête (0 sélecteurs reconnus), on attend le prochain tick
+    // plutôt que de procéder et cliquer Next sur un formulaire vide.
+    if (!report?.ok) {
+      log('⏳ Section 1 : page pas encore prête — nouveau tick dans 1.5s...');
+      return;
+    }
+
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 1)');
 
     // Email pré-rempli (vérification/correction)
@@ -463,7 +490,9 @@
       'input[aria-label*="LinkedIn" i]',
       'input[placeholder*="linkedin" i]',
       'input[id*="linkedin" i]',
-      'input[name*="linkedin" i]'
+      'input[name*="linkedin" i]',
+      'input[name*="siteLink"]',   // GS: champ nommé siteLink-1, siteLink-2…
+      'input[type="url"]'          // fallback générique
     ]);
     auditAndFill('LinkedIn URL', linkedinInput, profile.linkedin_url || '');
 
@@ -525,12 +554,21 @@
       '> 10 ans':  '3+ years',
     };
     const expValue = expMap[profile.experience_level] || '3+ years';
-    await auditAndClickPill('Années d\'expérience', 'years of relevant experience', expValue);
+    // Needle court pour matcher : "How many years of relevant work experience…"
+    // et aussi "Years of relevant experience" (variations selon le posting)
+    await auditAndClickPill('Années d\'expérience', 'years of relevant', expValue);
 
     // ── Work Authorization ──────────────────────────────────────────────────
     await auditAndClickPill('Work auth pays', 'work authorisation for the countries', 'Yes');
+    // Attendre que la sous-question conditionnelle "which of the following" apparaisse
+    await sleep(800);
 
-    const authTypes = Array.isArray(profile.work_authorization_type) ? profile.work_authorization_type : [];
+    // Priorité : champ GS dédié gs_work_auth_type, sinon work_authorization_type générique
+    // Valeurs attendues par GS : "National" | "Lawful Permanent Resident" |
+    //   "EEA/Swiss National applying to work in an EEA location/Switzerland" |
+    //   "Another Visa or Work / Residence Permit"
+    const rawAuthTypes = profile.gs_work_auth_type || profile.work_authorization_type;
+    const authTypes = Array.isArray(rawAuthTypes) ? rawAuthTypes : (rawAuthTypes ? [rawAuthTypes] : []);
     for (const authType of authTypes) {
       await auditAndClickPill(`Work auth type: ${authType}`, 'which of the following apply to you', authType);
     }
@@ -568,15 +606,35 @@
 
     await auditAndClickPill('Handicap', 'consider yourself to have a disability', profile.gs_disability || 'Prefer not to say');
 
-    // Race / Ethnicité (OJ combobox)
+    // Race / Ethnicité (OJ combobox) — label réel peut être "Race/Ethnicity" (sans espaces)
     if (profile.gs_race_ethnicity) {
-      await fillOJCombobox('race / ethnicity', profile.gs_race_ethnicity);
+      await fillOJCombobox('race', profile.gs_race_ethnicity);
       if (profile.gs_race_ethnicity === 'Two or more races') {
         const origins = Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [];
         for (let i = 0; i < origins.length && i < 3; i++) {
           await fillOJCombobox(`Additional origin ${i + 1}`, origins[i]);
         }
       }
+    }
+
+    // ── Langues (si présentes sur section 2 selon le posting) ─────────────────
+    // Utiliser visible() pour ne pas matcher les boutons cachés (langues sur section/3)
+    const addLangBtnS2 = visible('button') && Array.from(document.querySelectorAll('button'))
+      .find(b => /add language/i.test(b.innerText) && isElementVisible(b));
+    if (addLangBtnS2) {
+      log('🌐 Section 2 : section langues visible détectée, traitement avant Next...');
+      await handleLanguages(profile);
+    }
+
+    // ── E-Signature (si présente sur section 2 selon le posting) ──────────────
+    const sig2Input = findBySelectors([
+      'input[name="fullName"]', 'input[aria-label*="full name" i]',
+      'input[placeholder*="full name" i]', 'input[id*="fullName" i]'
+    ]);
+    if (sig2Input) {
+      const firstName = profile.first_name || profile.firstname || '';
+      const lastName = profile.last_name || profile.lastname || '';
+      auditAndFill('E-Signature (section 2)', sig2Input, `${firstName} ${lastName}`.trim());
     }
 
     // ── Bouton Next — attendre 2 s que Oracle enregistre toutes les sélections ──
@@ -589,6 +647,185 @@
     }
   }
 
+  // ── Langues & Proficiency (partagé section 2 et 3) ───────────────────────────
+  const LANG_MAP = {
+    'Français': 'French', 'Anglais': 'English', 'Espagnol': 'Spanish',
+    'Allemand': 'German', 'Italien': 'Italian', 'Portugais': 'Portuguese',
+    'Mandarin': 'Mandarin', 'Japonais': 'Japanese', 'Arabe': 'Arabic'
+  };
+
+  // GS HCM CE : proficiency via pill buttons (Reading, Writing, Speaking)
+  // Speaking : None / Native / Fluent / Moderate / Conversational
+  // Reading/Writing : Advanced / Intermediate / Basic
+  const GS_SPEAK_MAP = {
+    'Langue maternelle': 'Native',  'Natif': 'Native',   'Native': 'Native',
+    'Bilingue': 'Fluent',           'Courant': 'Fluent',  'Fluent': 'Fluent',
+    'Avancé': 'Moderate',           'Advanced': 'Moderate',
+    'Intermédiaire': 'Conversational', 'Intermediate': 'Conversational',
+    'Débutant': 'Conversational',   'Beginner': 'Conversational'
+  };
+  const GS_RW_MAP = {
+    'Langue maternelle': 'Advanced', 'Natif': 'Advanced',   'Native': 'Advanced',
+    'Bilingue': 'Advanced',          'Courant': 'Advanced',  'Fluent': 'Advanced',
+    'Avancé': 'Intermediate',        'Advanced': 'Intermediate',
+    'Intermédiaire': 'Intermediate', 'Intermediate': 'Intermediate',
+    'Débutant': 'Basic',             'Beginner': 'Basic'
+  };
+
+  /** Clique un pill dans un .input-row dont le label correspond à rowLabel */
+  async function clickLangPill(rowLabel, value) {
+    if (!value) return;
+    const row = Array.from(document.querySelectorAll('.input-row')).find(r => {
+      const lbl = r.querySelector('label')?.innerText?.trim();
+      return lbl === rowLabel && isElementVisible(r);
+    });
+    if (!row) { log(`⚠️ Langue : row "${rowLabel}" introuvable`, 2); return; }
+    const pill = Array.from(row.querySelectorAll('button.cx-select-pill-section'))
+      .find(b => norm(b.innerText) === norm(value) && isElementVisible(b));
+    if (!pill) { log(`⚠️ Langue : pill "${value}" introuvable dans "${rowLabel}"`, 2); return; }
+    if (pill.classList.contains('cx-select-pill-section--selected')) return; // déjà OK
+    for (const t of ['mousedown', 'mouseup', 'click']) {
+      pill.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
+    }
+    await sleep(150);
+    log(`✅ ${rowLabel} : '${value}'`, 2);
+  }
+
+  /**
+   * Remplit le formulaire d'édition langue (combobox Language + pills Reading/Writing/Speaking)
+   * déjà ouvert (après click ADD LANGUAGE ou click Edit sur une tile).
+   */
+  async function fillLangEditForm(langName, level) {
+    await sleep(800); // attendre que le formulaire soit rendu
+
+    // 1. Combobox "Language"
+    const langRow = Array.from(document.querySelectorAll('.input-row')).find(r => {
+      const lbl = r.querySelector('label')?.innerText?.trim();
+      return lbl === 'Language' && isElementVisible(r);
+    });
+    const langCombo = langRow?.querySelector('input[role="combobox"], [role="combobox"] input');
+    if (!langCombo) { log(`⚠️ Langue : combobox "Language" introuvable`, 1); return false; }
+
+    if (norm(getValue(langCombo)) !== norm(langName)) {
+      log(`✏️ Langue : '${getValue(langCombo) || '(vide)'}' -> '${langName}'`, 1);
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(langCombo, langName); else langCombo.value = langName;
+      langCombo.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(700);
+      const opts = Array.from(document.querySelectorAll('[role="option"], li[role="option"]'));
+      const match = opts.find(o => norm(o.textContent || '').includes(norm(langName)));
+      if (match) {
+        for (const t of ['mousedown', 'mouseup', 'click']) {
+          match.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
+        }
+        await sleep(400);
+      } else {
+        log(`⚠️ Langue : option "${langName}" introuvable dans la liste`, 1);
+      }
+    } else {
+      log(`✅ Langue : '${langName}' déjà sélectionnée`, 1);
+    }
+
+    // 2. Proficiency pills (Reading / Writing / Speaking)
+    if (level) {
+      const speakLevel = GS_SPEAK_MAP[level] || 'Conversational';
+      const rwLevel    = GS_RW_MAP[level]    || 'Intermediate';
+      await clickLangPill('Reading', rwLevel);
+      await clickLangPill('Writing', rwLevel);
+      await clickLangPill('Speaking', speakLevel);
+    }
+
+    // 3. SAVE
+    await sleep(300);
+    const saveBtn = Array.from(document.querySelectorAll('button'))
+      .find(b => /^save$/i.test(b.innerText?.trim()) && isElementVisible(b));
+    if (saveBtn) {
+      saveBtn.click();
+      await sleep(600);
+      log(`✅ Langue '${langName}' sauvegardée`, 1);
+      return true;
+    }
+    log(`⚠️ Langue : bouton SAVE introuvable`, 1);
+    return false;
+  }
+
+  /** Résoudre un nom de langue brut (FR ou EN) vers le nom English GS via LANG_MAP */
+  function resolveLangName(lang) {
+    // Champs possibles : lang.language, lang.name, lang.langue
+    const raw = lang.language || lang.name || lang.langue || '';
+    if (!raw) return '';
+    // Recherche exacte dans LANG_MAP
+    if (LANG_MAP[raw]) return LANG_MAP[raw];
+    // Recherche case-insensitive
+    const lc = raw.toLowerCase();
+    const key = Object.keys(LANG_MAP).find(k => k.toLowerCase() === lc);
+    if (key) return LANG_MAP[key];
+    // Déjà en anglais ? Retourner tel quel
+    return raw;
+  }
+
+  async function handleLanguages(profile) {
+    const languages = Array.isArray(profile.languages) ? profile.languages : [];
+    if (!languages.length) return;
+
+    // ── 1. Supprimer les tiles fantômes ("Unnamed Language" / validation error) ──
+    const getLangBlock = () => Array.from(document.querySelectorAll('apply-flow-block'))
+      .find(b => /language skills/i.test(b.innerText || ''));
+    const getRootTiles = (block) => Array.from(block?.querySelectorAll('.apply-flow-profile-item-tile') || [])
+      .filter(t => !t.className.split(' ').some(c => c.includes('__'))); // tiles racine seulement
+
+    const langBlockNow = getLangBlock();
+    if (langBlockNow) {
+      for (const tile of getRootTiles(langBlockNow)) {
+        const hasError = !!tile.querySelector('.apply-flow-profile-item-tile__summary-validation');
+        const titleText = tile.querySelector('.apply-flow-profile-item-tile__summary-title')?.innerText?.trim() || '';
+        if (hasError || /unnamed/i.test(titleText)) {
+          const delBtn = tile.querySelector('[aria-label="Delete"], .apply-flow-profile-item-tile__delete-icon');
+          if (delBtn && isElementVisible(delBtn)) {
+            delBtn.click();
+            await sleep(500);
+            log(`🗑️ Tile fantôme supprimée : "${titleText || 'Unnamed'}"`, 1);
+          }
+        }
+      }
+    }
+
+    // ── 2. Pour chaque langue Firebase : ajouter si absente, mettre à jour la proficiency ──
+    for (const lang of languages) {
+      const langName = resolveLangName(lang);
+      if (!langName) continue;
+      const level = lang.level || lang.proficiency || lang.niveau || '';
+
+      const block = getLangBlock();
+      const tiles = getRootTiles(block);
+      const existingTile = tiles.find(t => {
+        const title = t.querySelector('.apply-flow-profile-item-tile__summary-title')?.innerText?.trim() || '';
+        return norm(title) === norm(langName);
+      });
+
+      if (!existingTile) {
+        // Langue absente → ADD LANGUAGE + formulaire
+        const addBtn = Array.from(document.querySelectorAll('button'))
+          .find(b => /add language/i.test(b.innerText) && isElementVisible(b));
+        if (!addBtn) { log(`⚠️ Langue : bouton "Add Language" introuvable`, 1); continue; }
+        addBtn.click();
+        await fillLangEditForm(langName, level);
+      } else if (level) {
+        // Langue présente → vérifier proficiency via Edit
+        log(`🔍 Langue '${langName}' présente — vérification proficiency...`, 1);
+        const editBtn = existingTile.querySelector('[aria-label="Edit"], .apply-flow-profile-item-tile__edit-item-icon');
+        if (editBtn && isElementVisible(editBtn)) {
+          editBtn.click();
+          await fillLangEditForm(langName, level);
+        } else {
+          log(`✅ Langue présente : ${langName} -> Skip (pas de bouton Edit visible)`, 1);
+        }
+      } else {
+        log(`✅ Langue présente : ${langName} -> Skip`, 1);
+      }
+    }
+  }
+
   async function handleSection3(profile) {
     ensureBanner('⏳ Automatisation Taleos — Goldman Sachs : section 3 (langues & signature)...');
     const report = blueprint?.getStructureReport?.('section_3');
@@ -596,109 +833,7 @@
     log('🧾 Goldman Sachs → audit Firebase vs formulaire (section 3)');
 
     // ── Langues ─────────────────────────────────────────────────────────────
-    const languages = Array.isArray(profile.languages) ? profile.languages : [];
-    const langMap = {
-      'Français': 'French', 'Anglais': 'English', 'Espagnol': 'Spanish',
-      'Allemand': 'German', 'Italien': 'Italian', 'Portugais': 'Portuguese',
-      'Mandarin': 'Mandarin', 'Japonais': 'Japanese', 'Arabe': 'Arabic'
-    };
-    const pageText = norm(document.body?.innerText || '');
-
-    /**
-     * Remplit le combobox langue dans la DERNIÈRE ligne langue visible.
-     * Oracle ajoute une nouvelle ligne au DOM après chaque clic "Add Language".
-     * On cible spécifiquement le dernier input[role="combobox"] dans la section langues
-     * pour éviter de toucher le champ code pays téléphone (qui a aussi value "+33").
-     */
-    async function fillLanguageRow(langName, level) {
-      // Attendre que la nouvelle ligne apparaisse
-      await sleep(700);
-      // Trouver toutes les lignes de langue (chaque ligne contient un combobox langue + éventuellement proficiency)
-      // On cible les inputs combobox qui ne sont PAS dans une zone téléphone
-      const allCombos = Array.from(document.querySelectorAll('input[role="combobox"], [role="combobox"] input'))
-        .filter(inp => {
-          // Exclure les champs dans un container qui contient "phone" ou "country code" ou "+33"
-          const container = inp.closest('tr, .oj-flex-item, .oj-flex, fieldset, section, div') || inp.parentElement;
-          const ctxt = norm(container?.textContent || '');
-          if (ctxt.includes('phone') || ctxt.includes('country code')) return false;
-          // Exclure les champs dont la valeur ressemble à un code téléphone (+XX)
-          const val = String(inp.value || '');
-          if (/^\+\d{1,4}$/.test(val.trim())) return false;
-          return isElementVisible(inp);
-        });
-
-      // Le dernier combobox visible est la nouvelle ligne langue
-      const langCombo = allCombos[allCombos.length - 1] || null;
-      if (!langCombo) {
-        log(`⚠️ Langue : combobox introuvable après "Add Language"`, 1);
-        return false;
-      }
-
-      // Remplir langue
-      const curLang = getValue(langCombo);
-      if (norm(curLang) !== norm(langName)) {
-        log(`✏️ Langue : '${curLang || '(vide)'}' -> '${langName}'`, 1);
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        if (setter) setter.call(langCombo, langName); else langCombo.value = langName;
-        langCombo.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(600);
-        const opts = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result'));
-        const match = opts.find(o => norm(o.textContent || '').includes(norm(langName)));
-        if (match) {
-          for (const t of ['mousedown', 'mouseup', 'click']) {
-            match.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
-          }
-          await sleep(400);
-        }
-      }
-
-      // Remplir niveau si présent — chercher le combobox proficiency DANS la même ligne
-      if (level) {
-        const row = langCombo.closest('tr, .oj-flex, .oj-flex-item, div') || langCombo.parentElement;
-        const profCombo = Array.from((row?.querySelectorAll('input[role="combobox"], [role="combobox"] input') || []))
-          .find(inp => inp !== langCombo && isElementVisible(inp));
-        if (profCombo) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) setter.call(profCombo, level); else profCombo.value = level;
-          profCombo.dispatchEvent(new Event('input', { bubbles: true }));
-          await sleep(500);
-          const opts = Array.from(document.querySelectorAll('[role="option"], li[role="option"], .oj-listbox-result'));
-          const match = opts.find(o => norm(o.textContent || '').includes(norm(level)));
-          if (match) {
-            for (const t of ['mousedown', 'mouseup', 'click']) {
-              match.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
-            }
-            await sleep(300);
-          }
-        } else {
-          log(`⚠️ OJ Combobox 'proficiency' introuvable dans la ligne`, 1);
-        }
-      }
-      return true;
-    }
-
-    const levelMap = {
-      'Natif': 'Native', 'Courant': 'Fluent', 'Avancé': 'Advanced',
-      'Intermédiaire': 'Intermediate', 'Débutant': 'Beginner'
-    };
-
-    for (const lang of languages) {
-      const langName = langMap[lang.language] || lang.language || lang.name || '';
-      if (!langName) continue;
-      if (!pageText.includes(norm(langName))) {
-        const addBtn = findButtonByText('Add Language') || findButtonByText('ADD LANGUAGE');
-        if (addBtn) {
-          addBtn.click();
-          const level = levelMap[lang.level] || levelMap[lang.proficiency] || lang.level || lang.proficiency || '';
-          const ok = await fillLanguageRow(langName, level);
-          if (ok) log(`✅ Langue ajoutée : ${langName}`, 1);
-        } else {
-          log(`⚠️ Langue : bouton "Add Language" introuvable`, 1);
-        }
-      } else {
-        log(`✅ Langue présente : ${langName} -> Skip`, 1);
-      }
-    }
+    await handleLanguages(profile);
 
     // ── E-Signature Full Name ────────────────────────────────────────────────
     // Utilise first_name/last_name (snake_case Firebase) avec fallback legacy

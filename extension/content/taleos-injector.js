@@ -813,6 +813,11 @@
     });
   });
 
+  // Permet à la page extension-download.html de déclencher un rechargement de l'extension
+  window.addEventListener('taleos-request-extension-reload', function () {
+    chrome.runtime.sendMessage({ action: 'reload_extension' }).catch(function () { });
+  });
+
   window.addEventListener('taleos-request-outlook-unlink', function () {
     chrome.runtime.sendMessage({ action: 'outlook_unlink' }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-unlink-result', {
