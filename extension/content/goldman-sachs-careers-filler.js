@@ -849,11 +849,18 @@
     ]);
     auditAndFill('E-Signature (Full Name)', signatureInput, fullName);
 
-    // ── Submit ───────────────────────────────────────────────────────────────
+    // ── Countdown 60 s avant Submit ──────────────────────────────────────────
     await sleep(500);
     const submitBtn = findButtonByText('Submit') || findButtonByText('SUBMIT');
     if (submitBtn && !state.submitSection3) {
       state.submitSection3 = true;
+      const DELAY = 60;
+      log(`⏱️ Goldman Sachs : soumission dans ${DELAY} secondes — vérifiez le formulaire.`);
+      for (let i = DELAY; i > 0; i--) {
+        ensureBanner(`🕐 Soumission Goldman Sachs dans ${i} seconde${i > 1 ? 's' : ''}… Vérifiez le formulaire avant envoi.`);
+        await sleep(1000);
+      }
+      ensureBanner('🚀 Soumission Goldman Sachs en cours…');
       submitBtn.click();
       log('🚀 Goldman Sachs : clic final sur Submit');
     }
