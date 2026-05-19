@@ -385,18 +385,22 @@ async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
     run.completedAt = finishedAt;
     run.durationSeconds = computeDurationSeconds(run.startedAt, finishedAt);
     run.lastSignal = terminal;
-    if (terminal === 'success') {
+    if (terminal === ‘success’) {
       run.successAt = finishedAt;
       if (details.successType) run.successType = sanitizeRunText(details.successType, 80);
       if (details.successMessage) run.successMessage = sanitizeRunText(details.successMessage, 500);
-    } else if (terminal === 'aborted') {
+    } else if (terminal === ‘already_applied’) {
+      run.successAt = finishedAt;
+      run.successType = sanitizeRunText(details.successType || ‘already_applied’, 80);
+      run.successMessage = sanitizeRunText(details.successMessage || ‘Candidature déjà soumise pour cette offre’, 500);
+    } else if (terminal === ‘aborted’) {
       run.abortedAt = finishedAt;
-      run.failureType = sanitizeRunText(details.failureType || 'user_closed_tab', 80);
-      run.failureMessage = sanitizeRunText(details.failureMessage || 'L’utilisateur a fermé l’onglet avant la fin de la candidature.', 500);
+      run.failureType = sanitizeRunText(details.failureType || ‘user_closed_tab’, 80);
+      run.failureMessage = sanitizeRunText(details.failureMessage || ‘L’utilisateur a fermé l’onglet avant la fin de la candidature.’, 500);
     } else {
       run.failedAt = finishedAt;
-      run.failureType = sanitizeRunText(details.failureType || 'failure', 80);
-      run.failureMessage = sanitizeRunText(details.failureMessage || '', 500);
+      run.failureType = sanitizeRunText(details.failureType || ‘failure’, 80);
+      run.failureMessage = sanitizeRunText(details.failureMessage || ‘’, 500);
     }
   }
 
