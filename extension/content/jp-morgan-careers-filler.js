@@ -1051,16 +1051,11 @@
         candidateTextareas.find((el) => parseInt(el.style?.height || '0', 10) > 0) ||
         candidateTextareas[0] || null;
 
-      // Diagnostic pour tracer l'élément trouvé
-      if (immigrationTextarea) {
-        log(`   Immigration support : ${candidateTextareas.length} textarea(s) trouvé(s), offsetHeight=${immigrationTextarea.offsetHeight}, valeur='${String(immigrationTextarea.value || '').slice(0, 20) || '(vide)'}'`, 1);
-      }
-
       // Attendre que le textarea visible soit présent dans le DOM
       const isVisible = immigrationTextarea && immigrationTextarea.offsetHeight > 0;
 
       if (!immigrationTextarea || !isVisible) {
-        log(`⏳ Immigration support : textarea visible pas encore prêt (${candidateTextareas.length} trouvé(s), offsetHeight=${immigrationTextarea?.offsetHeight ?? 'N/A'}) — attente`, 1);
+        log(`⏳ Immigration support : textarea visible pas encore prêt (${candidateTextareas.length} candidat(s)) — attente`, 1);
         immigrationSupportReady = false;
       } else {
         const desiredText = profile.jp_morgan_immigration_support ||
