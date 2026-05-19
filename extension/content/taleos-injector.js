@@ -540,24 +540,35 @@
     btn.dataset.taleosProcessing = '1';
     btn.setAttribute('data-taleos-processing', '1');
 
-    // Ping rapide : uniquement pour réveiller le service worker si besoin, mais on ne bloque plus l'automatisation sur un timeout
-    try {
-      await Promise.race([
-        chrome.runtime.sendMessage({ action: 'ping' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('ping_timeout')), 1500))
-      ]);
-    } catch (e) {
-      console.warn('[Taleos] Ping extension en échec ou timeout:', e?.message || e);
-      if (isContextInvalidated(e) || isReceivingEndMissing(e)) {
-        reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
-        return;
+    // Ping pour réveiller le service worker MV3 (peut être endormi après ~30s d'inactivité)
+    let extensionAlive = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await Promise.race([
+          chrome.runtime.sendMessage({ action: 'ping' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('ping_timeout')), 2000))
+        ]);
+        extensionAlive = true;
+        break;
+      } catch (e) {
+        console.warn('[Taleos] Ping extension en échec ou timeout:', e?.message || e, `(tentative ${attempt + 1}/3)`);
+        if (isContextInvalidated(e) || isReceivingEndMissing(e)) {
+          reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
+          return;
+        }
+        if (attempt < 2) await new Promise(r => setTimeout(r, 800));
       }
-      // Sinon on tente quand même la suite.
+    }
+
+    if (!extensionAlive) {
+      clearProcessing(jobId, true);
+      showApplyRetryToast('⚠️ L\'extension Taleos ne répond pas. Rechargez la page (F5) ou vérifiez qu\'elle est bien activée dans Chrome.');
+      return;
     }
 
     try {
       const checkPromise = chrome.runtime.sendMessage({ action: 'taleos_check_profile_complete', bankId });
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
       const checkRes = await Promise.race([checkPromise, timeoutPromise]);
       if (!checkRes || checkRes.complete !== true) {
         delete btn.dataset.taleosProcessing;
@@ -567,13 +578,13 @@
       }
     } catch (err) {
       console.warn('[Taleos] Vérification profil:', err);
-      delete btn.dataset.taleosProcessing;
-      btn.removeAttribute('data-taleos-processing');
+      clearProcessing(jobId, true);
       if (isContextInvalidated(err) || isReceivingEndMissing(err)) {
         reloadPageAndResumeApply({ jobId, jobTitle, bankId, jobUrl });
         return;
       }
-      showProfileIncompletePopup([], bankId);
+      // Timeout sur la vérification profil ≠ profil incomplet
+      showApplyRetryToast('⚠️ L\'extension Taleos ne répond pas. Rechargez la page (F5) et réessayez.');
       return;
     }
 
