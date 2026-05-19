@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.73",
-  "version_name": "1.2.73-jpmorgan-immigration-ko-inject",
+  "version": "1.2.74",
+  "version_name": "1.2.74-jpmorgan-immigration-bg-main-world",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

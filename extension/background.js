@@ -1082,6 +1082,63 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ tabId: sender.tab?.id || null });
     return true;
   }
+  // Remplit un textarea Knockout depuis le monde principal de la page.
+  // Nécessaire car :
+  //   1. Les content scripts tournent dans un monde isolé (pas d'accès à window.ko).
+  //   2. L'injection <script> inline est bloquée par le CSP d'Oracle HCM.
+  //   3. chrome.scripting.executeScript + world:'MAIN' est la seule voie légale.
+  if (msg.action === 'taleos_fill_knockout_textarea') {
+    const tabId = sender.tab?.id;
+    if (!tabId) { sendResponse({ ok: false, error: 'no tabId' }); return true; }
+    const { fillId, text } = msg;
+    chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      world: 'MAIN',
+      func: (fillId, text) => {
+        try {
+          const el = document.querySelector(`[data-taleos-fill-id="${fillId}"]`);
+          if (!el) { console.warn('[Taleos KO fill] élément introuvable, fillId=', fillId); return; }
+          el.removeAttribute('data-taleos-fill-id');
+
+          let filled = false;
+          // ── Tentative Knockout ─────────────────────────────────────────────
+          if (window.ko) {
+            const dataBind = el.getAttribute('data-bind') || '';
+            const m = dataBind.match(/textInput\s*:\s*([\w$.]+)/);
+            if (m) {
+              const vm = ko.dataFor(el);
+              if (vm) {
+                const parts = m[1].split('.');
+                let obs = vm;
+                for (const p of parts) obs = obs?.[p];
+                if (obs && ko.isObservable(obs)) {
+                  obs(text);
+                  filled = true;
+                  console.log('[Taleos KO fill] ✅ observable mis à jour :', m[1], '→', text.slice(0, 30));
+                }
+              }
+            }
+          }
+          // ── Fallback native setter ─────────────────────────────────────────
+          if (!filled) {
+            const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+            if (desc?.set) desc.set.call(el, text);
+            else el.value = text;
+            console.log('[Taleos KO fill] fallback native setter, ko=', typeof window.ko);
+          }
+          // ── Événements ────────────────────────────────────────────────────
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', bubbles: true }));
+        } catch (e) {
+          console.error('[Taleos KO fill] erreur', e);
+        }
+      },
+      args: [fillId, text]
+    }).then(() => sendResponse({ ok: true }))
+      .catch((e) => { console.error('[Taleos BG] fill_knockout_textarea:', e); sendResponse({ ok: false, error: e.message }); });
+    return true; // réponse asynchrone
+  }
   if (msg.action === 'ca_offer_page_ready') {
     const tabId = sender.tab?.id;
     if (!tabId) return;

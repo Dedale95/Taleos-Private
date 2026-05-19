@@ -146,82 +146,33 @@
   /**
    * Remplit un <textarea> géré par Knockout dans Oracle HCM.
    *
-   * Les scripts de contenu s'exécutent dans un monde isolé : ils n'ont pas accès
-   * à `window.ko`. Pour mettre à jour l'observable Knockout qui pilote le champ,
-   * on injecte un <script> dans le monde principal de la page via le DOM.
-   * Le script :
-   *   1. Lit l'attribut data-bind="textInput: xxx" pour trouver le nom de l'observable.
-   *   2. Appelle ko.dataFor(el) pour obtenir le ViewModel.
-   *   3. Applique vm.xxx(text) pour mettre à jour l'observable (source de vérité).
-   *   4. Déclenche 'input' + 'change' pour notifier les autres listeners.
-   *   5. Fallback : native setter + InputEvent si ko n'est pas trouvable.
+   * Problème : les content scripts tournent dans un monde isolé (pas d'accès à window.ko)
+   * et Oracle HCM a un CSP strict qui bloque les <script> inline (unsafe-inline interdit).
+   * Solution : envoyer un message au background, qui utilise chrome.scripting.executeScript
+   * avec world:'MAIN' pour accéder à ko.dataFor() sans déclencher le CSP.
    *
-   * @param {HTMLTextAreaElement} textarea  L'élément à remplir (dans le DOM courant).
+   * @param {HTMLTextAreaElement} textarea  L'élément à remplir.
    * @param {string}              text      Le texte désiré.
    */
-  function fillKnockoutTextarea(textarea, text) {
-    const ATTR = 'data-taleos-ko-fill';
-    textarea.setAttribute(ATTR, '1');
-    const safeText = JSON.stringify(text);
-
-    const script = document.createElement('script');
-    /* eslint-disable no-useless-escape */
-    script.textContent = `(function(){
-  try {
-    var el = document.querySelector('[${ATTR}]');
-    if (!el) return;
-    el.removeAttribute('${ATTR}');
-    var text = ${safeText};
-
-    var filled = false;
-
-    // ── Tentative Knockout ──────────────────────────────────────────────────
-    if (window.ko) {
-      try {
-        // Lire data-bind="textInput: xxx" pour trouver le nom de l'observable.
-        var dataBind = el.getAttribute('data-bind') || '';
-        var m = dataBind.match(/textInput\\s*:\\s*([\\w$.]+)/);
-        if (m) {
-          var vm = ko.dataFor(el);
-          if (vm) {
-            // Supporte les chemins pointés : "a.b.c"
-            var parts = m[1].split('.');
-            var obs = vm;
-            for (var i = 0; i < parts.length; i++) obs = obs && obs[parts[i]];
-            if (obs && ko.isObservable(obs)) {
-              obs(text);
-              filled = true;
-              console.log('[Taleos KO fill] observable mis à jour via', m[1]);
-            }
-          }
-        }
-      } catch(e) {
-        console.warn('[Taleos KO fill] erreur Knockout', e);
+  async function fillKnockoutTextarea(textarea, text) {
+    const ATTR = 'data-taleos-fill-id';
+    const fillId = 'taleos_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    textarea.setAttribute(ATTR, fillId);
+    try {
+      const res = await chrome.runtime.sendMessage({
+        action: 'taleos_fill_knockout_textarea',
+        fillId,
+        text
+      });
+      if (!res?.ok) {
+        console.warn('[Taleos KO fill] background a retourné une erreur:', res?.error);
       }
+    } catch (e) {
+      console.warn('[Taleos KO fill] sendMessage échoué:', e);
+    } finally {
+      // Nettoyer l'attribut si le background n'a pas pu le faire
+      textarea.removeAttribute(ATTR);
     }
-
-    // ── Fallback : native setter ────────────────────────────────────────────
-    if (!filled) {
-      var desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
-      var setter = desc && desc.set;
-      if (setter) setter.call(el, text);
-      else el.value = text;
-      console.log('[Taleos KO fill] fallback native setter (ko=' + (typeof ko) + ')');
-    }
-
-    // ── Événements pour notifier Knockout + autres listeners ───────────────
-    el.dispatchEvent(new InputEvent('input', {
-      bubbles: true, cancelable: true, inputType: 'insertText', data: text
-    }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', bubbles: true }));
-  } catch(e) {
-    console.error('[Taleos KO fill] erreur générale', e);
-  }
-})();`;
-    /* eslint-enable no-useless-escape */
-    (document.head || document.documentElement).appendChild(script);
-    script.remove();
   }
 
   function setInputValue(el, value) {
