@@ -88,6 +88,8 @@
   function setInputValue(el, value) {
     if (!el) return false;
     const str = value != null ? String(value) : '';
+    // focus → valeur → input/change → blur : déclenche la validation jQuery/Parsley/native
+    el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
     el.focus?.();
     try {
       const desc = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value');
@@ -98,6 +100,7 @@
     }
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
     el.blur?.();
     return true;
   }
@@ -112,9 +115,13 @@
 
   function setSelectValue(el, value) {
     if (!el) return false;
+    el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+    el.focus?.();
     el.value = String(value || '');
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    el.blur?.();
     return true;
   }
 
@@ -410,52 +417,58 @@
     }
   }
 
+  /**
+   * Gère le wizard BPIFrance en 2 étapes :
+   *   1. Upload CV → la page auto-avance vers étape 2 après le change event
+   *      (ou on clique Suivant si elle n'avance pas seule)
+   *   2. Remplissage informations personnelles
+   * Retourne true si le formulaire est prêt pour submitApplication, false sinon.
+   */
   async function fillApplicationForm(profile) {
-    // ── Détection de l'étape active ──────────────────────────────────────
-    // NB : #massivefileupload est un <input type="file"> toujours caché (opacity/width=0)
-    // → on détecte l'étape par présence DOM, pas par visibilité.
-    const cvInput   = document.getElementById('massivefileupload');
+    const cvInput     = document.getElementById('massivefileupload');
     const firstNameEl = document.getElementById('firstName');
-    // Étape 2 : le champ #firstName est présent ET visible
     const onStep2 = !!(firstNameEl && isElementVisible(firstNameEl));
-    // Étape 1 : le file input est dans le DOM ET on n'est pas encore sur l'étape 2
     const onStep1 = !!cvInput && !onStep2;
 
+    // ── Reprise directe sur étape 2 (SW redémarré entre les étapes) ──
     if (onStep2) {
-      // Service worker redémarré après l'étape 1 → reprendre directement sur step 2
       log('🔄 Bpifrance → reprise sur étape 2 (informations personnelles)');
       await fillStep2Fields(profile);
-      return;
+      return true;
     }
 
-    if (onStep1) {
-      log('📋 Bpifrance → étape 1 (Upload CV)');
-      const uploaded = await uploadCv(profile);
-      if (!uploaded) return; // uploadCv a déjà appelé submitFailure
-
-      // Clic sur "Suivant" pour passer à l'étape 2
-      const clicked = await clickWizardNext();
-      if (!clicked) {
-        await submitFailure(profile, "Impossible de passer à l'étape 2 du wizard Bpifrance (bouton Suivant introuvable)");
-        return;
-      }
-
-      // Attendre que l'étape 2 soit rendue
-      log('⏳ Bpifrance → attente chargement étape 2…');
-      const step2Ready = await waitForStep2(15000);
-      if (!step2Ready) {
-        await submitFailure(profile, "Timeout : étape 2 Bpifrance non chargée après upload CV");
-        return;
-      }
-      log('✅ Bpifrance → étape 2 chargée');
-    } else {
+    // ── Étape 1 : Upload CV ──────────────────────────────────────────
+    if (!onStep1) {
       log("⚠️ Bpifrance → ni #massivefileupload ni #firstName détectés — page inattendue");
       await submitFailure(profile, "Wizard Bpifrance : aucune étape reconnue sur cette page");
-      return;
+      return false;
     }
 
-    // ── Étape 2 : Informations personnelles ────────────────────────────
+    log('📋 Bpifrance → étape 1 (Upload CV)');
+    const uploaded = await uploadCv(profile);
+    if (!uploaded) return false; // uploadCv a déjà appelé submitFailure
+
+    // Après l'upload, la page peut auto-avancer vers l'étape 2 (via le change event).
+    // On attend d'abord ~2s pour voir si c'est le cas.
+    log('⏳ Bpifrance → attente auto-avancement vers étape 2…');
+    const autoAdvanced = await waitForStep2(3000);
+
+    if (!autoAdvanced) {
+      // La page n'a pas auto-avancé → on clique manuellement sur Suivant
+      log('   → pas d\'auto-avancement, clic manuel sur Suivant');
+      await clickWizardNext();
+      const step2Ready = await waitForStep2(12000);
+      if (!step2Ready) {
+        await submitFailure(profile, "Timeout : étape 2 Bpifrance non chargée après upload CV");
+        return false;
+      }
+    }
+
+    log('✅ Bpifrance → étape 2 chargée');
+
+    // ── Étape 2 : Informations personnelles ────────────────────────
     await fillStep2Fields(profile);
+    return true;
   }
 
   function getApplyResponse() {
@@ -686,7 +699,8 @@
 
     if (detected.key === 'apply_wizard' || detected.key === 'account_exists_error') {
       await validatePage(['apply_wizard', 'account_exists_error'], profile, 'wizard candidature');
-      await fillApplicationForm(profile);
+      const filled = await fillApplicationForm(profile);
+      if (!filled) return; // fillApplicationForm a déjà appelé submitFailure
       await submitApplication(profile);
       return;
     }

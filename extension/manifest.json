@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.57",
-  "version_name": "1.2.57-fix-bpifrance-step1-detection",
+  "version": "1.2.58",
+  "version_name": "1.2.58-fix-bpifrance-wizard-flow",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
