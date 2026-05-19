@@ -315,7 +315,12 @@
 
     if (!isSgScreeningQuestionsVisible()) return false;
     const startTaPresent = !!findSgStartDateTextarea();
-    if (!eu && !noticeRaw && !startTaPresent) return false;
+    // Vérifier si la question télétravail/internet est présente (réponse fixe : toujours Oui)
+    const hasTeletravailQ = Array.from(document.querySelectorAll('body, iframe')).some((el) => {
+      const doc = el.contentDocument || el.ownerDocument || document;
+      return /t[eé]l[eé]travail.*couverture|couverture internet|domicile.*zone.*internet/i.test(doc.body?.innerText || '');
+    });
+    if (!eu && !noticeRaw && !startTaPresent && !hasTeletravailQ) return false;
 
     let filledEu = false;
     let filledCountryAuth = false;
@@ -398,6 +403,18 @@
                 if (clickRadioMatchingLabel(r, wantAccommodationYes)) {
                   log(`   ✅ Aménagement handicap : ${wantAccommodationYes ? 'Oui' : 'Non'} (profil)`);
                   filledAccommodation = true;
+                  break;
+                }
+              }
+              continue;
+            }
+
+            // Q : Télétravail — couverture internet opérationnelle au domicile
+            // Toujours répondre Oui (répondre Non bloque la candidature).
+            if (/t[eé]l[eé]travail.*couverture|couverture internet|domicile.*zone.*internet|internet.*op[eé]rationnel/i.test(st)) {
+              for (const r of group) {
+                if (clickRadioMatchingLabel(r, true)) {
+                  log(`   ✅ Télétravail couverture internet : Oui (toujours)`);
                   break;
                 }
               }
