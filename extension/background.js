@@ -161,6 +161,40 @@ function injectBankFiles(bankId, mainFiles) {
   return injectFilesWithBanner(arr);
 }
 
+function pendingKeyForBank(bankId) {
+  const bid = String(bankId || '').toLowerCase();
+  if (bid === 'societe_generale') return 'taleos_pending_sg';
+  if (bid === 'credit_agricole') return 'taleos_pending_offer';
+  if (bid === 'deloitte') return 'taleos_pending_deloitte';
+  if (bid === 'bpce') return 'taleos_pending_bpce';
+  if (bid === 'bnp_paribas') return 'taleos_pending_bnp';
+  if (bid === 'credit_mutuel') return 'taleos_pending_credit_mutuel';
+  if (bid === 'jp_morgan') return 'taleos_pending_jp_morgan';
+  if (bid === 'goldman_sachs') return 'taleos_pending_goldman_sachs';
+  if (bid === 'axa') return 'taleos_pending_axa';
+  return null;
+}
+
+async function dequeueAndStartNext(bankId) {
+  const bid = String(bankId || '').toLowerCase();
+  const queueKey = `taleos_queue_${bid}`;
+  const stored = await chrome.storage.local.get(queueKey);
+  const queue = stored[queueKey] || [];
+  if (queue.length === 0) return;
+  const next = queue.shift();
+  // Ignorer les entrées trop anciennes (> 30 min)
+  if (Date.now() - (next.timestamp || 0) > 30 * 60 * 1000) {
+    await chrome.storage.local.set({ [queueKey]: queue });
+    await dequeueAndStartNext(bankId); // essayer le suivant
+    return;
+  }
+  await chrome.storage.local.set({ [queueKey]: queue });
+  // Petit délai pour s'assurer que le state précédent est bien effacé
+  await new Promise(r => setTimeout(r, 600));
+  await handleApply(next.offerUrl, next.bankId, next.jobId, next.jobTitle, next.companyName, next.taleosTabId, next.offerMeta || null)
+    .catch(e => console.error('[Taleos] Queue dequeue error:', e));
+}
+
 async function clearPendingStateForBank(bankId, tabId) {
   const bid = String(bankId || '').toLowerCase();
   const keys = [];
@@ -178,6 +212,8 @@ async function clearPendingStateForBank(bankId, tabId) {
   }
   if (tabId && bid === 'societe_generale') sgLastInject.delete(tabId);
   if (tabId && bid === 'credit_agricole') caLastInject.delete(tabId);
+  // Lancer la prochaine candidature en attente pour cette banque
+  dequeueAndStartNext(bid).catch(() => {});
 }
 
 let authSyncResolve = null;
@@ -2534,6 +2570,22 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   }
 
   const routeAs = computeLegacyRouteAs(bankId, offerUrl);
+
+  // ── File d'attente : si une candidature est déjà active pour cette banque, mettre en queue ──
+  const _pendingKey = pendingKeyForBank(bankId);
+  if (_pendingKey) {
+    const _existing = await chrome.storage.local.get(_pendingKey);
+    if (_existing[_pendingKey]) {
+      const _queueKey = `taleos_queue_${String(bankId).toLowerCase()}`;
+      const _stored = await chrome.storage.local.get(_queueKey);
+      const _queue = _stored[_queueKey] || [];
+      _queue.push({ offerUrl, bankId, jobId, jobTitle, companyName, offerMeta, taleosTabId, timestamp: Date.now() });
+      await chrome.storage.local.set({ [_queueKey]: _queue });
+      console.log(`[Taleos] Queue ${bankId} : ${_queue.length} en attente`);
+      return { queued: true, position: _queue.length };
+    }
+  }
+
   const normalizedBankKey = normalizeSite(bankId, offerUrl);
   const scriptKey = Object.prototype.hasOwnProperty.call(BANK_SCRIPT_MAP, normalizedBankKey)
     ? normalizedBankKey

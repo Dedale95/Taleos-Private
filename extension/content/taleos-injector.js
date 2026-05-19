@@ -626,6 +626,13 @@
         await new Promise(r => setTimeout(r, 2000));
         response = await tryApply();
       }
+      if (response?.queued) {
+        // Candidature mise en file d'attente — la banque est occupée
+        clearProcessing(jobId, true);
+        const pos = response.position || '?';
+        showApplyRetryToast(`⏳ ${companyName || 'Banque'} occupée — candidature mise en file (position ${pos}). Elle démarrera automatiquement.`);
+        return;
+      }
       if (response?.error) {
         console.warn('[Taleos] handleApply:', response.error);
         if (isProfileIncompleteApplyError(response.error)) {

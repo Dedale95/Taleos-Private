@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.51",
-  "version_name": "1.2.51-fix-already-applied-status",
+  "version": "1.2.52",
+  "version_name": "1.2.52-apply-queue",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
