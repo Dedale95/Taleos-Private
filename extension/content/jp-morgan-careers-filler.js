@@ -951,23 +951,49 @@
    * Oracle peut rendre le formulaire inline OU en modal selon la version/contexte.
    */
   function findOpenEduForm() {
-    // Sélecteurs par ordre de priorité
-    return (
+    // 1. Sélecteurs directs Oracle HCM (classes observées)
+    const direct =
       document.querySelector('.profile-item-content--form') ||
       document.querySelector('[class*="profile-item-content"][class*="form"]') ||
       document.querySelector('[class*="apply-flow-profile-item"][class*="form"]') ||
-      // Si save-btn est visible, remonter au conteneur parent
-      (() => {
-        const saveBtn = document.querySelector('button.save-btn');
-        if (!saveBtn || !isElementVisible(saveBtn)) return null;
-        return (
-          saveBtn.closest('[class*="profile-item-content"]') ||
-          saveBtn.closest('[class*="education"]') ||
-          saveBtn.closest('[role="dialog"]') ||
-          saveBtn.parentElement
-        );
-      })()
-    );
+      document.querySelector('[class*="profile-item"][class*="edit"]') ||
+      document.querySelector('[class*="profile-item"][class*="open"]') ||
+      document.querySelector('[class*="education"][class*="form"]') ||
+      document.querySelector('[class*="edu"][class*="inline"]');
+    if (direct) return direct;
+
+    // 2. Degree input visible → on remonte au formulaire
+    const degreeInput =
+      document.querySelector('input[name="contentItemId"]') ||
+      document.querySelector('input.cx-select-input--disabled');
+    if (degreeInput && isElementVisible(degreeInput)) {
+      return (
+        degreeInput.closest('[class*="profile-item-content"]') ||
+        degreeInput.closest('[class*="profile-item"]') ||
+        degreeInput.closest('[role="dialog"]') ||
+        degreeInput.closest('form') ||
+        degreeInput.parentElement
+      );
+    }
+
+    // 3. Bouton Save visible → remonter
+    const saveBtn =
+      document.querySelector('button.save-btn') ||
+      Array.from(document.querySelectorAll('button')).find(b => /^save$/i.test((b.textContent || '').trim()) && isElementVisible(b));
+    if (saveBtn && isElementVisible(saveBtn)) {
+      return (
+        saveBtn.closest('[class*="profile-item-content"]') ||
+        saveBtn.closest('[class*="education"]') ||
+        saveBtn.closest('[role="dialog"]') ||
+        saveBtn.parentElement
+      );
+    }
+
+    // 4. Dialog Oracle ouvert
+    const dialog = document.querySelector('[role="dialog"]:not([aria-hidden="true"])');
+    if (dialog && isElementVisible(dialog)) return dialog;
+
+    return null;
   }
 
   /**
@@ -1004,7 +1030,29 @@
       formEl = findOpenEduForm();
     }
     if (!formEl) {
-      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 12 s', 1);
+      // Diagnostic : logguer ce qui existe vraiment dans le DOM pour identifier les bons sélecteurs
+      const diagSelectors = [
+        '.profile-item-content--form',
+        '[class*="profile-item-content"][class*="form"]',
+        '[class*="apply-flow-profile-item"][class*="form"]',
+        'button.save-btn',
+        '[role="dialog"]',
+        'input[name="contentItemId"]',
+        'input[name="schoolName"]',
+        '[class*="education"][class*="form"]',
+        '[class*="edu"][class*="form"]',
+        '[class*="profile-item"][class*="edit"]',
+        '[class*="profile-item"][class*="open"]',
+        '[data-education]',
+        'form[id*="edu"]',
+      ];
+      const found = diagSelectors.filter(s => { try { return !!document.querySelector(s); } catch(_) { return false; } });
+      log(`⚠️ JP Morgan : formulaire inline éducation non apparu après 12 s. Présents dans DOM : [${found.join(', ') || 'AUCUN'}]`, 1);
+      // Logguer aussi les classes des éléments visibles contenant "save" ou "education"
+      const saveBtn = Array.from(document.querySelectorAll('button')).find(b => /save|enregistr/i.test(b.textContent || b.getAttribute('aria-label') || ''));
+      if (saveBtn) log(`   → bouton Save trouvé : class="${saveBtn.className}" parent="${saveBtn.parentElement?.className?.slice(0,80)}"`, 1);
+      const inputEdu = document.querySelector('input[placeholder*="school" i], input[placeholder*="établissement" i], input[id*="school" i], input[name*="school" i]');
+      if (inputEdu) log(`   → input école trouvé : id="${inputEdu.id}" name="${inputEdu.name}" class="${inputEdu.className?.slice(0,60)}"`, 1);
       return false;
     }
     log(`📋 fillEducationInlineForm formEl="${formEl.className.slice(0, 60)}" degree='${degree}' school='${school}' month='${gradMonth}' year='${gradYear}'`, 1);
