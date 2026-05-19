@@ -997,14 +997,14 @@
   }
 
   async function fillEducationInlineForm(degree, school, gradMonth, gradYear, country, areaOfStudy) {
-    // Attendre que le formulaire soit rendu (Oracle HCM peut prendre >1 s après ADD/EDIT)
+    // Attendre que le formulaire soit rendu (Oracle HCM peut prendre >2 s après ADD/EDIT)
     let formEl = null;
-    for (let attempt = 0; attempt < 15 && !formEl; attempt++) {
+    for (let attempt = 0; attempt < 30 && !formEl; attempt++) {
       await sleep(400);
       formEl = findOpenEduForm();
     }
     if (!formEl) {
-      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 6 s', 1);
+      log('⚠️ JP Morgan : formulaire inline éducation non apparu après 12 s', 1);
       return false;
     }
     log(`📋 fillEducationInlineForm formEl="${formEl.className.slice(0, 60)}" degree='${degree}' school='${school}' month='${gradMonth}' year='${gradYear}'`, 1);
@@ -1266,8 +1266,10 @@
                 log(`✏️ JP Morgan section 3 : tile Taleos incomplète (diplôme="${tileTitle || '(vide)'}", attendu="${degreeValue}") → correction via Edit`, 1);
                 const editBtn = tile.querySelector('button[aria-label="Edit"]');
                 if (editBtn) {
-                  editBtn.click();
-                  await sleep(900);
+                  for (const evType of ['mousedown', 'mouseup', 'click']) {
+                    editBtn.dispatchEvent(new MouseEvent(evType, { bubbles: true, cancelable: true, view: window }));
+                  }
+                  await sleep(1200);
                   const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
                   if (ok) {
                     taloesAlreadyPresent = true;
@@ -1308,18 +1310,33 @@
 
           if (tilesToDelete.length > 0) {
             log(`✅ JP Morgan section 3 : ${tilesToDelete.length} tile(s) supprimée(s)`, 1);
+            // Attendre qu'Oracle HCM re-rende le conteneur après suppression
+            await sleep(1500);
+            // Re-requêter le conteneur (référence DOM peut être périmée après re-render Oracle)
+            eduContainer = null;
+            document.querySelectorAll('[class*="standard-apply-flow-profile-item-"]').forEach((c) => {
+              const b = c.querySelector('button[class*="new-tile"]');
+              if (norm(b?.textContent || '').includes('add education')) eduContainer = c;
+            });
+            if (!eduContainer) {
+              log('⚠️ JP Morgan section 3 : conteneur Education introuvable après re-query post-suppression', 1);
+            }
           }
         }
 
         if (taloesAlreadyPresent) {
           log('✅ JP Morgan section 3 : entrée éducation Taleos complète → pas de recréation', 1);
           state.educationFilled = true;
-        } else {
+        } else if (eduContainer) {
           // Ajouter l'entrée éducation depuis Firebase
+          // Utiliser une référence fraîche du bouton Add (l'ancienne peut être périmée)
           const addBtn = eduContainer.querySelector('button[class*="new-tile"]');
           if (addBtn) {
-            addBtn.click();
-            await sleep(600);
+            // Séquence complète pour contourner les handlers Oracle qui ignorent .click() synthétique
+            for (const evType of ['mousedown', 'mouseup', 'click']) {
+              addBtn.dispatchEvent(new MouseEvent(evType, { bubbles: true, cancelable: true, view: window }));
+            }
+            await sleep(1000); // Oracle peut être lent à rendre le formulaire inline
             log("➕ JP Morgan : ajout entrée éducation depuis Firebase", 1);
             const ok = await fillEducationInlineForm(degreeValue, school, gradMonth, gradYear, eduCountry, areaOfStudy);
             if (ok) state.educationFilled = true;
