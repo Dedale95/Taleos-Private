@@ -1058,22 +1058,19 @@
         const desiredText = profile.jp_morgan_immigration_support ||
           'I would require work visa sponsorship to be legally authorized to work in this country.';
         const current = getValue(immigrationTextarea);
-        // Logs non-dédupliqués (préfixe horodaté) pour voir chaque tentative dans la console
-        console.log(`${LOG_PREFIX}    [immigration] current='${current.slice(0, 40) || '(vide)'}' desired=${desiredText.length}ch`);
         if (norm(current) === norm(desiredText)) {
-          log(`✅ Immigration support : remplissage confirmé → Skip`, 1);
+          log(`✅ Immigration support : '${current.slice(0, 50)}…' → Skip`, 1);
           immigrationSupportReady = true;
         } else {
-          log(`✏️ Immigration support : remplissage via Knockout (monde principal)`, 1);
-          // fillKnockoutTextarea injecte un <script> dans le monde principal de la page
-          // pour accéder à window.ko et mettre à jour l'observable Knockout directement.
-          // Cela court-circuite les restrictions du monde isolé des content scripts.
+          log(`✏️ Immigration support : remplissage (valeur actuelle='${current.slice(0, 20) || '(vide)'}')`, 1);
           immigrationTextarea.scrollIntoView({ block: 'center', behavior: 'instant' });
           immigrationTextarea.focus?.();
-          fillKnockoutTextarea(immigrationTextarea, desiredText);
-          // Attendre que Knockout propage la valeur dans le DOM
+          // fillKnockoutTextarea → message au background → executeScript world:MAIN
+          // (seul contournement valide : content scripts isolés + CSP Oracle bloque les <script> inline)
+          await fillKnockoutTextarea(immigrationTextarea, desiredText);
+          // Attendre que la valeur soit propagée dans le DOM avant la vérification du prochain run
           await sleep(500);
-          // Bloquer Next ce run → prochain run() vérifiera que la valeur persiste dans le DOM
+          // Bloquer Next ce run → prochain run() vérifiera que la valeur persiste
           immigrationSupportReady = false;
         }
       }
