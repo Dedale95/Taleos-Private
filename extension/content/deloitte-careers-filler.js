@@ -856,8 +856,10 @@
           }
           continue;
         }
-        // Pour "Personal Cellular" (EN) / "Mobile Personnel" (FR) : matcher sur cellular/mobile sans cocher "Home Phone" / "Fixe Personnel"
+        // Pour "Personal Cellular" (EN) / "Mobile Personnel" (FR) : matcher quel que soit la langue de Workday
+        const isPhoneTypeLabel = label && /type.{0,20}appareil|phone.{0,10}device|appareil.{0,10}t.l/i.test(label);
         const match = t.includes(target) || (target.includes('monsieur') && t.includes('monsieur')) || (target.includes('madame') && t.includes('madame')) ||
+            (isPhoneTypeLabel && (t.includes('cellular') || (t.includes('mobile') && !t.includes('home') && !t.includes('fixe')))) ||
             (target.includes('cellular') && t.includes('cellular')) ||
             (target.includes('mobile') && t.includes('mobile')) ||
             (target.includes('personnel') && t.includes('personnel') && !target.includes('mobile')) ||
