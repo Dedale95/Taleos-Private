@@ -143,6 +143,87 @@
     return String(el.value || el.textContent || '').trim();
   }
 
+  /**
+   * Remplit un <textarea> géré par Knockout dans Oracle HCM.
+   *
+   * Les scripts de contenu s'exécutent dans un monde isolé : ils n'ont pas accès
+   * à `window.ko`. Pour mettre à jour l'observable Knockout qui pilote le champ,
+   * on injecte un <script> dans le monde principal de la page via le DOM.
+   * Le script :
+   *   1. Lit l'attribut data-bind="textInput: xxx" pour trouver le nom de l'observable.
+   *   2. Appelle ko.dataFor(el) pour obtenir le ViewModel.
+   *   3. Applique vm.xxx(text) pour mettre à jour l'observable (source de vérité).
+   *   4. Déclenche 'input' + 'change' pour notifier les autres listeners.
+   *   5. Fallback : native setter + InputEvent si ko n'est pas trouvable.
+   *
+   * @param {HTMLTextAreaElement} textarea  L'élément à remplir (dans le DOM courant).
+   * @param {string}              text      Le texte désiré.
+   */
+  function fillKnockoutTextarea(textarea, text) {
+    const ATTR = 'data-taleos-ko-fill';
+    textarea.setAttribute(ATTR, '1');
+    const safeText = JSON.stringify(text);
+
+    const script = document.createElement('script');
+    /* eslint-disable no-useless-escape */
+    script.textContent = `(function(){
+  try {
+    var el = document.querySelector('[${ATTR}]');
+    if (!el) return;
+    el.removeAttribute('${ATTR}');
+    var text = ${safeText};
+
+    var filled = false;
+
+    // ── Tentative Knockout ──────────────────────────────────────────────────
+    if (window.ko) {
+      try {
+        // Lire data-bind="textInput: xxx" pour trouver le nom de l'observable.
+        var dataBind = el.getAttribute('data-bind') || '';
+        var m = dataBind.match(/textInput\\s*:\\s*([\\w$.]+)/);
+        if (m) {
+          var vm = ko.dataFor(el);
+          if (vm) {
+            // Supporte les chemins pointés : "a.b.c"
+            var parts = m[1].split('.');
+            var obs = vm;
+            for (var i = 0; i < parts.length; i++) obs = obs && obs[parts[i]];
+            if (obs && ko.isObservable(obs)) {
+              obs(text);
+              filled = true;
+              console.log('[Taleos KO fill] observable mis à jour via', m[1]);
+            }
+          }
+        }
+      } catch(e) {
+        console.warn('[Taleos KO fill] erreur Knockout', e);
+      }
+    }
+
+    // ── Fallback : native setter ────────────────────────────────────────────
+    if (!filled) {
+      var desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+      var setter = desc && desc.set;
+      if (setter) setter.call(el, text);
+      else el.value = text;
+      console.log('[Taleos KO fill] fallback native setter (ko=' + (typeof ko) + ')');
+    }
+
+    // ── Événements pour notifier Knockout + autres listeners ───────────────
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: true, inputType: 'insertText', data: text
+    }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', bubbles: true }));
+  } catch(e) {
+    console.error('[Taleos KO fill] erreur générale', e);
+  }
+})();`;
+    /* eslint-enable no-useless-escape */
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
   function setInputValue(el, value) {
     if (!el) return false;
     // Guard : impossible de setter la value d'un <input type="file"> (erreur navigateur)
@@ -641,7 +722,11 @@
   function extractCountryFromLocation(locationValue) {
     const raw = String(locationValue || '').trim();
     if (!raw) return '';
-    const parts = raw.split('-').map((part) => part.trim()).filter(Boolean);
+    // Séparer sur " - " (avec espaces) et non sur "-" seul,
+    // pour préserver les noms de pays composés (ex. "Royaume-Uni", "États-Unis").
+    // "Londre - Royaume-Uni" → ["Londre", "Royaume-Uni"] → "Royaume-Uni" ✓
+    // "Londres - Royaume-Uni" avec split('-') → ["Londre", " Royaume", "Uni"] → "Uni" ✗
+    const parts = raw.split(' - ').map((part) => part.trim()).filter(Boolean);
     return parts.length ? parts[parts.length - 1] : raw;
   }
 
@@ -652,20 +737,115 @@
     'republique tcheque', 'roumanie', 'slovaquie', 'slovenie', 'suede'
   ]);
 
+  // Traduction des noms de pays en anglais (JP Morgan location) → français (Firebase)
+  // JP Morgan affiche la localisation du poste en anglais (ex. "United Kingdom"),
+  // mais l'utilisateur saisit les pays en français dans Firebase (ex. "royaume-uni").
+  // Traduction EN→FR exhaustive pour tous les pays UE + principaux hors-UE.
+  // JP Morgan affiche les localisations en anglais ; Firebase stocke les pays en français.
+  // Règle : la clé est le nom anglais normalisé (norm()), la valeur est le nom français normalisé.
+  const EN_TO_FR_COUNTRY = {
+    // ── Royaume-Uni (hors UE post-Brexit) ──────────────────────────────────
+    'united kingdom': 'royaume-uni',
+    'uk': 'royaume-uni',
+    'great britain': 'royaume-uni',
+    'england': 'royaume-uni',
+    'scotland': 'royaume-uni',
+    'wales': 'royaume-uni',
+    // ── 27 États membres de l'UE ───────────────────────────────────────────
+    'germany': 'allemagne',
+    'austria': 'autriche',
+    'belgium': 'belgique',
+    'bulgaria': 'bulgarie',
+    'cyprus': 'chypre',
+    'croatia': 'croatie',
+    'denmark': 'danemark',
+    'spain': 'espagne',
+    'estonia': 'estonie',
+    'finland': 'finlande',
+    'france': 'france',
+    'greece': 'grece',
+    'hungary': 'hongrie',
+    'ireland': 'irlande',
+    'italy': 'italie',
+    'latvia': 'lettonie',
+    'lithuania': 'lituanie',
+    'luxembourg': 'luxembourg',
+    'malta': 'malte',
+    'netherlands': 'pays-bas',
+    'holland': 'pays-bas',
+    'poland': 'pologne',
+    'portugal': 'portugal',
+    'czech republic': 'republique tcheque',
+    'czechia': 'republique tcheque',
+    'romania': 'roumanie',
+    'slovakia': 'slovaquie',
+    'slovenia': 'slovenie',
+    'sweden': 'suede',
+    // ── Hors UE / hors UK ──────────────────────────────────────────────────
+    'switzerland': 'suisse',
+    'norway': 'norvege',
+    'united states': 'etats-unis',
+    'usa': 'etats-unis',
+    'u.s.': 'etats-unis',
+    'canada': 'canada',
+    'hong kong': 'hong kong',
+    'singapore': 'singapour',
+    'japan': 'japon',
+    'india': 'inde',
+    'australia': 'australie',
+    'china': 'chine',
+    'brazil': 'bresil',
+    'mexico': 'mexique',
+    'south korea': 'coree du sud',
+    'korea': 'coree du sud',
+    'taiwan': 'taiwan',
+    'uae': 'emirats arabes unis',
+    'united arab emirates': 'emirats arabes unis',
+    'qatar': 'qatar',
+    'saudi arabia': 'arabie saoudite',
+    'south africa': 'afrique du sud',
+  };
+
   function resolveJpMorganWorkAuth(profile, pending) {
     const rows = Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : [];
     const targetCountry = extractCountryFromLocation(pending?.location || '') || 'France';
     const normCountry = norm(targetCountry);
-    const exact = rows.find((row) => norm(row?.country || '') === normCountry);
-    const euFallback = EUROPEAN_UNION_COUNTRIES.has(normCountry)
+    // Chercher le pays en EN et en FR (JP Morgan = anglais, Firebase = français)
+    const normCountryFr = EN_TO_FR_COUNTRY[normCountry] || normCountry;
+
+    // Match exact (essaie les deux noms : anglais et français)
+    const exact = rows.find((row) => {
+      const r = norm(row?.country || '');
+      return r === normCountry || r === normCountryFr;
+    });
+
+    // Fallback UE : uniquement si le pays cible est membre de l'UE
+    // IMPORTANT : le Royaume-Uni N'EST PAS dans l'UE (post-Brexit) → pas de fallback UE
+    const normForEuCheck = normCountryFr || normCountry;
+    const euFallback = EUROPEAN_UNION_COUNTRIES.has(normForEuCheck)
       ? rows.find((row) => norm(row?.country || '') === 'union europeenne')
       : null;
-    const fallback = euFallback || rows.find((row) => norm(row?.country || '') === 'france') || rows[0] || null;
-    const selected = exact || fallback;
+
+    // PAS de fallback France ni rows[0] : appliquer des droits de travail français/EU
+    // à un pays hors-UE (ex. Royaume-Uni) serait incorrect et trompeur.
+    const selected = exact || euFallback || null;
+
+    if (!selected) {
+      // Pays absent de Firebase → l'utilisateur n'est pas autorisé à y travailler sans sponsoring.
+      // Règle métier : si un pays n'est pas renseigné, c'est qu'il n'y a pas de droit de travail.
+      return {
+        country: targetCountry,
+        workAuthorized: 'No',
+        sponsorshipRequired: 'Yes',
+        hasData: false
+      };
+    }
+
     return {
       country: targetCountry,
-      workAuthorized: selected?.work_authorized || 'Yes',
-      sponsorshipRequired: selected?.sponsorship_required || 'No'
+      workAuthorized: selected.work_authorized || 'No',
+      sponsorshipRequired: selected.sponsorship_required || 'Yes',
+      hasData: true
     };
   }
 
@@ -744,7 +924,10 @@
     }
 
     const nextBtn = findButtonByText('Next');
-    if (nextBtn && !state.emailSubmitted) {
+    if (nextBtn) {
+      // Pas de guard one-shot : si Oracle tarde à transitionner (lent, hcaptcha…),
+      // on réessaie au run suivant jusqu'à ce que la page change.
+      // Le blueprint arrête d'appeler handleEmailStep dès que la page passe sur 'pin'.
       state.emailSubmitted = true;
       nextBtn.click();
       log('➡️ JP Morgan : clic sur Next après email/consentement');
@@ -759,9 +942,10 @@
     const values = digits.map((el) => String(el?.value || '').trim());
     const filled = values.filter((v) => /^\d$/.test(v)).length;
     log(`🔐 JP Morgan → code email : ${filled}/6 chiffre(s) saisi(s)`);
-    if (filled === 6 && !state.pinSubmitted) {
+    if (filled === 6) {
       const verifyBtn = findButtonByText('Verify');
       if (verifyBtn) {
+        // Pas de guard one-shot : on réessaie si Oracle tarde à transitionner.
         state.pinSubmitted = true;
         verifyBtn.click();
         log('✅ JP Morgan : clic sur Verify après saisie complète du code');
@@ -829,39 +1013,16 @@
     const phoneCountryCode = profile.phone_country_code || '+33'; // ex. "+33"
     const ccDigits = phoneCountryCode.replace(/\D/g, ''); // "33"
 
-    // Remplir l'indicatif pays via le combobox Oracle :
-    // 1. setInputValue sur l'input (déclenche l'autocomplete)
-    // 2. Ouvrir le dropdown si nécessaire
-    // 3. pickVisibleOption avec "+33", "33" ET "france" comme aliases
-    const ccCurrent = getValue(phoneCcEl);
-    if (normText(ccCurrent) !== normText(phoneCountryCode)) {
-      log(`   ✏️ Indicatif pays : formulaire='${ccCurrent || '(vide)'}' | Firebase='${phoneCountryCode}' -> Correction`, 1);
-      if (phoneCcEl) {
-        // Ouvrir le dropdown en cliquant sur l'input ou son bouton trigger
-        const ccRow = phoneCcEl.closest('.input-row, .oj-form-layout, .oj-flex-item') || phoneCcEl.parentElement;
-        const ccTrigger = ccRow?.querySelector('button[aria-label*="Open" i], button.icon-dropdown-arrow, button[class*="dropdown"]') || phoneCcEl;
-        for (const evType of ['mousedown', 'mouseup', 'click']) {
-          ccTrigger.dispatchEvent(new MouseEvent(evType, { bubbles: true, cancelable: true, view: window }));
-        }
-        phoneCcEl.focus?.();
-        await sleep(500);
-        // Essayer plusieurs variantes : "+33", "33", "france"
-        const ccAliases = [phoneCountryCode, ccDigits, 'france'];
-        let ccPicked = false;
-        for (const alias of ccAliases) {
-          if (await pickVisibleOption(alias)) { ccPicked = true; break; }
-        }
-        if (!ccPicked) {
-          // Fallback : taper directement dans l'input
-          setInputValue(phoneCcEl, phoneCountryCode);
-          await sleep(300);
-          for (const alias of ccAliases) {
-            if (await pickVisibleOption(alias)) break;
-          }
-        }
-      }
-    } else {
-      log(`   ✅ Indicatif pays : formulaire='${ccCurrent}' | Firebase='${phoneCountryCode}' -> Skip`, 1);
+    // Remplir l'indicatif pays :
+    // auditAndFill() injecte directement la valeur dans l'input via setInputValue,
+    // puis on tente pickVisibleOption pour sélectionner dans le dropdown si Oracle l'ouvre.
+    // NOTE : ne PAS dispatcher de MouseEvent sur phoneCcEl — cela provoque une confusion
+    // de valeurs entre les champs adjacents (Oracle réagit de manière inattendue).
+    auditAndFill('Indicatif pays', phoneCcEl, phoneCountryCode);
+    await sleep(200);
+    // Si Oracle a ouvert un dropdown suite au setInputValue, sélectionner l'option
+    for (const alias of [phoneCountryCode, ccDigits, 'france']) {
+      if (await pickVisibleOption(alias)) break;
     }
 
     // Prefer DOM-traversal result, fallback to class selector — NEVER use id*="phoneNumber" which matches country code combobox
@@ -899,6 +1060,12 @@
     const workAuth = resolveJpMorganWorkAuth(profile, pending);
 
     auditAndSelectButton('At least 18 years of age', findQuestionContainer('are you at least 18 years of age'), 'Yes');
+
+    if (!workAuth.hasData) {
+      log(`ℹ️ JP Morgan section 2 : '${workAuth.country}' absent de Firebase → pas de droit de travail connu → No / Yes (sponsoring requis)`, 1);
+    } else {
+      log(`ℹ️ JP Morgan section 2 : autorisation travail pour '${workAuth.country}' → autorisé='${workAuth.workAuthorized}' sponsoring='${workAuth.sponsorshipRequired}'`, 1);
+    }
     auditAndSelectButton(
       'Legally authorized to work in this country',
       findQuestionContainer('for the position you are applying to, are you legally authorized to work in this country'),
@@ -910,8 +1077,59 @@
       workAuth.sponsorshipRequired
     );
 
+    // ── Question conditionnelle : apparaît uniquement si sponsoring = 'Yes' ──
+    // "What type of immigration support would you require, if hired?" (textarea)
+    // Configurable dans Firebase : jp_morgan_immigration_support (texte libre).
+    let immigrationSupportReady = true;
+    if (workAuth.sponsorshipRequired === 'Yes') {
+      const immigrationRow = findQuestionRow('what type of immigration support');
+      const immigrationTextarea = immigrationRow?.querySelector('textarea') ||
+        Array.from(document.querySelectorAll('textarea')).find((el) => {
+          const row = el.closest('.input-row, .oj-flex-item, .oj-form, div');
+          return row && /immigration support/i.test(row.textContent || '');
+        }) || null;
+
+      // Attendre que Knockout ait fini de binder le textarea.
+      // Proxy fiable : Oracle's `textareaHeight` Knockout binding pose style.height sur l'élément.
+      // Si offsetHeight > 0 OU style.height > 0 → Knockout a terminé le binding (textInput inclus).
+      // isElementVisible() est trop stricte ici (getBoundingClientRect().width peut être 0
+      // si le parent n'est pas encore positionné dans le layout, même si le champ est visible).
+      const isVisible = immigrationTextarea && (
+        immigrationTextarea.offsetHeight > 0 ||
+        parseInt(immigrationTextarea.style?.height || '0', 10) > 0
+      );
+
+      if (!immigrationTextarea || !isVisible) {
+        // Pas encore dans le DOM ou pas encore visible → attendre le prochain run()
+        log(`⏳ Immigration support : textarea pas encore visible — attente`, 1);
+        immigrationSupportReady = false;
+      } else {
+        const desiredText = profile.jp_morgan_immigration_support ||
+          'I would require work visa sponsorship to be legally authorized to work in this country.';
+        const current = getValue(immigrationTextarea);
+        // Logs non-dédupliqués (préfixe horodaté) pour voir chaque tentative dans la console
+        console.log(`${LOG_PREFIX}    [immigration] current='${current.slice(0, 40) || '(vide)'}' desired=${desiredText.length}ch`);
+        if (norm(current) === norm(desiredText)) {
+          log(`✅ Immigration support : remplissage confirmé → Skip`, 1);
+          immigrationSupportReady = true;
+        } else {
+          log(`✏️ Immigration support : remplissage via Knockout (monde principal)`, 1);
+          // fillKnockoutTextarea injecte un <script> dans le monde principal de la page
+          // pour accéder à window.ko et mettre à jour l'observable Knockout directement.
+          // Cela court-circuite les restrictions du monde isolé des content scripts.
+          immigrationTextarea.scrollIntoView({ block: 'center', behavior: 'instant' });
+          immigrationTextarea.focus?.();
+          fillKnockoutTextarea(immigrationTextarea, desiredText);
+          // Attendre que Knockout propage la valeur dans le DOM
+          await sleep(500);
+          // Bloquer Next ce run → prochain run() vérifiera que la valeur persiste dans le DOM
+          immigrationSupportReady = false;
+        }
+      }
+    }
+
     const nextBtn = findButtonByText('Next');
-    if (nextBtn && !state.nextSection2) {
+    if (nextBtn && !state.nextSection2 && immigrationSupportReady) {
       state.nextSection2 = true;
       nextBtn.click();
       log('➡️ JP Morgan : section 2 validée, clic sur Next');
