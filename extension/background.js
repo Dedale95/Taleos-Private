@@ -172,6 +172,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'jp_morgan') return 'taleos_pending_jp_morgan';
   if (bid === 'goldman_sachs') return 'taleos_pending_goldman_sachs';
   if (bid === 'axa') return 'taleos_pending_axa';
+  if (bid === 'bpifrance') return 'taleos_pending_bpifrance';
   return null;
 }
 
@@ -207,6 +208,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'jp_morgan') keys.push('taleos_pending_jp_morgan', 'taleos_jp_morgan_tab_id');
   if (bid === 'goldman_sachs') keys.push('taleos_pending_goldman_sachs', 'taleos_gs_tab_id');
   if (bid === 'axa') keys.push('taleos_pending_axa', 'taleos_axa_tab_id');
+  if (bid === 'bpifrance') keys.push('taleos_pending_bpifrance', 'taleos_bpifrance_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -513,7 +515,9 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_axa_tab_id',
     'taleos_pending_deloitte',
     'taleos_pending_offer',
-    'taleos_ca_apply_tab_id'
+    'taleos_ca_apply_tab_id',
+    'taleos_pending_bpifrance',
+    'taleos_bpifrance_tab_id'
   ]);
   if (s.taleos_pending_sg?.profile && s.taleos_sg_tab_id) {
     const tab = await chrome.tabs.get(s.taleos_sg_tab_id).catch(() => null);
@@ -601,6 +605,17 @@ async function resolveTabAndMetaForStuckReport() {
         jobId: s.taleos_pending_axa.jobId || '',
         offerUrl: s.taleos_pending_axa.offerUrl || ''
       });
+    }
+  }
+  if (s.taleos_pending_bpifrance && s.taleos_bpifrance_tab_id) {
+    const tab = await chrome.tabs.get(s.taleos_bpifrance_tab_id).catch(() => null);
+    if (tab?.id) {
+      return {
+        tabId: tab.id,
+        bankId: 'bpifrance',
+        jobId: s.taleos_pending_bpifrance.jobId || '',
+        offerUrl: s.taleos_pending_bpifrance.offerUrl || ''
+      };
     }
   }
   if (s.taleos_pending_offer?.profile && s.taleos_ca_apply_tab_id) {
@@ -800,7 +815,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     clearApplyStuckWatchdog();
     return;
   }
-  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs', 'taleos_pending_axa'];
+  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs', 'taleos_pending_axa', 'taleos_pending_bpifrance'];
   for (const k of keys) {
     const ch = changes[k];
     if (ch && (ch.newValue === undefined || ch.newValue === null)) {
@@ -2864,6 +2879,20 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     await scheduleApplyStuckWatchdog();
   } else if (routeAs === 'bpifrance') {
     await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    // Fermer l'onglet Bpifrance mort s'il en existe un (récupération après rechargement extension).
+    try {
+      const { taleos_bpifrance_tab_id: existingTabId } = await chrome.storage.local.get(['taleos_bpifrance_tab_id']);
+      if (existingTabId) {
+        const existingTab = await chrome.tabs.get(existingTabId).catch(() => null);
+        if (existingTab) {
+          console.log(`[Taleos] Bpifrance : fermeture onglet mort #${existingTabId} avant relance`);
+          await chrome.tabs.remove(existingTabId).catch(() => {});
+        }
+        await chrome.storage.local.remove(['taleos_bpifrance_tab_id', 'taleos_pending_bpifrance']).catch(() => {});
+      }
+    } catch (_) {}
+
     const createOpts = { url: offerUrl, active: false };
     if (taleosTabId) {
       try {
@@ -2871,8 +2900,27 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
       } catch (_) {}
     }
+    // Écrire l'état pending AVANT de créer l'onglet pour résister à un crash du service worker.
+    const bpifrancePendingBase = {
+      profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'Bpifrance', __offerUrl: offerUrl },
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName: companyName || 'Bpifrance',
+      location: offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId: null,
+      timestamp: Date.now()
+    };
+    await chrome.storage.local.set({ taleos_pending_bpifrance: bpifrancePendingBase });
     const tab = await chrome.tabs.create(createOpts);
     await registerApplyRunForTab(tab.id, runMeta);
+    // Mettre à jour le tabId maintenant qu'on a l'onglet.
+    bpifrancePendingBase.tabId = tab.id;
+    await chrome.storage.local.set({
+      taleos_pending_bpifrance: bpifrancePendingBase,
+      taleos_bpifrance_tab_id: tab.id
+    });
     if (taleosTabId) {
       chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
       [100, 300, 600].forEach((ms) => setTimeout(() => {

@@ -587,4 +587,34 @@
     if (!activeProfile) return;
     runPromise = Promise.resolve(runPromise).catch(() => {}).then(() => run(activeProfile));
   };
+
+  // ── Auto-démarrage depuis le stockage (résistance au crash du service worker MV3) ──
+  // Si le SW a été tué après avoir créé l'onglet mais avant d'injecter, le content script
+  // est quand même injecté par le manifest. On lit l'état pending pour reprendre l'exécution.
+  const PENDING_KEY = 'taleos_pending_bpifrance';
+  const TAB_KEY = 'taleos_bpifrance_tab_id';
+
+  async function selfBootstrap() {
+    if (activeProfile) return; // Déjà lancé via __taleosRun
+    try {
+      const tabIdRes = await chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' }).catch(() => null);
+      const currentTabId = tabIdRes?.tabId || null;
+      if (!currentTabId) return;
+      const local = await chrome.storage.local.get([PENDING_KEY, TAB_KEY]);
+      const pending = local[PENDING_KEY];
+      const expectedTabId = pending?.tabId || local[TAB_KEY] || null;
+      if (!pending || !expectedTabId || currentTabId !== expectedTabId) return;
+      const profile = pending.profile;
+      if (!profile) return;
+      log("🔄 Bpifrance → auto-démarrage depuis le stockage (reprise après restart SW)");
+      globalThis.__taleosRun(profile);
+    } catch (_) {}
+  }
+
+  // Lancer après chargement DOM
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(selfBootstrap, 800), { once: true });
+  } else {
+    setTimeout(selfBootstrap, 800);
+  }
 })();
