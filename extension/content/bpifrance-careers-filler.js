@@ -411,11 +411,15 @@
   }
 
   async function fillApplicationForm(profile) {
-    // ── Étape 1 : Upload CV ──────────────────────────────────────────────
-    const cvInput = document.getElementById('massivefileupload');
+    // ── Détection de l'étape active ──────────────────────────────────────
+    // NB : #massivefileupload est un <input type="file"> toujours caché (opacity/width=0)
+    // → on détecte l'étape par présence DOM, pas par visibilité.
+    const cvInput   = document.getElementById('massivefileupload');
     const firstNameEl = document.getElementById('firstName');
-    const onStep1 = cvInput && isElementVisible(cvInput) && (!firstNameEl || !isElementVisible(firstNameEl));
-    const onStep2 = firstNameEl && isElementVisible(firstNameEl);
+    // Étape 2 : le champ #firstName est présent ET visible
+    const onStep2 = !!(firstNameEl && isElementVisible(firstNameEl));
+    // Étape 1 : le file input est dans le DOM ET on n'est pas encore sur l'étape 2
+    const onStep1 = !!cvInput && !onStep2;
 
     if (onStep2) {
       // Service worker redémarré après l'étape 1 → reprendre directement sur step 2
@@ -432,7 +436,7 @@
       // Clic sur "Suivant" pour passer à l'étape 2
       const clicked = await clickWizardNext();
       if (!clicked) {
-        await submitFailure(profile, 'Impossible de passer à l\'étape 2 du wizard Bpifrance (bouton Suivant introuvable)');
+        await submitFailure(profile, "Impossible de passer à l'étape 2 du wizard Bpifrance (bouton Suivant introuvable)");
         return;
       }
 
@@ -440,12 +444,14 @@
       log('⏳ Bpifrance → attente chargement étape 2…');
       const step2Ready = await waitForStep2(15000);
       if (!step2Ready) {
-        await submitFailure(profile, 'Timeout : étape 2 Bpifrance non chargée après upload CV');
+        await submitFailure(profile, "Timeout : étape 2 Bpifrance non chargée après upload CV");
         return;
       }
       log('✅ Bpifrance → étape 2 chargée');
     } else {
-      log('⚠️ Bpifrance → étape non reconnue, tentative de remplissage de l\'étape 2');
+      log("⚠️ Bpifrance → ni #massivefileupload ni #firstName détectés — page inattendue");
+      await submitFailure(profile, "Wizard Bpifrance : aucune étape reconnue sur cette page");
+      return;
     }
 
     // ── Étape 2 : Informations personnelles ────────────────────────────
