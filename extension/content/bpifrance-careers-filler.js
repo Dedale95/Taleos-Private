@@ -297,23 +297,87 @@
   }
 
   async function uploadCv(profile) {
-    if (getSessionFlag('uploaded_cv') === '1') return;
+    if (getSessionFlag('uploaded_cv') === '1') return true;
     const input = qs('#massivefileupload');
-    if (!input) return;
+    if (!input) {
+      log('   ⚠️ Upload CV : #massivefileupload introuvable');
+      return false;
+    }
+    log(`   📎 Upload CV : ${profile.cv_filename || 'cv.pdf'} depuis Firebase Storage…`);
     const ok = await setFileInputFromStorage(input, profile.cv_storage_path, profile.cv_filename || 'cv.pdf');
     if (!ok) {
-      await submitFailure(profile, 'Impossible de charger le CV depuis Firebase');
-      return;
+      await submitFailure(profile, 'Impossible de charger le CV depuis Firebase Storage');
+      return false;
     }
     setSessionFlag('uploaded_cv', '1');
-    log(`✅ Bpifrance → CV chargé depuis Firebase (${profile.cv_filename || 'cv.pdf'})`);
-    await sleep(2500);
+    log(`   ✅ CV chargé (${profile.cv_filename || 'cv.pdf'})`);
+    await sleep(1500);
+    return true;
   }
 
-  async function fillApplicationForm(profile) {
-    await uploadCv(profile);
-    log('🧾 Bpifrance → audit détaillé Firebase vs formulaire');
+  /** Détecte l'étape active du wizard Keenthemes (#kt_wizard). */
+  function getActiveWizardStep() {
+    // Keenthemes marque l'étape active via data-wizard-state="current" ou classe "current"
+    const wizard = qs('#kt_wizard');
+    if (!wizard) return null;
+    const steps = Array.from(wizard.querySelectorAll('[data-wizard-type="step"]'));
+    for (let i = 0; i < steps.length; i++) {
+      const state = steps[i].getAttribute('data-wizard-state') || '';
+      if (state === 'current' || steps[i].classList.contains('current')) return i + 1;
+    }
+    // Fallback : détecter par visibilité des contenus d'étape
+    const contents = Array.from(wizard.querySelectorAll('[data-wizard-type="step-content"]'));
+    for (let i = 0; i < contents.length; i++) {
+      if (isElementVisible(contents[i])) return i + 1;
+    }
+    return null;
+  }
 
+  /** Clique sur le bouton "Suivant" du wizard pour passer à l'étape suivante. */
+  async function clickWizardNext() {
+    // Keenthemes : [data-wizard-action="next"], sinon bouton "Suivant"
+    const selectors = [
+      '[data-wizard-action="next"]',
+      '#kt_wizard .btn-primary:not([data-wizard-action="submit"])',
+      '#wizardNextBtn',
+      '#wizard_next_btn'
+    ];
+    for (const sel of selectors) {
+      const btn = qs(sel);
+      if (btn && isElementVisible(btn)) {
+        log(`   ➡️ Clic bouton Suivant (${sel})`);
+        btn.click();
+        return true;
+      }
+    }
+    // Fallback : chercher par texte
+    const allBtns = Array.from(document.querySelectorAll('button, a.btn'));
+    const nextBtn = allBtns.find((el) => {
+      const txt = normalizeText(el.textContent || '');
+      return (txt === 'suivant' || txt === 'next' || txt === 'continuer') && isElementVisible(el);
+    });
+    if (nextBtn) {
+      log(`   ➡️ Clic bouton Suivant (texte: "${nextBtn.textContent.trim()}")`);
+      nextBtn.click();
+      return true;
+    }
+    log('   ⚠️ Bouton Suivant introuvable');
+    return false;
+  }
+
+  /** Attend que #firstName soit visible (étape 2 chargée), timeout 15s. */
+  async function waitForStep2(timeoutMs = 15000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const el = document.getElementById('firstName');
+      if (el && isElementVisible(el)) return true;
+      await sleep(400);
+    }
+    return false;
+  }
+
+  async function fillStep2Fields(profile) {
+    log('🧾 Bpifrance → remplissage étape 2 (informations personnelles)');
     syncSelectField(document.getElementById('civility'), mapCivility(profile), 'Civilité', profile.civility || 'Monsieur');
     syncInputField(document.getElementById('firstName'), profile.firstname || '', 'Prénom');
     syncInputField(document.getElementById('lastName'), profile.lastname || '', 'Nom');
@@ -322,11 +386,11 @@
 
     const messageEl = document.getElementById('message');
     if (messageEl) {
-      log(`   ℹ️ Motivation : aucune consigne Firebase structurée -> formulaire='${formatLogValue(messageEl.value)}' -> Skip`);
+      log(`   ℹ️ Motivation : non piloté par Firebase -> formulaire='${formatLogValue(messageEl.value)}' -> Skip`);
     }
     const cooptedByEl = document.getElementById('cooptedBy');
     if (cooptedByEl) {
-      log(`   ℹ️ Recommandation / matricule : non piloté par Firebase -> formulaire='${formatLogValue(cooptedByEl.value)}' -> Skip`);
+      log(`   ℹ️ Recommandation / matricule : non piloté par Firebase -> Skip`);
     }
 
     syncCheckboxField(document.getElementById('consentement'), true, 'Consentement obligatoire');
@@ -334,7 +398,7 @@
     if (optional) {
       const targetOptional = mapTalentPoolConsent(profile);
       if (targetOptional == null) {
-        log(`   ℹ️ Consentement vivier : aucune préférence Firebase exploitable -> formulaire='${optional.checked ? 'coché' : 'non coché'}' -> Skip`);
+        log(`   ℹ️ Consentement vivier : aucune préférence Firebase exploitable -> Skip`);
       } else {
         syncCheckboxField(optional, targetOptional, 'Consentement vivier');
       }
@@ -344,6 +408,48 @@
     if (audit) {
       log(`Audit Bpifrance formulaire après remplissage: ${audit.ok ? 'OK' : 'KO'} (${audit.report?.unresolvedQuestionCount || 0} à traiter)`);
     }
+  }
+
+  async function fillApplicationForm(profile) {
+    // ── Étape 1 : Upload CV ──────────────────────────────────────────────
+    const cvInput = document.getElementById('massivefileupload');
+    const firstNameEl = document.getElementById('firstName');
+    const onStep1 = cvInput && isElementVisible(cvInput) && (!firstNameEl || !isElementVisible(firstNameEl));
+    const onStep2 = firstNameEl && isElementVisible(firstNameEl);
+
+    if (onStep2) {
+      // Service worker redémarré après l'étape 1 → reprendre directement sur step 2
+      log('🔄 Bpifrance → reprise sur étape 2 (informations personnelles)');
+      await fillStep2Fields(profile);
+      return;
+    }
+
+    if (onStep1) {
+      log('📋 Bpifrance → étape 1 (Upload CV)');
+      const uploaded = await uploadCv(profile);
+      if (!uploaded) return; // uploadCv a déjà appelé submitFailure
+
+      // Clic sur "Suivant" pour passer à l'étape 2
+      const clicked = await clickWizardNext();
+      if (!clicked) {
+        await submitFailure(profile, 'Impossible de passer à l\'étape 2 du wizard Bpifrance (bouton Suivant introuvable)');
+        return;
+      }
+
+      // Attendre que l'étape 2 soit rendue
+      log('⏳ Bpifrance → attente chargement étape 2…');
+      const step2Ready = await waitForStep2(15000);
+      if (!step2Ready) {
+        await submitFailure(profile, 'Timeout : étape 2 Bpifrance non chargée après upload CV');
+        return;
+      }
+      log('✅ Bpifrance → étape 2 chargée');
+    } else {
+      log('⚠️ Bpifrance → étape non reconnue, tentative de remplissage de l\'étape 2');
+    }
+
+    // ── Étape 2 : Informations personnelles ────────────────────────────
+    await fillStep2Fields(profile);
   }
 
   function getApplyResponse() {
