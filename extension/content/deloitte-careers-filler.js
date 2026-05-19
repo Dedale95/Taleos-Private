@@ -10,7 +10,7 @@
  * 2. Menus déroulants (listbox) : toujours SÉLECTIONNER une option (ouvrir le bouton, cliquer
  *    l'option) au lieu de remplir un input en dur. Ex. "Comment nous avez-vous connus" :
  *    ouvrir le champ → choisir "Site Deloitte Careers" dans la liste ; "Type d'appareil téléphonique" :
- *    ouvrir → "Mobile Personnel" ; "Indicatif de pays" : ouvrir → "France (+33)" ou "Royaume-Uni (+44)"
+ *    ouvrir → "Personal Cellular" (EN) / "Mobile Personnel" (FR) ; "Indicatif de pays" : ouvrir → "France (+33)" ou "Royaume-Uni (+44)"
  *    selon Firebase. Un simple fillInput() sans sélection ne valide pas côté Workday.
  * 3. Indicatif pays téléphone : pris depuis Firebase (phone_country_code ou phoneCountryCode),
  *    ex. +33 = France (+33), +44 = Royaume-Uni (+44). Pas de défaut +33 si l'utilisateur a saisi +44.
@@ -856,8 +856,9 @@
           }
           continue;
         }
-        // Pour "Mobile Personnel" : exiger "mobile" dans l'option (éviter de cocher "Fixe Personnel")
+        // Pour "Personal Cellular" (EN) / "Mobile Personnel" (FR) : matcher sur cellular/mobile sans cocher "Home Phone" / "Fixe Personnel"
         const match = t.includes(target) || (target.includes('monsieur') && t.includes('monsieur')) || (target.includes('madame') && t.includes('madame')) ||
+            (target.includes('cellular') && t.includes('cellular')) ||
             (target.includes('mobile') && t.includes('mobile')) ||
             (target.includes('personnel') && t.includes('personnel') && !target.includes('mobile')) ||
             (target.includes('+33') && t.includes('+33')) || (target.includes('+44') && t.includes('+44')) || (target.includes('france') && t.includes('france')) || (target.includes('royaume') && t.includes('royaume'));
@@ -2037,8 +2038,8 @@
       );
     if (phoneTypeBtn && phoneTypeBtn.offsetParent !== null) {
       scrollIntoViewIfNeeded(phoneTypeBtn);
-      if (clickWorkdayListboxOption(phoneTypeBtn, 'Mobile Personnel', 'Type d\'appareil téléphonique')) filled = true;
-    } else if (clickWorkdayListboxOption('phoneNumber--phoneType', 'Mobile Personnel', 'Type d\'appareil téléphonique')) {
+      if (clickWorkdayListboxOption(phoneTypeBtn, 'Personal Cellular', 'Type d\'appareil téléphonique')) filled = true;
+    } else if (clickWorkdayListboxOption('phoneNumber--phoneType', 'Personal Cellular', 'Type d\'appareil téléphonique')) {
       filled = true;
     } else {
       log('   ⏭️  Type téléphone → bouton non trouvé', 5);

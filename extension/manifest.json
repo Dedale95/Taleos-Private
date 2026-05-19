@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.48",
-  "version_name": "1.2.48-gs-fix-lang-loop-after-submit",
+  "version": "1.2.49",
+  "version_name": "1.2.49-deloitte-phone-type-fix",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
