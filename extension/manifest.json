@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.76",
-  "version_name": "1.2.76-jpmorgan-immigration-execcommand",
+  "version": "1.2.77",
+  "version_name": "1.2.77-jpmorgan-immigration-visible-textarea",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

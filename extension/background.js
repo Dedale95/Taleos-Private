@@ -1101,53 +1101,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!el) { console.warn('[Taleos KO fill] élément introuvable, fillId=', fillId); return; }
           el.removeAttribute('data-taleos-fill-id');
 
-          console.log('[Taleos KO fill] élément trouvé, valeur avant=', JSON.stringify(el.value.slice(0, 20)));
+          console.log('[Taleos KO fill] élément trouvé — offsetH=', el.offsetHeight, 'valeur avant=', JSON.stringify(el.value.slice(0, 20)));
 
-          // ── Étape 1 : vider le champ et saisir via execCommand (isTrusted natif) ──
-          // execCommand('insertText') depuis le monde principal crée des events isTrusted=true
-          // que Knockout reconnaît comme une vraie saisie utilisateur.
+          // ── Étape 1 : native setter sur le textarea ciblé ─────────────────
           el.focus();
-          el.select?.() || el.setSelectionRange?.(0, el.value.length);
-          const cleared = document.execCommand('selectAll', false);
-          const inserted = document.execCommand('insertText', false, text);
-          const afterExec = el.value;
-          console.log('[Taleos KO fill] execCommand selectAll=', cleared, 'insertText=', inserted, 'valeur après=', JSON.stringify(afterExec.slice(0, 40)));
+          el.setSelectionRange?.(0, el.value.length);
+          const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+          if (desc?.set) desc.set.call(el, text);
+          else el.value = text;
+          console.log('[Taleos KO fill] native setter appliqué, valeur=', JSON.stringify(el.value.slice(0, 40)));
 
-          // ── Étape 2 : si execCommand a échoué → native setter + Knockout observable ──
-          if (!inserted || afterExec.trim() !== text.trim()) {
-            console.warn('[Taleos KO fill] execCommand insuffisant → fallback');
-
-            // Tentative Knockout (si window.ko disponible via module global)
-            let filled = false;
-            if (window.ko) {
-              const dataBind = el.getAttribute('data-bind') || '';
-              const m = dataBind.match(/textInput\s*:\s*([\w$.]+)/);
-              if (m) {
-                const vm = ko.dataFor(el);
-                if (vm) {
-                  const parts = m[1].split('.');
-                  let obs = vm;
-                  for (const p of parts) obs = obs?.[p];
-                  if (obs && ko.isObservable(obs)) {
-                    obs(text);
-                    filled = true;
-                    console.log('[Taleos KO fill] ✅ observable Knockout mis à jour :', m[1]);
-                  }
-                }
-              }
-            }
-            // Native setter en dernier recours
-            if (!filled) {
-              const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
-              if (desc?.set) desc.set.call(el, text);
-              else el.value = text;
-              console.log('[Taleos KO fill] native setter, ko=', typeof window.ko, 'valeur=', JSON.stringify(el.value.slice(0, 40)));
-            }
-            // Événements après fallback
-            el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', bubbles: true }));
-          }
+          // ── Étape 2 : événements pour notifier Knockout ───────────────────
+          // Knockout's textInput binding écoute 'input' sur l'élément.
+          // On envoie aussi 'change' et 'keyup' pour les autres listeners Oracle.
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'End', bubbles: true }));
+          console.log('[Taleos KO fill] événements dispatché, valeur finale=', JSON.stringify(el.value.slice(0, 40)));
         } catch (e) {
           console.error('[Taleos KO fill] erreur', e);
         }

@@ -1033,26 +1033,34 @@
     // Configurable dans Firebase : jp_morgan_immigration_support (texte libre).
     let immigrationSupportReady = true;
     if (workAuth.sponsorshipRequired === 'Yes') {
+      // Oracle JET rend DEUX textareas pour ce champ :
+      //   • un textarea caché (modèle Knockout, offsetHeight=0, style.height défini)
+      //   • un textarea visible (affiché à l'utilisateur, offsetHeight>0)
+      // Il faut impérativement cibler le textarea VISIBLE (offsetHeight>0).
+      // querySelector('textarea') rend le premier du DOM, souvent le caché → mauvais résultat.
       const immigrationRow = findQuestionRow('what type of immigration support');
-      const immigrationTextarea = immigrationRow?.querySelector('textarea') ||
-        Array.from(document.querySelectorAll('textarea')).find((el) => {
-          const row = el.closest('.input-row, .oj-flex-item, .oj-form, div');
-          return row && /immigration support/i.test(row.textContent || '');
-        }) || null;
+      const candidateTextareas = immigrationRow
+        ? Array.from(immigrationRow.querySelectorAll('textarea'))
+        : Array.from(document.querySelectorAll('textarea')).filter((el) => {
+            const row = el.closest('.input-row, .oj-flex-item, .oj-form, div');
+            return row && /immigration support/i.test(row.textContent || '');
+          });
+      // Priorité : textarea visible (offsetHeight>0), puis premier avec style.height>0 comme fallback
+      const immigrationTextarea =
+        candidateTextareas.find((el) => el.offsetHeight > 0) ||
+        candidateTextareas.find((el) => parseInt(el.style?.height || '0', 10) > 0) ||
+        candidateTextareas[0] || null;
 
-      // Attendre que Knockout ait fini de binder le textarea.
-      // Proxy fiable : Oracle's `textareaHeight` Knockout binding pose style.height sur l'élément.
-      // Si offsetHeight > 0 OU style.height > 0 → Knockout a terminé le binding (textInput inclus).
-      // isElementVisible() est trop stricte ici (getBoundingClientRect().width peut être 0
-      // si le parent n'est pas encore positionné dans le layout, même si le champ est visible).
-      const isVisible = immigrationTextarea && (
-        immigrationTextarea.offsetHeight > 0 ||
-        parseInt(immigrationTextarea.style?.height || '0', 10) > 0
-      );
+      // Diagnostic pour tracer l'élément trouvé
+      if (immigrationTextarea) {
+        log(`   Immigration support : ${candidateTextareas.length} textarea(s) trouvé(s), offsetHeight=${immigrationTextarea.offsetHeight}, valeur='${String(immigrationTextarea.value || '').slice(0, 20) || '(vide)'}'`, 1);
+      }
+
+      // Attendre que le textarea visible soit présent dans le DOM
+      const isVisible = immigrationTextarea && immigrationTextarea.offsetHeight > 0;
 
       if (!immigrationTextarea || !isVisible) {
-        // Pas encore dans le DOM ou pas encore visible → attendre le prochain run()
-        log(`⏳ Immigration support : textarea pas encore visible — attente`, 1);
+        log(`⏳ Immigration support : textarea visible pas encore prêt (${candidateTextareas.length} trouvé(s), offsetHeight=${immigrationTextarea?.offsetHeight ?? 'N/A'}) — attente`, 1);
         immigrationSupportReady = false;
       } else {
         const desiredText = profile.jp_morgan_immigration_support ||
@@ -1062,15 +1070,13 @@
           log(`✅ Immigration support : '${current.slice(0, 50)}…' → Skip`, 1);
           immigrationSupportReady = true;
         } else {
-          log(`✏️ Immigration support : remplissage (valeur actuelle='${current.slice(0, 20) || '(vide)'}')`, 1);
+          log(`✏️ Immigration support : remplissage textarea visible (valeur='${current.slice(0, 20) || '(vide)'}')`, 1);
           immigrationTextarea.scrollIntoView({ block: 'center', behavior: 'instant' });
           immigrationTextarea.focus?.();
           // fillKnockoutTextarea → message au background → executeScript world:MAIN
-          // (seul contournement valide : content scripts isolés + CSP Oracle bloque les <script> inline)
           await fillKnockoutTextarea(immigrationTextarea, desiredText);
           // Attendre que la valeur soit propagée dans le DOM avant la vérification du prochain run
           await sleep(500);
-          // Bloquer Next ce run → prochain run() vérifiera que la valeur persiste
           immigrationSupportReady = false;
         }
       }
