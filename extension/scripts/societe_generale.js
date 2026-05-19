@@ -327,6 +327,7 @@
     let filledHandicap = false;
     let filledAccommodation = false;
     let filledNotice = false;
+    let filledTeletravail = false;
     const noticePatterns = {
       '1_month': [/1\s*month/i, /1\s*mois/i, /^\s*1\s*$/],
       '2_months': [/2\s*months?/i, /2\s*mois/i, /^\s*2\s*$/],
@@ -411,10 +412,11 @@
 
             // Q : Télétravail — couverture internet opérationnelle au domicile
             // Toujours répondre Oui (répondre Non bloque la candidature).
-            if (/t[eé]l[eé]travail.*couverture|couverture internet|domicile.*zone.*internet|internet.*op[eé]rationnel/i.test(st)) {
+            if (!filledTeletravail && /t[eé]l[eé]travail.*couverture|couverture internet|domicile.*zone.*internet|internet.*op[eé]rationnel/i.test(st)) {
               for (const r of group) {
                 if (clickRadioMatchingLabel(r, true)) {
                   log(`   ✅ Télétravail couverture internet : Oui (toujours)`);
+                  filledTeletravail = true;
                   break;
                 }
               }
@@ -546,7 +548,7 @@
       filledStart = true;
     }
 
-    const did = filledEu || filledCountryAuth || filledHandicap || filledAccommodation || filledNotice || filledStart;
+    const did = filledEu || filledCountryAuth || filledHandicap || filledAccommodation || filledNotice || filledStart || filledTeletravail;
     if (did) await delay(600);
     return did;
   }
