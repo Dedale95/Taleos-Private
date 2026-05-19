@@ -421,22 +421,22 @@ async function finalizeApplyRunForTab(tabId, terminal, details = {}) {
     run.completedAt = finishedAt;
     run.durationSeconds = computeDurationSeconds(run.startedAt, finishedAt);
     run.lastSignal = terminal;
-    if (terminal === ‘success’) {
+    if (terminal === 'success') {
       run.successAt = finishedAt;
       if (details.successType) run.successType = sanitizeRunText(details.successType, 80);
       if (details.successMessage) run.successMessage = sanitizeRunText(details.successMessage, 500);
-    } else if (terminal === ‘already_applied’) {
+    } else if (terminal === 'already_applied') {
       run.successAt = finishedAt;
-      run.successType = sanitizeRunText(details.successType || ‘already_applied’, 80);
-      run.successMessage = sanitizeRunText(details.successMessage || ‘Candidature déjà soumise pour cette offre’, 500);
-    } else if (terminal === ‘aborted’) {
+      run.successType = sanitizeRunText(details.successType || 'already_applied', 80);
+      run.successMessage = sanitizeRunText(details.successMessage || 'Candidature déjà soumise pour cette offre', 500);
+    } else if (terminal === 'aborted') {
       run.abortedAt = finishedAt;
-      run.failureType = sanitizeRunText(details.failureType || ‘user_closed_tab’, 80);
-      run.failureMessage = sanitizeRunText(details.failureMessage || ‘L’utilisateur a fermé l’onglet avant la fin de la candidature.’, 500);
+      run.failureType = sanitizeRunText(details.failureType || 'user_closed_tab', 80);
+      run.failureMessage = sanitizeRunText(details.failureMessage || "L'utilisateur a fermé l'onglet avant la fin de la candidature.", 500);
     } else {
       run.failedAt = finishedAt;
-      run.failureType = sanitizeRunText(details.failureType || ‘failure’, 80);
-      run.failureMessage = sanitizeRunText(details.failureMessage || ‘’, 500);
+      run.failureType = sanitizeRunText(details.failureType || 'failure', 80);
+      run.failureMessage = sanitizeRunText(details.failureMessage || '', 500);
     }
   }
 
@@ -462,7 +462,7 @@ async function markTimedOutApplyRun(tabId, details = {}) {
   run.completedAt = timedOutAt;
   run.durationSeconds = computeDurationSeconds(run.startedAt, timedOutAt);
   run.failureType = sanitizeRunText(details.failureType || 'timeout', 80);
-  run.failureMessage = sanitizeRunText(details.failureMessage || 'La candidature n’a pas atteint l’état succès dans les 5 minutes.', 500);
+  run.failureMessage = sanitizeRunText(details.failureMessage || "La candidature n'a pas atteint l'état succès dans les 5 minutes.", 500);
   await persistExtensionApplicationRun(run);
   activeRuns[tabKey] = run;
   await setActiveApplyRuns(activeRuns);
@@ -493,7 +493,7 @@ async function appendApplyRunLogForTab(tabId, entry) {
 }
 
 /**
- * Résout l’onglet de candidature et les métadonnées pour la capture (SG, CA, Deloitte, BPCE).
+ * Résout l'onglet de candidature et les métadonnées pour la capture (SG, CA, Deloitte, BPCE).
  */
 async function resolveTabAndMetaForStuckReport() {
   const s = await chrome.storage.local.get([
@@ -738,7 +738,7 @@ async function handleApplyStuckAlarm() {
       }
     }
 
-    const timeoutMessage = 'La candidature n’a pas atteint l’état succès dans les 5 minutes.';
+    const timeoutMessage = "La candidature n'a pas atteint l'état succès dans les 5 minutes.";
     const timedOutRun = await markTimedOutApplyRun(meta.tabId, {
       failureType: 'timeout',
       failureMessage: timeoutMessage
@@ -898,7 +898,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (activeRuns[String(tabId)]) {
       await finalizeApplyRunForTab(tabId, 'aborted', {
         failureType: 'user_closed_tab',
-        failureMessage: 'L’utilisateur a fermé l’onglet de candidature avant le succès.'
+        failureMessage: "L'utilisateur a fermé l'onglet de candidature avant le succès."
       }).catch(() => null);
     }
     const state = await chrome.storage.local.get([
@@ -1832,7 +1832,7 @@ async function resolveAxaApplyUrl(jobUrl, companyName = '', jobTitle = '', offer
       return buildAxaApplyUrl(jobUrl, 'fr');
     }
   } catch (e) {
-    console.warn('[Taleos AXA] Impossible de résoudre la langue de l’offre, fallback fr:', e?.message || e);
+    console.warn("[Taleos AXA] Impossible de résoudre la langue de l'offre, fallback fr:", e?.message || e);
   }
 
   return buildAxaApplyUrl(jobUrl, 'fr');
@@ -2090,7 +2090,7 @@ async function getOutlookOAuthClientId() {
     res = await fetch(OUTLOOK_CONFIG_CF_URL, { method: 'GET' });
   } catch (e) {
     throw new Error(
-      `Impossible de joindre outlookOAuthConfig (réseau ou extension). Vérifiez la connexion et que l’URL est autorisée dans le manifest. Détails : ${e?.message || e}`
+      `Impossible de joindre outlookOAuthConfig (réseau ou extension). Vérifiez la connexion et que l'URL est autorisée dans le manifest. Détails : ${e?.message || e}`
     );
   }
   const text = await res.text();
@@ -2106,7 +2106,7 @@ async function getOutlookOAuthClientId() {
         'Outlook OAuth : la Cloud Function outlookOAuthConfig est introuvable (HTTP 404). ' +
         'Déployez les fonctions sur Firebase : firebase deploy --only functions --project project-taleos ' +
         '(ou lancez le workflow GitHub « Deploy Firebase Functions »). ' +
-        'Sans déploiement, l’URL europe-west1-project-taleos.cloudfunctions.net/outlookOAuthConfig ne répond pas.'
+        "Sans déploiement, l'URL europe-west1-project-taleos.cloudfunctions.net/outlookOAuthConfig ne répond pas."
       );
     }
     const looksHtml = /<html[\s>]/i.test(text || '') || /<title>.*404/i.test(text || '');
@@ -2115,7 +2115,7 @@ async function getOutlookOAuthClientId() {
       || 'réponse invalide';
     if (res.status === 500 && /OUTLOOK_CLIENT_ID/i.test(serverMsg)) {
       throw new Error(
-        `${serverMsg} — À faire côté prod : Firebase Console → Functions → outlookOAuthConfig / variables d’environnement, définir OUTLOOK_CLIENT_ID (ID d’application Azure AD), puis redéployer les fonctions.`
+        `${serverMsg} — À faire côté prod : Firebase Console → Functions → outlookOAuthConfig / variables d'environnement, définir OUTLOOK_CLIENT_ID (ID d'application Azure AD), puis redéployer les fonctions.`
       );
     }
     throw new Error(
@@ -2377,7 +2377,7 @@ async function runTestConnection(msg) {
   }
 }
 
-/** Routage local selon banque / URL d’offre */
+/** Routage local selon banque / URL d'offre */
 function computeLegacyRouteAs(bankId, offerUrl) {
   const url = String(offerUrl || '').toLowerCase();
   const bid = String(bankId || '').toLowerCase();
@@ -2402,7 +2402,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   return 'other';
 }
 
-/** Pilotage local uniquement : pas d’appel Cloud Function pour le plan de candidature. */
+/** Pilotage local uniquement : pas d'appel Cloud Function pour le plan de candidature. */
 function buildLocalPilotExecution(scriptKey, scriptPath) {
   return {
     scriptKey,
@@ -3216,7 +3216,7 @@ const PROFILE_FIELD_LABELS = {
   institutionType: 'Type d\'établissement',
   diplomaStatus: 'Statut du diplôme',
   deloitteWorked: 'Avez-vous déjà travaillé pour Deloitte ?',
-  sg_eu_work_authorization: 'Autorisation de travail dans l’UE',
+  sg_eu_work_authorization: "Autorisation de travail dans l'UE",
   sg_notice_period: 'Préavis de départ',
   cv: 'CV (Documents)',
   bpcePreferences: 'Préférences BPCE'
@@ -4100,7 +4100,7 @@ function classifyApplyError(errorMessage) {
     return { code: 'required_field', hint: 'Champ obligatoire non complété ou validation échouée' };
   }
   if (/login|connexion|mot de passe|password|auth/.test(msg)) {
-    return { code: 'auth', hint: 'Échec d’authentification sur le site carrière' };
+    return { code: 'auth', hint: "Échec d'authentification sur le site carrière" };
   }
   if (/timeout|timed out|délai|attente/.test(msg)) {
     return { code: 'timeout', hint: 'Timeout pendant le parcours automatisé' };
@@ -4109,7 +4109,7 @@ function classifyApplyError(errorMessage) {
     return { code: 'anti_bot', hint: 'Blocage anti-bot/captcha détecté' };
   }
   if (/network|fetch|net::|cors/.test(msg)) {
-    return { code: 'network', hint: 'Erreur réseau/API pendant l’automatisation' };
+    return { code: 'network', hint: "Erreur réseau/API pendant l'automatisation" };
   }
   return { code: 'other', hint: 'Erreur non catégorisée' };
 }
