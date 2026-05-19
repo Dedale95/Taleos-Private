@@ -145,6 +145,8 @@
 
   function setInputValue(el, value) {
     if (!el) return false;
+    // Guard : impossible de setter la value d'un <input type="file"> (erreur navigateur)
+    if (el.type === 'file') return false;
     const next = String(value ?? '').trim();
     const current = getValue(el);
     if (current === next) return 'skip';
@@ -824,8 +826,44 @@
     const { countryCodeInput: phoneCcEl, phoneInput: phoneDigitsEl } = findPhoneInputs();
     const rawPhone = profile.phone || profile['phone-number'] || profile.phone_number || '';
     const phoneNational = normalizeNationalPhoneDigits(rawPhone, profile.phone_country_code || '+33');
-    auditAndFill('Indicatif pays', phoneCcEl, profile.phone_country_code || '+33');
-    await pickVisibleOption(profile.phone_country_code || '+33');
+    const phoneCountryCode = profile.phone_country_code || '+33'; // ex. "+33"
+    const ccDigits = phoneCountryCode.replace(/\D/g, ''); // "33"
+
+    // Remplir l'indicatif pays via le combobox Oracle :
+    // 1. setInputValue sur l'input (déclenche l'autocomplete)
+    // 2. Ouvrir le dropdown si nécessaire
+    // 3. pickVisibleOption avec "+33", "33" ET "france" comme aliases
+    const ccCurrent = getValue(phoneCcEl);
+    if (normText(ccCurrent) !== normText(phoneCountryCode)) {
+      log(`   ✏️ Indicatif pays : formulaire='${ccCurrent || '(vide)'}' | Firebase='${phoneCountryCode}' -> Correction`, 1);
+      if (phoneCcEl) {
+        // Ouvrir le dropdown en cliquant sur l'input ou son bouton trigger
+        const ccRow = phoneCcEl.closest('.input-row, .oj-form-layout, .oj-flex-item') || phoneCcEl.parentElement;
+        const ccTrigger = ccRow?.querySelector('button[aria-label*="Open" i], button.icon-dropdown-arrow, button[class*="dropdown"]') || phoneCcEl;
+        for (const evType of ['mousedown', 'mouseup', 'click']) {
+          ccTrigger.dispatchEvent(new MouseEvent(evType, { bubbles: true, cancelable: true, view: window }));
+        }
+        phoneCcEl.focus?.();
+        await sleep(500);
+        // Essayer plusieurs variantes : "+33", "33", "france"
+        const ccAliases = [phoneCountryCode, ccDigits, 'france'];
+        let ccPicked = false;
+        for (const alias of ccAliases) {
+          if (await pickVisibleOption(alias)) { ccPicked = true; break; }
+        }
+        if (!ccPicked) {
+          // Fallback : taper directement dans l'input
+          setInputValue(phoneCcEl, phoneCountryCode);
+          await sleep(300);
+          for (const alias of ccAliases) {
+            if (await pickVisibleOption(alias)) break;
+          }
+        }
+      }
+    } else {
+      log(`   ✅ Indicatif pays : formulaire='${ccCurrent}' | Firebase='${phoneCountryCode}' -> Skip`, 1);
+    }
+
     // Prefer DOM-traversal result, fallback to class selector — NEVER use id*="phoneNumber" which matches country code combobox
     const phoneInputEl = phoneDigitsEl || findBySelectors(['input.phone-row__input', 'input[aria-label*="Phone Number" i]']);
     auditAndFill('Téléphone', phoneInputEl, phoneNational);
