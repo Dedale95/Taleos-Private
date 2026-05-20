@@ -33,9 +33,24 @@
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+  function reportRunLog(message, level) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'goldman-sachs-careers-filler',
+        level: level || 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function log(message, indent = 0) {
     const text = `${'   '.repeat(indent)}${message}`;
-    console.log(`${LOG_PREFIX} ${text}`);
+    const line = `${LOG_PREFIX} ${text}`;
+    console.log(line);
+    const level = /❌/.test(text) ? 'error' : /⚠️/.test(text) ? 'warn' : 'info';
+    reportRunLog(line, level);
   }
 
   function norm(v) { return String(v || '').replace(/\s+/g, ' ').trim().toLowerCase(); }

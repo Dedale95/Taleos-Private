@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.80",
-  "version_name": "1.2.80-sg-teletravail-save-continue",
+  "version": "1.2.81",
+  "version_name": "1.2.81-structured-error-logs",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

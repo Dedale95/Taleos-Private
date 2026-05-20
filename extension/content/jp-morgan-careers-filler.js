@@ -31,11 +31,26 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function reportRunLog(message, level) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'jp-morgan-careers-filler',
+        level: level || 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function log(message, indent = 0) {
     const text = `${'   '.repeat(indent)}${message}`;
     if (logged.has(text)) return;
     logged.add(text);
-    console.log(`${LOG_PREFIX} ${text}`);
+    const line = `${LOG_PREFIX} ${text}`;
+    console.log(line);
+    const level = /❌/.test(text) ? 'error' : /⚠️/.test(text) ? 'warn' : 'info';
+    reportRunLog(line, level);
   }
 
   function norm(value) {

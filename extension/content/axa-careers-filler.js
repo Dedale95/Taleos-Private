@@ -25,8 +25,23 @@
     'this page no longer exists'
   ];
 
+  function reportRunLog(message, level) {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'extension_run_log',
+        source: 'axa-careers-filler',
+        level: level || 'info',
+        message: String(message || ''),
+        ts: new Date().toISOString()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function log(message) {
-    console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos AXA] ${message}`);
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos AXA] ${message}`;
+    console.log(line);
+    const level = /❌/.test(message) ? 'error' : /⚠️/.test(message) ? 'warn' : 'info';
+    reportRunLog(line, level);
   }
 
   function visible(el) {
