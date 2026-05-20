@@ -6,6 +6,7 @@ on:
     branches: [ "main" ]
     paths:
       - "HTML/**"
+      - "PYTHON/**"
       - "index.html"
       - "landing_page_finance.html"
       - "scraped_jobs_live.json"
@@ -55,6 +56,9 @@ jobs:
 
           rm -rf public-repo/HTML
           cp -R HTML public-repo/HTML
+
+          rm -rf public-repo/PYTHON
+          cp -R PYTHON public-repo/PYTHON
 
           cp index.html public-repo/index.html
           cp landing_page_finance.html public-repo/landing_page_finance.html
