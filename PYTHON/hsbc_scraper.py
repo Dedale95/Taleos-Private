@@ -181,7 +181,7 @@ class Database:
                     company_name         TEXT,
                     brand                TEXT,
                     source               TEXT DEFAULT 'HSBC',
-                    eightfold_id         TEXT UNIQUE,
+                    eightfold_id         TEXT,
                     ats_job_id           TEXT,
                     is_valid             INTEGER DEFAULT 1,
                     first_seen           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -191,6 +191,57 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_eightfold ON jobs(eightfold_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_status    ON jobs(status)")
             conn.commit()
+        self._migrate()
+
+    def _migrate(self):
+        """Supprime le UNIQUE constraint sur eightfold_id s'il existe (migration DB existante)."""
+        with sqlite3.connect(self.db_path) as conn:
+            indices = conn.execute("PRAGMA index_list(jobs)").fetchall()
+            ef_unique_index = None
+            for idx in indices:
+                idx_name, idx_unique = idx[1], idx[2]
+                if idx_unique:
+                    cols = conn.execute(f"PRAGMA index_info('{idx_name}')").fetchall()
+                    if any(col[2] == 'eightfold_id' for col in cols):
+                        ef_unique_index = idx_name
+                        break
+            if ef_unique_index is None:
+                return
+            logger.info(f"Migration DB HSBC : suppression index UNIQUE sur eightfold_id ({ef_unique_index})")
+            conn.execute("ALTER TABLE jobs RENAME TO _jobs_bak")
+            conn.execute("""
+                CREATE TABLE jobs (
+                    job_url              TEXT PRIMARY KEY,
+                    job_id               TEXT,
+                    job_title            TEXT,
+                    contract_type        TEXT,
+                    publication_date     TEXT,
+                    location             TEXT,
+                    country              TEXT,
+                    region               TEXT,
+                    job_family           TEXT,
+                    work_style           TEXT,
+                    management_position  TEXT DEFAULT 'Non',
+                    status               TEXT DEFAULT 'Live',
+                    education_level      TEXT,
+                    experience_level     TEXT,
+                    job_description      TEXT,
+                    company_name         TEXT,
+                    brand                TEXT,
+                    source               TEXT DEFAULT 'HSBC',
+                    eightfold_id         TEXT,
+                    ats_job_id           TEXT,
+                    is_valid             INTEGER DEFAULT 1,
+                    first_seen           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("INSERT INTO jobs SELECT * FROM _jobs_bak")
+            conn.execute("DROP TABLE _jobs_bak")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_eightfold ON jobs(eightfold_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_status    ON jobs(status)")
+            conn.commit()
+            logger.info("Migration DB HSBC terminée")
 
     def upsert(self, job: Dict) -> bool:
         """Insert ou met à jour, retourne True si c'est une nouvelle offre."""
@@ -202,47 +253,16 @@ class Database:
                 "SELECT job_url FROM jobs WHERE job_url = ?", (url,)
             ).fetchone()
             is_new = existing is None
-
-            conn.execute("""
-                INSERT INTO jobs (
-                    job_url, job_id, job_title, contract_type, publication_date,
-                    location, country, region, job_family, work_style,
-                    management_position, status, education_level, experience_level,
-                    job_description, company_name, brand, source,
-                    eightfold_id, ats_job_id, is_valid, last_updated
-                ) VALUES (
-                    :job_url, :job_id, :job_title, :contract_type, :publication_date,
-                    :location, :country, :region, :job_family, :work_style,
-                    :management_position, :status, :education_level, :experience_level,
-                    :job_description, :company_name, :brand, :source,
-                    :eightfold_id, :ats_job_id, :is_valid, CURRENT_TIMESTAMP
-                )
-                ON CONFLICT(job_url) DO UPDATE SET
-                    job_title        = excluded.job_title,
-                    contract_type    = CASE WHEN excluded.contract_type != ''
-                                           THEN excluded.contract_type
-                                           ELSE jobs.contract_type END,
-                    location         = excluded.location,
-                    country          = excluded.country,
-                    region           = excluded.region,
-                    job_family       = CASE WHEN excluded.job_family != ''
-                                           THEN excluded.job_family
-                                           ELSE jobs.job_family END,
-                    work_style       = excluded.work_style,
-                    status           = excluded.status,
-                    education_level  = CASE WHEN excluded.education_level != ''
-                                           THEN excluded.education_level
-                                           ELSE jobs.education_level END,
-                    experience_level = CASE WHEN excluded.experience_level != ''
-                                           THEN excluded.experience_level
-                                           ELSE jobs.experience_level END,
-                    job_description  = CASE WHEN excluded.job_description != ''
-                                           THEN excluded.job_description
-                                           ELSE jobs.job_description END,
-                    brand            = excluded.brand,
-                    last_updated     = CURRENT_TIMESTAMP,
-                    is_valid         = excluded.is_valid
-            """, {
+            # Neutraliser eightfold_id si déjà pris par un autre job_url
+            eightfold_id = job.get("eightfold_id", "") or ""
+            if eightfold_id:
+                conflict = conn.execute(
+                    "SELECT job_url FROM jobs WHERE eightfold_id = ? AND job_url != ?",
+                    (eightfold_id, url)
+                ).fetchone()
+                if conflict:
+                    eightfold_id = None
+            params = {
                 "job_url":           job.get("job_url", ""),
                 "job_id":            job.get("job_id", ""),
                 "job_title":         job.get("job_title", ""),
@@ -261,11 +281,57 @@ class Database:
                 "company_name":      job.get("company_name", COMPANY_NAME),
                 "brand":             job.get("brand", "HSBC"),
                 "source":            "HSBC",
-                "eightfold_id":      job.get("eightfold_id", ""),
+                "eightfold_id":      eightfold_id,
                 "ats_job_id":        job.get("ats_job_id", ""),
                 "is_valid":          job.get("is_valid", 1),
-            })
-            conn.commit()
+            }
+            try:
+                conn.execute("""
+                    INSERT INTO jobs (
+                        job_url, job_id, job_title, contract_type, publication_date,
+                        location, country, region, job_family, work_style,
+                        management_position, status, education_level, experience_level,
+                        job_description, company_name, brand, source,
+                        eightfold_id, ats_job_id, is_valid, last_updated
+                    ) VALUES (
+                        :job_url, :job_id, :job_title, :contract_type, :publication_date,
+                        :location, :country, :region, :job_family, :work_style,
+                        :management_position, :status, :education_level, :experience_level,
+                        :job_description, :company_name, :brand, :source,
+                        :eightfold_id, :ats_job_id, :is_valid, CURRENT_TIMESTAMP
+                    )
+                    ON CONFLICT(job_url) DO UPDATE SET
+                        job_title        = excluded.job_title,
+                        contract_type    = CASE WHEN excluded.contract_type != ''
+                                               THEN excluded.contract_type
+                                               ELSE jobs.contract_type END,
+                        location         = excluded.location,
+                        country          = excluded.country,
+                        region           = excluded.region,
+                        job_family       = CASE WHEN excluded.job_family != ''
+                                               THEN excluded.job_family
+                                               ELSE jobs.job_family END,
+                        work_style       = excluded.work_style,
+                        status           = excluded.status,
+                        education_level  = CASE WHEN excluded.education_level != ''
+                                               THEN excluded.education_level
+                                               ELSE jobs.education_level END,
+                        experience_level = CASE WHEN excluded.experience_level != ''
+                                               THEN excluded.experience_level
+                                               ELSE jobs.experience_level END,
+                        job_description  = CASE WHEN excluded.job_description != ''
+                                               THEN excluded.job_description
+                                               ELSE jobs.job_description END,
+                        brand            = excluded.brand,
+                        last_updated     = CURRENT_TIMESTAMP,
+                        is_valid         = excluded.is_valid
+                """, params)
+                conn.commit()
+            except sqlite3.IntegrityError as e:
+                if "eightfold_id" in str(e).lower():
+                    logger.warning(f"eightfold_id conflict ignoré pour {url}: {e}")
+                else:
+                    raise
         return is_new
 
     def get_live_eightfold_ids(self) -> Set[str]:
