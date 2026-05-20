@@ -268,7 +268,7 @@ class Database:
                     job_description      TEXT,
                     company_name         TEXT DEFAULT 'EY',
                     source               TEXT DEFAULT 'EY',
-                    sf_id                TEXT UNIQUE,
+                    sf_id                TEXT,
                     is_valid             INTEGER DEFAULT 1,
                     first_seen           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_updated         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -277,6 +277,57 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sf_id ON jobs(sf_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON jobs(status)")
             conn.commit()
+        self._migrate()
+
+    def _migrate(self):
+        """Supprime le UNIQUE constraint sur sf_id s'il existe (migration DB existante)."""
+        with sqlite3.connect(self.db_path) as conn:
+            # Chercher un index UNIQUE portant sur sf_id
+            indices = conn.execute("PRAGMA index_list(jobs)").fetchall()
+            sf_id_unique_index = None
+            for idx in indices:
+                idx_name, idx_unique = idx[1], idx[2]
+                if idx_unique:
+                    cols = conn.execute(f"PRAGMA index_info('{idx_name}')").fetchall()
+                    if any(col[2] == 'sf_id' for col in cols):
+                        sf_id_unique_index = idx_name
+                        break
+            if sf_id_unique_index is None:
+                return  # Déjà migré ou table nouvelle
+            logger.info(f"Migration DB : suppression index UNIQUE sur sf_id ({sf_id_unique_index})")
+            # Recréer la table sans UNIQUE sur sf_id
+            conn.execute("ALTER TABLE jobs RENAME TO _jobs_bak")
+            conn.execute("""
+                CREATE TABLE jobs (
+                    job_url              TEXT PRIMARY KEY,
+                    job_id               TEXT,
+                    job_title            TEXT,
+                    contract_type        TEXT,
+                    publication_date     TEXT,
+                    location             TEXT,
+                    country              TEXT,
+                    region               TEXT,
+                    job_family           TEXT,
+                    work_style           TEXT,
+                    management_position  TEXT DEFAULT 'Non',
+                    status               TEXT DEFAULT 'Live',
+                    education_level      TEXT,
+                    experience_level     TEXT,
+                    job_description      TEXT,
+                    company_name         TEXT DEFAULT 'EY',
+                    source               TEXT DEFAULT 'EY',
+                    sf_id                TEXT,
+                    is_valid             INTEGER DEFAULT 1,
+                    first_seen           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("INSERT INTO jobs SELECT * FROM _jobs_bak")
+            conn.execute("DROP TABLE _jobs_bak")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sf_id ON jobs(sf_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON jobs(status)")
+            conn.commit()
+            logger.info("Migration DB EY terminée")
 
     def upsert(self, job: Dict) -> bool:
         """Insert ou met à jour. Retourne True si nouvelle offre."""
@@ -288,49 +339,15 @@ class Database:
                 "SELECT job_url FROM jobs WHERE job_url = ?", (url,)
             ).fetchone()
             is_new = existing is None
-            conn.execute("""
-                INSERT INTO jobs (
-                    job_url, job_id, job_title, contract_type, publication_date,
-                    location, country, region, job_family, work_style,
-                    management_position, status, education_level, experience_level,
-                    job_description, company_name, source, sf_id, is_valid, last_updated
-                ) VALUES (
-                    :job_url, :job_id, :job_title, :contract_type, :publication_date,
-                    :location, :country, :region, :job_family, :work_style,
-                    :management_position, :status, :education_level, :experience_level,
-                    :job_description, :company_name, :source, :sf_id, :is_valid,
-                    CURRENT_TIMESTAMP
-                )
-                ON CONFLICT(job_url) DO UPDATE SET
-                    job_title        = excluded.job_title,
-                    contract_type    = CASE WHEN excluded.contract_type != ''
-                                           THEN excluded.contract_type
-                                           ELSE jobs.contract_type END,
-                    publication_date = CASE WHEN excluded.publication_date != ''
-                                           THEN excluded.publication_date
-                                           ELSE jobs.publication_date END,
-                    location         = CASE WHEN excluded.location != ''
-                                           THEN excluded.location
-                                           ELSE jobs.location END,
-                    country          = CASE WHEN excluded.country != ''
-                                           THEN excluded.country
-                                           ELSE jobs.country END,
-                    region           = CASE WHEN excluded.region != ''
-                                           THEN excluded.region
-                                           ELSE jobs.region END,
-                    job_family       = CASE WHEN excluded.job_family != ''
-                                           THEN excluded.job_family
-                                           ELSE jobs.job_family END,
-                    status           = excluded.status,
-                    education_level  = COALESCE(NULLIF(excluded.education_level, ''),
-                                               jobs.education_level),
-                    experience_level = COALESCE(NULLIF(excluded.experience_level, ''),
-                                               jobs.experience_level),
-                    job_description  = COALESCE(NULLIF(excluded.job_description, ''),
-                                               jobs.job_description),
-                    last_updated     = CURRENT_TIMESTAMP,
-                    is_valid         = excluded.is_valid
-            """, {
+            # Neutraliser sf_id si déjà pris par un autre job_url (évite tout UNIQUE résiduel)
+            sf_id = job.get("sf_id", "") or ""
+            if sf_id:
+                conflict = conn.execute(
+                    "SELECT job_url FROM jobs WHERE sf_id = ? AND job_url != ?", (sf_id, url)
+                ).fetchone()
+                if conflict:
+                    sf_id = None
+            params = {
                 "job_url":            job.get("job_url", ""),
                 "job_id":             job.get("job_id", ""),
                 "job_title":          job.get("job_title", ""),
@@ -348,10 +365,59 @@ class Database:
                 "job_description":    job.get("job_description", ""),
                 "company_name":       COMPANY_NAME,
                 "source":             "EY",
-                "sf_id":              job.get("sf_id", ""),
+                "sf_id":              sf_id,
                 "is_valid":           job.get("is_valid", 1),
-            })
-            conn.commit()
+            }
+            try:
+                conn.execute("""
+                    INSERT INTO jobs (
+                        job_url, job_id, job_title, contract_type, publication_date,
+                        location, country, region, job_family, work_style,
+                        management_position, status, education_level, experience_level,
+                        job_description, company_name, source, sf_id, is_valid, last_updated
+                    ) VALUES (
+                        :job_url, :job_id, :job_title, :contract_type, :publication_date,
+                        :location, :country, :region, :job_family, :work_style,
+                        :management_position, :status, :education_level, :experience_level,
+                        :job_description, :company_name, :source, :sf_id, :is_valid,
+                        CURRENT_TIMESTAMP
+                    )
+                    ON CONFLICT(job_url) DO UPDATE SET
+                        job_title        = excluded.job_title,
+                        contract_type    = CASE WHEN excluded.contract_type != ''
+                                               THEN excluded.contract_type
+                                               ELSE jobs.contract_type END,
+                        publication_date = CASE WHEN excluded.publication_date != ''
+                                               THEN excluded.publication_date
+                                               ELSE jobs.publication_date END,
+                        location         = CASE WHEN excluded.location != ''
+                                               THEN excluded.location
+                                               ELSE jobs.location END,
+                        country          = CASE WHEN excluded.country != ''
+                                               THEN excluded.country
+                                               ELSE jobs.country END,
+                        region           = CASE WHEN excluded.region != ''
+                                               THEN excluded.region
+                                               ELSE jobs.region END,
+                        job_family       = CASE WHEN excluded.job_family != ''
+                                               THEN excluded.job_family
+                                               ELSE jobs.job_family END,
+                        status           = excluded.status,
+                        education_level  = COALESCE(NULLIF(excluded.education_level, ''),
+                                                   jobs.education_level),
+                        experience_level = COALESCE(NULLIF(excluded.experience_level, ''),
+                                                   jobs.experience_level),
+                        job_description  = COALESCE(NULLIF(excluded.job_description, ''),
+                                                   jobs.job_description),
+                        last_updated     = CURRENT_TIMESTAMP,
+                        is_valid         = excluded.is_valid
+                """, params)
+                conn.commit()
+            except sqlite3.IntegrityError as e:
+                if "sf_id" in str(e).lower():
+                    logger.warning(f"sf_id conflict ignoré pour {url}: {e}")
+                else:
+                    raise
         return is_new
 
     def get_live_urls(self) -> Set[str]:

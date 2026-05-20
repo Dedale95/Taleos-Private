@@ -658,6 +658,10 @@ if __name__ == "__main__":
     if not run_script("ey_scraper.py"):
         failures.append("ey_scraper.py")
 
+    # 7h. Scraper KPMG Global (FR+DE+IT+NL+DK+AU+NZ+US — Radancy / SmartRecruiters / Lever / HR-Manager)
+    if not run_script("kpmg_global_scraper.py"):
+        failures.append("kpmg_global_scraper.py")
+
     if failures:
         print("\n❌ Scrapers en échec:")
         for s in failures:
@@ -679,7 +683,7 @@ if __name__ == "__main__":
     print()
     print("🔄 Export JSON pour les fichiers HTML...")
     try:
-        result = subprocess.run([sys.executable, "export_sqlite_to_json.py"], 
+        result = subprocess.run([sys.executable, "export_sqlite_to_json.py"],
                               cwd=PYTHON_DIR, capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
             print("✅ Export JSON terminé avec succès")
@@ -688,6 +692,21 @@ if __name__ == "__main__":
             print(f"Erreur: {result.stderr[:500]}")
     except Exception as e:
         print(f"⚠️ Erreur lors de l'export JSON: {e}")
+
+    # 10b. Régénération du résumé de couverture scraping (scraped_jobs_summary.json)
+    print()
+    print("🔄 Régénération scraped_jobs_summary.json...")
+    try:
+        summary_script = Path(__file__).parent.parent / "generate_scraping_summary.py"
+        result = subprocess.run([sys.executable, str(summary_script)],
+                              cwd=str(summary_script.parent), capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            print(f"✅ Summary généré : {result.stdout.strip()}")
+        else:
+            print(f"⚠️ generate_scraping_summary.py échoué (code {result.returncode})")
+            print(f"Erreur: {result.stderr[:300]}")
+    except Exception as e:
+        print(f"⚠️ Erreur generate_scraping_summary: {e}")
 
     # 11. Récapitulatif visuel Live vs Expired par entité
     print()
