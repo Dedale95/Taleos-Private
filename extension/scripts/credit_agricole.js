@@ -488,14 +488,17 @@
     for (let i = 0; i < (p.languages || []).length; i++) {
       const lang = p.languages[i];
       if (!lang?.name) continue;
-      const langTrigger = document.querySelector(`div[aria-controls='customSelect-language-${i + 1}']`);
-      const levelTrigger = document.querySelector(`div[aria-controls='customSelect-language-level-${i + 1}']`);
+      let langTrigger = document.querySelector(`div[aria-controls='customSelect-language-${i + 1}']`);
+      let levelTrigger = document.querySelector(`div[aria-controls='customSelect-language-level-${i + 1}']`);
       if (i > 0 && !langTrigger) {
         const addBtn = document.getElementById('add-language-btn');
         if (addBtn) {
           log(`      ➕ Clic 'Ajouter langue' pour Slot ${i + 1}`);
           addBtn.click();
           await delay(1000);
+          // Re-query après l'ajout du slot dynamique
+          langTrigger = document.querySelector(`div[aria-controls='customSelect-language-${i + 1}']`);
+          levelTrigger = document.querySelector(`div[aria-controls='customSelect-language-level-${i + 1}']`);
         }
       }
       if (langTrigger) {
