@@ -722,23 +722,35 @@
       }));
       return;
     }
-    chrome.runtime.sendMessage({
-      action: 'test_connection',
-      bankId: d.bankId,
-      email: d.email,
-      password: d.password || '',
-      firebaseUserId: d.firebaseUserId,
-      bankName: d.bankName,
-      loginUrl: d.loginUrl || ''
-    }).then(function (res) {
-      window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
-        detail: res || {}
-      }));
-    }).catch(function (err) {
-      window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
-        detail: { success: false, message: err?.message || 'Extension non disponible' }
-      }));
-    });
+    function doSendTestConnection(taleosTabId) {
+      chrome.runtime.sendMessage({
+        action: 'test_connection',
+        bankId: d.bankId,
+        email: d.email,
+        password: d.password || '',
+        firebaseUserId: d.firebaseUserId,
+        bankName: d.bankName,
+        loginUrl: d.loginUrl || '',
+        taleosTabId: taleosTabId || null
+      }).then(function (res) {
+        window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
+          detail: res || {}
+        }));
+      }).catch(function (err) {
+        window.dispatchEvent(new CustomEvent('taleos-test-connection-result', {
+          detail: { success: false, message: err?.message || 'Extension non disponible' }
+        }));
+      });
+    }
+    try {
+      chrome.tabs.getCurrent().then(function(currentTab) {
+        doSendTestConnection(currentTab?.id || null);
+      }).catch(function() {
+        doSendTestConnection(null);
+      });
+    } catch (_) {
+      doSendTestConnection(null);
+    }
   });
 
   window.addEventListener('taleos-request-bridge-health', function () {

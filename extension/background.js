@@ -2289,6 +2289,13 @@ async function runTestConnection(msg) {
       } catch (_) {}
     }
 
+    if (bankId === 'credit_agricole') {
+      try {
+        const caTabs = await chrome.tabs.query({ windowId: testWindowId, url: ['https://groupecreditagricole.jobs/*'] });
+        for (const t of caTabs) idsToClose.add(t.id);
+      } catch (_) {}
+    }
+
     for (const id of idsToClose) {
       try {
         await chrome.tabs.remove(id);
@@ -2395,7 +2402,9 @@ async function runTestConnection(msg) {
     }
 
     if (bankId !== 'axa') {
-      await new Promise(r => setTimeout(r, 8000));
+      // CA : AJAX auth + redirect peut prendre jusqu'à 10-12s ; on attend 12s pour être sûr
+      const waitMs = bankId === 'credit_agricole' ? 12000 : 8000;
+      await new Promise(r => setTimeout(r, waitMs));
     }
 
     try {
