@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.90",
-  "version_name": "1.2.90-country-cb-cross-continent-fix",
+  "version": "1.2.91",
+  "version_name": "1.2.91-monaco-compact-country",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
