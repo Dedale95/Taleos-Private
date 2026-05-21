@@ -319,7 +319,7 @@
     const labels = panel.querySelectorAll('label');
     for (const lbl of labels) {
       const txt = (lbl.textContent || '').replace(/\s*\(\d+\)/g, '').trim().toLowerCase();
-      if (txt && expectedVal.toLowerCase().includes(txt)) {
+      if (txt && (txt === exp || txt.includes(exp))) {
         lbl.click();
         await delay(500);
         break;
@@ -961,13 +961,13 @@
             log('   ✅ RGPD coché.');
           }
         }
-        await delay(3000);
+        log('   ⏳ Attente de sécurité de 60 SECONDES avant envoi — vérifiez le formulaire...');
+        await delay(60000);
         const submitBtn = document.getElementById('applyBtn');
         if (submitBtn && !submitBtn.disabled) {
           await chrome.storage.local.set({ taleos_success_pending: { jobId, jobTitle: jobTitle || '', companyName: companyName || 'Crédit Agricole', offerUrl: offerUrlForNotify } });
           log('🚀 FINALISATION');
           log('   🔎 Recherche RGPD (Méthode Robuste)...');
-          log('   ⏳ Attente de sécurité de 3 SECONDES avant envoi...');
           log('🚀 CLIC FINAL : ENVOI DE LA CANDIDATURE...');
           submitBtn.click();
           log('⏳ Attente du message de confirmation (Timeout 90s)...');
@@ -1075,13 +1075,13 @@
         }
       }
 
-      await delay(3000);
+      log('   ⏳ Attente de sécurité de 60 SECONDES avant envoi — vérifiez le formulaire...');
+      await delay(60000);
       const submitBtn = document.getElementById('applyBtn');
       if (submitBtn && !submitBtn.disabled) {
         await chrome.storage.local.set({ taleos_success_pending: { jobId, jobTitle: jobTitle || '', companyName: companyName || 'Crédit Agricole', offerUrl: offerUrlForNotify } });
         log('🚀 FINALISATION');
         log('   🔎 Recherche RGPD (Méthode Robuste)...');
-        log('   ⏳ Attente de sécurité de 3 SECONDES avant envoi...');
         log('🚀 CLIC FINAL : ENVOI DE LA CANDIDATURE...');
         submitBtn.click();
         log('⏳ Attente du message de confirmation (Timeout 90s)...');
