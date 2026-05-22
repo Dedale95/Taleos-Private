@@ -15,14 +15,26 @@ HTML_SUMMARY = HTML_DIR / "scraped_jobs_summary.json"
 
 
 def load_jobs():
-    candidates = []
+    # Priorité absolue aux fichiers locaux : générés juste avant par merge_from_databases()
+    # → on ne consulte JAMAIS le repo public si un fichier local non-vide est disponible.
+    # Le repo public ne sert que de fallback ultime (premier run sur machine vide, CI sans DB).
+    local_candidates = []
     for path in (HTML_LIVE_JSON, LIVE_JSON):
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                candidates.append(data)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list) and data:
+                    local_candidates.append(data)
+            except Exception:
+                pass
 
+    if local_candidates:
+        # Prendre le fichier local le plus complet (en cas de doublon HTML/ vs racine)
+        return max(local_candidates, key=len)
+
+    # Fallback : repo public GitHub (cas où aucune DB locale n'a été générée)
+    print("⚠️  Aucun fichier local scraped_jobs_live.json — tentative de récupération depuis le repo public...")
     public_head_sha = None
     try:
         out = subprocess.check_output(
@@ -46,19 +58,20 @@ def load_jobs():
         "https://raw.githubusercontent.com/Dedale95/Taleos-Public/main/scraped_jobs_live.json",
     ])
 
+    remote_candidates = []
     for url in remote_urls:
         try:
             with urlopen(url, timeout=60) as r:
                 data = json.load(r)
-            if isinstance(data, list):
-                candidates.append(data)
+            if isinstance(data, list) and data:
+                remote_candidates.append(data)
         except Exception:
             continue
 
-    if not candidates:
-        raise FileNotFoundError("scraped_jobs_live.json introuvable")
+    if remote_candidates:
+        return max(remote_candidates, key=len)
 
-    return max(candidates, key=len)
+    raise FileNotFoundError("scraped_jobs_live.json introuvable (local + repo public)")
 
 
 def is_axa(name: str) -> bool:
