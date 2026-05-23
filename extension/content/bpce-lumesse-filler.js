@@ -114,8 +114,9 @@
       jobAlerts: !!raw.bpce_job_alerts,
       cvStoragePath: String(raw.cv_storage_path || "").trim(),
       cvFileName: String(raw.cv_filename || "cv.pdf").trim(),
-      letterStoragePath: String(raw.letter_storage_path || "").trim(),
-      letterFileName: String(raw.letter_filename || "").trim(),
+      // background.js stocke la lettre sous lm_storage_path / lm_filename
+      letterStoragePath: String(raw.lm_storage_path || raw.letter_storage_path || "").trim(),
+      letterFileName: String(raw.lm_filename || raw.letter_filename || "").trim(),
       /** Préférence de région (LBP custom_question_407). Défaut : Île-de-France. */
       regionPreference: String(raw.region_preference || raw.region || "Île-de-France").trim(),
     };

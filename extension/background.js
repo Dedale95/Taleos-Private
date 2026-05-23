@@ -85,6 +85,7 @@ const BANK_SCRIPT_MAP = {
   societe_generale: 'scripts/societe_generale.js',
   deloitte: 'content/deloitte-careers-filler.js',
   bpce: 'content/bpce-careers-filler.js',
+  la_banque_postale: 'content/la-banque-postale-careers-filler.js',
   bnp_paribas: 'content/bnp-careers-filler.js',
   credit_mutuel: 'content/credit-mutuel-careers-filler.js',
   bpifrance: 'content/bpifrance-careers-filler.js',
@@ -136,6 +137,9 @@ function injectBankFiles(bankId, mainFiles) {
   }
   if (bankId === 'bpce') {
     return injectFilesWithBanner([BPCE_BLUEPRINT_SCRIPT, ...arr]);
+  }
+  if (bankId === 'la_banque_postale') {
+    return injectFilesWithBanner(['scripts/la_banque_postale_blueprint.js', ...arr]);
   }
   if (bankId === 'deloitte') {
     return injectFilesWithBanner([DELOITTE_BLUEPRINT_SCRIPT, ...arr]);
@@ -2229,6 +2233,19 @@ async function runTestConnection(msg) {
     return { success: true };
   }
 
+  // La Banque Postale utilise Lumesse/TalentLink — email uniquement, sans mot de passe
+  if (bankId === 'la_banque_postale') {
+    if (!email || !firebaseUserId) {
+      return { success: false, message: 'Email La Banque Postale manquant.' };
+    }
+    const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
+    if (!taleosIdToken) {
+      return { success: false, message: 'Vous devez être connecté à Taleos' };
+    }
+    await saveCareerConnectionToFirestore(firebaseUserId, taleosIdToken, bankId, bankName || 'La Banque Postale', email, '');
+    return { success: true };
+  }
+
   // J.P. Morgan utilise un code OTP envoyé par email pendant la candidature.
   if (bankId === 'jp_morgan') {
     if (!email || !firebaseUserId) {
@@ -3412,6 +3429,22 @@ async function checkProfileCompletenessFromFirestore(bankId) {
     } catch (_) {}
     if (!bpceEmailConfigured) {
       missingFields.push('Email de connexion BPCE (page Connexions)');
+    }
+  }
+  // La Banque Postale : vérifier que l'email a été configuré dans la page Connexions
+  if (bankId === 'la_banque_postale') {
+    let lbpEmailConfigured = false;
+    try {
+      const connRes = await fetch(`${base}/profiles/${taleosUserId}/career_connections/la_banque_postale`, {
+        headers: { Authorization: `Bearer ${taleosIdToken}` }
+      });
+      if (connRes.ok) {
+        const connData = parseFirestoreDoc(await connRes.json());
+        lbpEmailConfigured = !!(connData.email || '').trim();
+      }
+    } catch (_) {}
+    if (!lbpEmailConfigured) {
+      missingFields.push('Email de connexion La Banque Postale (page Connexions)');
     }
   }
   return { complete: missingFields.length === 0, missingFields };
