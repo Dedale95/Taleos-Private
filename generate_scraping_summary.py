@@ -18,20 +18,22 @@ def load_jobs():
     # Priorité absolue aux fichiers locaux : générés juste avant par merge_from_databases()
     # → on ne consulte JAMAIS le repo public si un fichier local non-vide est disponible.
     # Le repo public ne sert que de fallback ultime (premier run sur machine vide, CI sans DB).
-    local_candidates = []
+    #
+    # IMPORTANT : on itère dans l'ordre de priorité décroissante et on retourne
+    # le PREMIER fichier valide (HTML/ en tête, puis racine).
+    # On ne prend PAS le max(len) car sur le runner CI le fichier racine peut être
+    # l'ancienne version checkoutée (plus volumineuse) alors que HTML/ vient d'être
+    # régénéré par export_sqlite_to_json.py avec des dates fraîches → le max(len)
+    # retournerait le fichier stale et le summary afficherait de vieilles dates.
     for path in (HTML_LIVE_JSON, LIVE_JSON):
         if path.exists():
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, list) and data:
-                    local_candidates.append(data)
+                    return data
             except Exception:
                 pass
-
-    if local_candidates:
-        # Prendre le fichier local le plus complet (en cas de doublon HTML/ vs racine)
-        return max(local_candidates, key=len)
 
     # Fallback : repo public GitHub (cas où aucune DB locale n'a été générée)
     print("⚠️  Aucun fichier local scraped_jobs_live.json — tentative de récupération depuis le repo public...")
