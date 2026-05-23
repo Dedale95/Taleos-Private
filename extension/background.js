@@ -2465,7 +2465,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'axa' || url.includes('careers.axa.com') || url.includes('careers-fr-axa.icims.com') || url.includes('careers-en-axa.icims.com') || url.includes('candidature-recrutement.axa.fr')) return 'axa';
   if (bid === 'deloitte' || (url.includes('myworkdayjobs.com') && url.includes('deloitte'))) return 'deloitte';
   if (bid === 'societe_generale' || url.includes('careers.societegenerale.com') || url.includes('socgen.taleo.net')) return 'sg';
-  if (bid === 'bpce' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com')) return 'bpce';
+  if (bid === 'bpce' || bid === 'la_banque_postale' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com') || url.includes('labanquepostale.com')) return 'bpce';
   if (bid === 'bnp_paribas' || url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp';
   if (bid === 'goldman_sachs' || url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
   return 'other';

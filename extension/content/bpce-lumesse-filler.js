@@ -114,6 +114,10 @@
       jobAlerts: !!raw.bpce_job_alerts,
       cvStoragePath: String(raw.cv_storage_path || "").trim(),
       cvFileName: String(raw.cv_filename || "cv.pdf").trim(),
+      letterStoragePath: String(raw.letter_storage_path || "").trim(),
+      letterFileName: String(raw.letter_filename || "").trim(),
+      /** Préférence de région (LBP custom_question_407). Défaut : Île-de-France. */
+      regionPreference: String(raw.region_preference || raw.region || "Île-de-France").trim(),
     };
     return profile;
   }
@@ -325,7 +329,8 @@
    * Questions RGPD / opportunités sur les custom_question_* (libellés variables selon l’offre).
    */
   function fillBpceCustomConsentSelects(profile) {
-    const skipNames = new Set(["custom_question_7344", "custom_question_14065"]);
+    // custom_question_407 (région LBP) et custom_question_474 (aménagement LBP) gérés séparément
+    const skipNames = new Set(["custom_question_7344", "custom_question_14065", "custom_question_407", "custom_question_474"]);
     for (const sel of document.querySelectorAll('select[name^="custom_question"]')) {
       const name = sel.getAttribute("name") || "";
       if (skipNames.has(name)) continue;
@@ -807,6 +812,18 @@
       "Autorisation de travail en France"
     );
 
+    // LBP-spécifique : région de préférence (custom_question_407)
+    const regionSel = document.querySelector("select[name='custom_question_407']");
+    if (regionSel) {
+      selectByTextContainsOnElement(regionSel, profile.regionPreference || "Île-de-France", "Région de préférence (LBP)");
+    }
+
+    // LBP-spécifique : aménagement spécifique (custom_question_474)
+    const amenagementSel = document.querySelector("select[name='custom_question_474']");
+    if (amenagementSel) {
+      selectByTextContainsOnElement(amenagementSel, "Non", "Aménagement spécifique (LBP)");
+    }
+
   }
 
   /**
@@ -828,6 +845,33 @@
     const file = await fetchCvAsFileFromFirebase(profile.cvStoragePath, profile.cvFileName);
     log(`📎 Upload CV — fichier reçu, injection dans le formulaire…`);
     injectFile(fileInputSelector, file, "Upload CV (pièce jointe)");
+  }
+
+  /**
+   * Upload de la lettre de motivation (LBP et autres banques qui proposent ce champ).
+   * Utilise le nom de fichier exact tel que stocké dans Firebase (letter_filename),
+   * sans renommer le document.
+   */
+  async function fillLetter(profile) {
+    if (!profile.letterStoragePath) {
+      log("⏭️ Upload Lettre — pas de letter_storage_path dans le profil (skip)");
+      return;
+    }
+    const letterInputSelector =
+      "form[id^='form_cover_letter_'] input[type='file'], input[id^='upload_cover_letter_'][type='file']";
+    const letterInput = document.querySelector(letterInputSelector);
+    if (!letterInput) {
+      log("⏭️ Upload Lettre — champ introuvable sur cette page (skip)");
+      return;
+    }
+    const fileName = profile.letterFileName || "lettre.pdf";
+    log(`📎 Upload Lettre — téléchargement depuis Firebase : ${profile.letterStoragePath} (nom : ${fileName})`);
+    try {
+      const file = await fetchCvAsFileFromFirebase(profile.letterStoragePath, fileName);
+      injectFile(letterInputSelector, file, "Upload Lettre de motivation (pièce jointe)");
+    } catch (e) {
+      log(`⚠️ Upload Lettre — échec : ${e?.message || e}`);
+    }
   }
 
   // =========================
@@ -905,6 +949,7 @@
       await fillPersonalInfo(profile);
       await sleep(250);
       await fillCv(profile);
+      await fillLetter(profile);
       await fillAllConsentAndCommunication(profile);
       await maybeSubmitLumesseApplication(raw);
 
