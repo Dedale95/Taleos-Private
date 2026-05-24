@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import subprocess
 from collections import Counter
 from datetime import datetime, timezone
@@ -8,10 +9,30 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).parent
 HTML_DIR = ROOT / "HTML"
+PYTHON_DIR = ROOT / "PYTHON"
 LIVE_JSON = ROOT / "scraped_jobs_live.json"
 HTML_LIVE_JSON = HTML_DIR / "scraped_jobs_live.json"
 ROOT_SUMMARY = ROOT / "scraped_jobs_summary.json"
 HTML_SUMMARY = HTML_DIR / "scraped_jobs_summary.json"
+
+# Association groupe canonique → fichier DB SQLite (pour sources_verified_at)
+DB_BY_GROUP = {
+    "Groupe Crédit Agricole": PYTHON_DIR / "credit_agricole_jobs.db",
+    "Groupe Société Générale": PYTHON_DIR / "societe_generale_jobs.db",
+    "Deloitte": PYTHON_DIR / "deloitte_jobs.db",
+    "Groupe BNP Paribas": PYTHON_DIR / "bnp_paribas_jobs.db",
+    "Groupe BPCE": PYTHON_DIR / "bpce_jobs.db",
+    "Bpifrance": PYTHON_DIR / "bpifrance_jobs.db",
+    "Groupe Crédit Mutuel": PYTHON_DIR / "credit_mutuel_jobs.db",
+    "ODDO BHF": PYTHON_DIR / "oddo_bhf_jobs.db",
+    "J.P. Morgan": PYTHON_DIR / "jp_morgan_jobs.db",
+    "Goldman Sachs": PYTHON_DIR / "goldman_sachs_jobs.db",
+    "AXA": PYTHON_DIR / "axa_jobs.db",
+    "KPMG": PYTHON_DIR / "kpmg_jobs.db",
+    "HSBC": PYTHON_DIR / "hsbc_jobs.db",
+    "EY": PYTHON_DIR / "ey_jobs.db",
+    "La Banque Postale": PYTHON_DIR / "la_banque_postale_jobs.db",
+}
 
 
 def load_jobs():
@@ -211,12 +232,27 @@ def main():
         if group not in freshness or job_latest > freshness[group]:
             freshness[group] = job_latest
 
+    # Vérification par source : quand la base SQLite a-t-elle été traitée pour la dernière fois ?
+    # Sur le CI, les bases sont téléchargées en artifact (mtime = maintenant).
+    # En local, mtime = dernier run du scraper local.
+    # Ce champ est distinct de freshness_by_group (qui mesure quand de nouvelles offres sont apparues).
+    sources_verified_at: dict[str, str] = {}
+    for group_name, db_path in DB_BY_GROUP.items():
+        if db_path.exists():
+            mtime = os.path.getmtime(db_path)
+            sources_verified_at[group_name] = (
+                datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+            )
+
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_jobs": len(jobs),
         "counts_by_group": dict(sorted(grouped.items(), key=lambda item: (-item[1], item[0].lower()))),
         # dernière date d'ajout/mise à jour d'une offre, par groupe (ISO 8601)
         "freshness_by_group": dict(sorted(freshness.items())),
+        # dernière date de traitement de la base SQLite par le pipeline (mtime du fichier DB)
+        # Présent seulement si les bases locales sont disponibles (sinon champ absent ou vide)
+        "sources_verified_at": dict(sorted(sources_verified_at.items())),
     }
     for path in (ROOT_SUMMARY, HTML_SUMMARY):
         with open(path, "w", encoding="utf-8") as f:
