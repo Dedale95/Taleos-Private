@@ -177,6 +177,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'goldman_sachs') return 'taleos_pending_goldman_sachs';
   if (bid === 'axa') return 'taleos_pending_axa';
   if (bid === 'bpifrance') return 'taleos_pending_bpifrance';
+  if (bid === 'hsbc') return 'taleos_pending_hsbc';
   return null;
 }
 
@@ -213,6 +214,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'goldman_sachs') keys.push('taleos_pending_goldman_sachs', 'taleos_gs_tab_id');
   if (bid === 'axa') keys.push('taleos_pending_axa', 'taleos_axa_tab_id');
   if (bid === 'bpifrance') keys.push('taleos_pending_bpifrance', 'taleos_bpifrance_tab_id');
+  if (bid === 'hsbc') keys.push('taleos_pending_hsbc', 'taleos_hsbc_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -521,7 +523,9 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_pending_offer',
     'taleos_ca_apply_tab_id',
     'taleos_pending_bpifrance',
-    'taleos_bpifrance_tab_id'
+    'taleos_bpifrance_tab_id',
+    'taleos_pending_hsbc',
+    'taleos_hsbc_tab_id'
   ]);
   if (s.taleos_pending_sg?.profile && s.taleos_sg_tab_id) {
     const tab = await chrome.tabs.get(s.taleos_sg_tab_id).catch(() => null);
@@ -2485,6 +2489,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'bpce' || bid === 'la_banque_postale' || url.includes('recrutement.bpce.fr') || url.includes('recruitmentplatform.com') || url.includes('labanquepostale.com')) return 'bpce';
   if (bid === 'bnp_paribas' || url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp';
   if (bid === 'goldman_sachs' || url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
+  if (bid === 'hsbc' || url.includes('portal.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
   return 'other';
 }
 
@@ -3106,6 +3111,54 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     await chrome.storage.local.set({
       taleos_pending_jp_morgan: { ...pendingBase, tabId: tab.id },
       taleos_jp_morgan_tab_id: tab.id
+    });
+    await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'hsbc') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    // Fermer un onglet HSBC mort s'il en existe un.
+    try {
+      const { taleos_hsbc_tab_id: existingTabId } = await chrome.storage.local.get(['taleos_hsbc_tab_id']);
+      if (existingTabId) {
+        const existingTab = await chrome.tabs.get(existingTabId).catch(() => null);
+        if (existingTab) {
+          console.log(`[Taleos] HSBC : fermeture onglet mort #${existingTabId} avant relance`);
+          await chrome.tabs.remove(existingTabId).catch(() => {});
+        }
+        await chrome.storage.local.remove(['taleos_hsbc_tab_id', 'taleos_pending_hsbc']).catch(() => {});
+      }
+    } catch (_) {}
+
+    const createOpts = { url: offerUrl, active: false };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) createOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const hsbcPendingBase = {
+      profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'HSBC', __offerUrl: offerUrl },
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName: companyName || 'HSBC',
+      location: offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId: null,
+      timestamp: Date.now()
+    };
+    await chrome.storage.local.set({ taleos_pending_hsbc: hsbcPendingBase });
+    const tab = await chrome.tabs.create(createOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    await chrome.storage.local.set({
+      taleos_pending_hsbc: { ...hsbcPendingBase, tabId: tab.id },
+      taleos_hsbc_tab_id: tab.id
     });
     await scheduleApplyStuckWatchdog();
   } else {
