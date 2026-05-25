@@ -479,7 +479,7 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // Cas Login page : connexion avec identifiants existants
   // ══════════════════════════════════════════════════════════════════════════════
-  async function handleLoginPage(profile) {
+  async function handleLoginPage(profile, offerUrl) {
     log('Page Sign In SF HSBC — connexion avec identifiants enregistrés…');
     showBanner('Connexion à votre compte HSBC…');
 
@@ -517,6 +517,38 @@
     submitBtn.click();
     log('✅ Clic Sign In → attente connexion');
     showBanner('Connexion en cours…');
+
+    // Attendre que la page de connexion disparaisse (succès) OU qu'un message d'erreur apparaisse
+    const loginResult = await waitFor(() => {
+      const errorEl = document.querySelector('#errorMsg_1, #uiErrorMsg, #uiErrorContainer_2');
+      if (errorEl && errorEl.offsetParent !== null) {
+        return { error: errorEl.innerText?.trim() || 'Identifiants incorrects' };
+      }
+      // Succès : champ email disparu ou URL changée
+      const loginForm = document.querySelector('#username') || document.querySelector('input[name="logonID"]');
+      if (!loginForm || loginForm.offsetParent === null) {
+        return { success: true };
+      }
+      return null; // En attente
+    }, 12000, 400);
+
+    if (loginResult?.error) {
+      log(`❌ Connexion échouée : ${loginResult.error}`);
+      showBanner(`Connexion HSBC échouée : ${loginResult.error}`, 'error');
+      return;
+    }
+
+    log('✅ Connexion HSBC réussie');
+
+    if (!offerUrl) {
+      showBanner('Connecté ! Naviguez manuellement vers l\'offre HSBC', 'warn');
+      return;
+    }
+
+    log(`→ Navigation vers l'offre : ${offerUrl}`);
+    showBanner('Connecté ! Ouverture de l\'offre…');
+    await sleep(600);
+    location.href = offerUrl;
   }
 
   async function handleEightfoldOffer(profile) {
@@ -587,7 +619,7 @@
 
     if (isLoginPage) {
       if (profile.auth_email) {
-        await handleLoginPage(profile);
+        await handleLoginPage(profile, entry.offerUrl || '');
       } else {
         log('Page Sign In HSBC — pas d\'identifiants configurés dans Connexions. Connectez-vous manuellement ou créez un compte.');
         showBanner('Connectez-vous à votre compte HSBC pour continuer', 'warn');

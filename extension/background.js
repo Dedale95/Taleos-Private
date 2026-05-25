@@ -3140,7 +3140,13 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }
     } catch (_) {}
 
-    const createOpts = { url: offerUrl, active: true };
+    // Si des identifiants HSBC sont configurés → ouvrir la page Sign In SF directement
+    // (l'offre Eightfold sera rouverte après connexion réussie)
+    const hsbcHasCredentials = !!(profile.auth_email || '').trim();
+    const hsbcStartUrl = hsbcHasCredentials
+      ? (CONNECTION_TEST_URLS.hsbc || offerUrl)
+      : offerUrl;
+    const createOpts = { url: hsbcStartUrl, active: true };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);

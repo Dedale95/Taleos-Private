@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.109",
-  "version_name": "1.2.109-hsbc-connexions-login-flow",
+  "version": "1.2.110",
+  "version_name": "1.2.110-hsbc-login-then-offer",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
