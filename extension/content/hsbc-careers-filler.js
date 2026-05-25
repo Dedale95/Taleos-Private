@@ -301,21 +301,34 @@
     const link = document.getElementById('dataPrivacyId');
     if (!link) { log('⚠️ Lien confidentialité (dataPrivacyId) introuvable'); return false; }
 
-    // Cliquer le lien ouvre le texte de la politique (souvent dans un nouvel onglet ou popup).
-    // SuccessFactors marque l'acceptation via fbclc_dpcsId une fois la politique lue.
+    // Cliquer le lien ouvre une modale avec boutons "Accept" / "Decline" / "Print"
     link.click();
-    await sleep(600);
+    await sleep(800);
 
-    // Vérifier si le champ caché fbclc_dpcsId a été mis à jour par SF
+    // Chercher le bouton "Accept" dans la modale
+    const acceptBtn = await waitFor(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      return btns.find(b => b.textContent.trim() === 'Accept') || null;
+    }, 4000, 200);
+
+    if (acceptBtn) {
+      acceptBtn.click();
+      await sleep(500);
+      log('✅ Politique de confidentialité → bouton "Accept" cliqué');
+    } else {
+      log('⚠️ Bouton "Accept" non trouvé dans la modale — tentative fallback');
+    }
+
+    // Vérifier l'acceptation : fbclc_dpcsId non vide + texte de confirmation
     const dpcsInput = document.getElementById('fbclc_dpcsId');
-    if (dpcsInput && !dpcsInput.value) {
-      // Certaines versions SF acceptent automatiquement au clic ; forcer la valeur si besoin.
+    if (dpcsInput?.value) {
+      log(`✅ Politique acceptée (fbclc_dpcsId="${dpcsInput.value}")`);
+    } else if (dpcsInput) {
+      // Fallback : forcer si la modale n'a pas pu être cliquée
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
       if (setter) setter.call(dpcsInput, '1');
       dpcsInput.dispatchEvent(new Event('change', { bubbles: true }));
-      log('✅ Politique de confidentialité acceptée (fbclc_dpcsId forcé)');
-    } else {
-      log('✅ Lien politique de confidentialité cliqué — vérifiez que la case est cochée');
+      log('✅ Politique de confidentialité acceptée (fbclc_dpcsId forcé à "1")');
     }
 
     return true;
@@ -500,6 +513,15 @@
     const host = location.hostname;
     const path = location.pathname;
     const href = location.href;
+
+    // Cas 0 : page de confirmation post-soumission — ne rien faire, effacer le pending
+    // URL réelle : /portalcareer?isRedirectToAppSent=true&isQuickApplyPostLoginRedirect=true
+    if (href.includes('isRedirectToAppSent=true') || href.includes('isQuickApplyPostLoginRedirect=true')) {
+      log('✅ Candidature HSBC confirmée — nettoyage du pending');
+      chrome.storage.local.remove([STORAGE_KEY, TAB_ID_KEY]).catch(() => {});
+      showBanner('Candidature envoyée avec succès ! 🎉', 'success');
+      return;
+    }
 
     // Cas 1 : formulaire candidature SF (new-user registration + apply)
     const isSFForm = host.includes('career2.successfactors.eu')

@@ -33,8 +33,8 @@
       'right to work', 'data privacy'
     ],
     sfSuccess: [
-      'thank you for applying', 'application submitted', 'your application has been submitted',
-      'application received', 'we have received your application'
+      'your application has been sent', 'thank you for expressing your interest',
+      'please click on below link to visit your profile', 'back to job listings'
     ]
   };
 
@@ -66,7 +66,10 @@
     sf_success: {
       label: 'Candidature HSBC envoyée',
       hostIncludes: ['career2.successfactors.eu'],
-      urlIncludes: ['hsbcholdin'],
+      // URL réelle post-soumission : /portalcareer?isRedirectToAppSent=true&isQuickApplyPostLoginRedirect=true
+      urlIncludes: ['isRedirectToAppSent=true', 'hsbcholdin'],
+      pathMatches: [/^\/portalcareer/],
+      selectorsAny: ['#fbja_jobSearch'],
       textPatterns: TEXT.sfSuccess
     }
   };
