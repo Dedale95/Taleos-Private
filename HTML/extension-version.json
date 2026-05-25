@@ -1,6 +1,6 @@
 {
-  "version": "1.2.104",
-  "version_name": "1.2.104-hsbc-calibrated",
+  "version": "1.2.105",
+  "version_name": "1.2.105-hsbc-fix-automation",
   "published_at": "2026-05-25T00:00:00Z",
-  "release_notes": "Calibration blueprint HSBC sur candidature réelle. (1) hsbc_blueprint.js : patterns sfSuccess corrigés avec le texte exact de la page de confirmation ('your application has been sent', 'thank you for expressing your interest') ; détection sf_success par URL (/portalcareer?isRedirectToAppSent=true) et sélecteur #fbja_jobSearch. (2) hsbc-careers-filler.js : acceptPrivacy() corrigé pour cliquer le bouton 'Accept' dans la modale HSBC (au lieu de forcer fbclc_dpcsId) ; early-exit dans main() sur la page de succès avec nettoyage automatique du pending et bannière de confirmation. Mapping complet vérifié sur formulaire réel : fbclc_userName, fbclc_emailConf, fbclc_fName, fbclc_lName, tor__fcust_PrefFName, 9:_input (indicatif +33), tor__fcellPhone, picklists 13/17/21/25/29 (proches/ancien employé/genre/droit au travail/auditeurs), fbclc_country (France=FR), fbclc_searPref value=2 (visibilité recruteurs uniquement), 59:_attachIcon + 60:_file (upload CV), fbclc_dpcsId=240 (privacy), fbqa_apply."
+  "release_notes": "Fix critique HSBC : ajout de 'hsbc' dans BANK_SCRIPT_MAP de background.js. Sans cette entrée, hasBankAutomation('hsbc') retournait false et l'extension se contentait d'ouvrir l'URL directement sans déclencher l'automatisation (le bloc routeAs==='hsbc' n'était jamais atteint). Avec le fix, le clic sur Postuler depuis Taleos déclenche correctement : stockage taleos_pending_hsbc, ouverture de l'onglet Eightfold, injection des content scripts blueprint + filler."
 }

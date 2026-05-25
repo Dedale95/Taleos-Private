@@ -91,7 +91,8 @@ const BANK_SCRIPT_MAP = {
   bpifrance: 'content/bpifrance-careers-filler.js',
   jp_morgan: 'content/jp-morgan-careers-filler.js',
   goldman_sachs: 'content/goldman-sachs-careers-filler.js',
-  axa: 'content/axa-careers-filler.js'
+  axa: 'content/axa-careers-filler.js',
+  hsbc: 'content/hsbc-careers-filler.js'
 };
 
 function hasBankAutomation(bankId) {
