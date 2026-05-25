@@ -44,7 +44,7 @@
       label: 'Offre HSBC (Eightfold)',
       hostIncludes: ['portal.careers.hsbc.com'],
       pathMatches: [/\/careers\/job\//],
-      selectorsAny: ['#applyButton_top', '#applyButton_bottom', 'button'],
+      selectorsAny: ['#applyButton_top', '#applyButton_bottom', '[data-test-id="apply-button"]', '[class*="position-apply-button"]', 'button'],
       textPatterns: TEXT.eightfoldOffer
     },
     sf_listing: {

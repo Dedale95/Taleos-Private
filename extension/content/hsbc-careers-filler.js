@@ -456,7 +456,14 @@
     showBanner('Ouverture du formulaire de candidature…');
 
     const applyBtn = await waitFor(
-      () => document.getElementById('applyButton_top') || document.getElementById('applyButton_bottom'),
+      () =>
+        document.getElementById('applyButton_top') ||
+        document.getElementById('applyButton_bottom') ||
+        document.querySelector('[data-test-id="apply-button"]') ||
+        document.querySelector('[class*="position-apply-button"]') ||
+        Array.from(document.querySelectorAll('button')).find(b =>
+          /apply|postuler|candidater/i.test(b.textContent)
+        ),
       10000
     );
     if (!applyBtn) {
@@ -476,7 +483,14 @@
     // Sur Eightfold, le bouton Apply appelle checkDpcs2AndProceed
     // qui peut afficher une popup DPCS avant de naviguer vers SF.
     const applyBtn = await waitFor(
-      () => document.getElementById('applyButton_top') || document.getElementById('applyButton_bottom'),
+      () =>
+        document.getElementById('applyButton_top') ||
+        document.getElementById('applyButton_bottom') ||
+        document.querySelector('[data-test-id="apply-button"]') ||
+        document.querySelector('[class*="position-apply-button"]') ||
+        Array.from(document.querySelectorAll('button')).find(b =>
+          /apply|postuler|candidater/i.test(b.textContent)
+        ),
       8000
     );
     if (!applyBtn) {
