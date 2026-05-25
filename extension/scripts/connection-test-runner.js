@@ -104,6 +104,29 @@
           /errormsg_1|uierrorcontainer_2|uierrormsg/.test(html) ||
           /incorrect|invalid user id|invalid login|login failed|unable to sign in|wrong email|wrong password/.test(text);
       }
+    },
+    hsbc: {
+      loginUrl: 'https://career2.successfactors.eu/career?company=hsbcholdin&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=OupXiSPpV6NVVB92Trb%252fkx9KHywNEecoMl55nAmzpZM%253d',
+      emailSel: '#username',
+      passwordSel: '#password',
+      submitSel: 'button[onclick*="validateFields"], .aquabtn.active button, .button_row button',
+      cookieSel: null,
+      successCheck: (url, content) => {
+        const text = (content || '').toLowerCase();
+        const html = (document.body?.innerHTML || '').toLowerCase();
+        const loginVisible = !!document.querySelector('#username') && !!document.querySelector('#password');
+        if (loginVisible) return false;
+        return /my profile|jobs applied|saved applications|candidate profile|welcome,|sign out|your applications/i.test(text) ||
+          /top_nav_my_profile|top_nav_jobs_applied|signout|logoutlink|_signout|loggedinstatus/.test(html) ||
+          (!/career opportunities: sign in|already have an account|forgot your password\?/i.test(text) && !loginVisible);
+      },
+      failureCheck: (url, content) => {
+        const text = (content || '').toLowerCase();
+        const html = (document.body?.innerHTML || '').toLowerCase();
+        return !!document.querySelector('#errorMsg_1, #uiErrorContainer_2, #uiErrorMsg') ||
+          /errormsg_1|uierrorcontainer_2|uierrormsg/.test(html) ||
+          /invalid email address or password|incorrect|invalid user id|invalid login|login failed|unable to sign in|wrong email|wrong password/.test(text);
+      }
     }
   };
 

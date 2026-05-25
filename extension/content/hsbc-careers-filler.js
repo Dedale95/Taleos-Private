@@ -476,6 +476,49 @@
     log('✅ Clic Apply → navigation vers le formulaire candidature');
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Cas Login page : connexion avec identifiants existants
+  // ══════════════════════════════════════════════════════════════════════════════
+  async function handleLoginPage(profile) {
+    log('Page Sign In SF HSBC — connexion avec identifiants enregistrés…');
+    showBanner('Connexion à votre compte HSBC…');
+
+    const emailInput = await waitFor(
+      () => document.getElementById('username') || document.querySelector('input[name="logonID"], input[autocomplete="username"]'),
+      6000
+    );
+    const pwdInput = await waitFor(
+      () => document.getElementById('password') || document.querySelector('input[type="password"]'),
+      6000
+    );
+
+    if (!emailInput || !pwdInput) {
+      log('⚠️ Champs email/mot de passe introuvables sur la page Sign In');
+      showBanner('Champs de connexion non trouvés — remplissez manuellement', 'warn');
+      return;
+    }
+
+    setNativeValue(emailInput, profile.auth_email);
+    await sleep(300);
+    setNativeValue(pwdInput, profile.auth_password || '');
+    await sleep(300);
+
+    const submitBtn =
+      document.querySelector('button[onclick*="validateFields"]') ||
+      document.querySelector('.aquabtn.active button, .button_row button') ||
+      Array.from(document.querySelectorAll('button')).find(b => /sign in/i.test(b.textContent));
+
+    if (!submitBtn) {
+      log('⚠️ Bouton Sign In introuvable');
+      showBanner('Bouton Sign In non trouvé — cliquez manuellement', 'warn');
+      return;
+    }
+
+    submitBtn.click();
+    log('✅ Clic Sign In → attente connexion');
+    showBanner('Connexion en cours…');
+  }
+
   async function handleEightfoldOffer(profile) {
     log('Page offre Eightfold HSBC — recherche bouton Apply…');
     showBanner('Ouverture de la page SuccessFactors…');
@@ -537,18 +580,34 @@
       return;
     }
 
-    // Cas 1 : formulaire candidature SF (new-user registration + apply)
+    // Cas 1 : page Sign In SF (utilisateur qui a déjà un compte HSBC)
+    const isLoginPage = host.includes('career2.successfactors.eu')
+      && href.includes('login_ns=login')
+      && href.includes('hsbcholdin');
+
+    if (isLoginPage) {
+      if (profile.auth_email) {
+        await handleLoginPage(profile);
+      } else {
+        log('Page Sign In HSBC — pas d\'identifiants configurés dans Connexions. Connectez-vous manuellement ou créez un compte.');
+        showBanner('Connectez-vous à votre compte HSBC pour continuer', 'warn');
+      }
+      return;
+    }
+
+    // Cas 2 : formulaire candidature SF (new-user registration + apply)
     const isSFForm = host.includes('career2.successfactors.eu')
       && path.startsWith('/career')
       && !href.includes('career_ns=job_listing')
-      && !href.includes('career_ns=job_search');
+      && !href.includes('career_ns=job_search')
+      && !href.includes('login_ns=login');
 
     if (isSFForm) {
       await fillApplicationForm(profile);
       return;
     }
 
-    // Cas 2 : page listing SF (avant clic Apply)
+    // Cas 3 : page listing SF (avant clic Apply)
     const isSFListing = host.includes('career2.successfactors.eu')
       && href.includes('hsbcholdin');
 

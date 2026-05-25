@@ -1914,7 +1914,8 @@ const CONNECTION_TEST_URLS = {
   deloitte: 'https://fina.wd103.myworkdayjobs.com/fr-FR/DeloitteRecrute',
   bpifrance: 'https://bpi.tzportal.io//fr/login',
   allianz: 'https://career5.successfactors.eu/career?company=AZGROUPPROD&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=vGbBbLMSiPxDaedOIn8tTt8WApNMjWQcgDbELe1OyzA%253d',
-  axa: 'https://careers.axa.com/careers-home/auth/1/verify-login-type'
+  axa: 'https://careers.axa.com/careers-home/auth/1/verify-login-type',
+  hsbc: 'https://career2.successfactors.eu/career?company=hsbcholdin&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=OupXiSPpV6NVVB92Trb%252fkx9KHywNEecoMl55nAmzpZM%253d'
 };
 
 async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, email, passwordEncoded) {
@@ -2307,6 +2308,15 @@ async function runTestConnection(msg) {
           if (url.includes('company=AZGROUPPROD') || url.includes('/career?company=AZGROUPPROD')) {
             idsToClose.add(t.id);
           }
+        }
+      } catch (_) {}
+    }
+    if (bankId === 'hsbc') {
+      try {
+        const hsbcTabs = await chrome.tabs.query({ windowId: testWindowId, url: ['https://career2.successfactors.eu/*'] });
+        for (const t of hsbcTabs) {
+          const url = String(t.url || '');
+          if (url.includes('hsbcholdin')) idsToClose.add(t.id);
         }
       } catch (_) {}
     }
