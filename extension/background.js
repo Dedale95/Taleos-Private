@@ -3130,7 +3130,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }
     } catch (_) {}
 
-    const createOpts = { url: offerUrl, active: false };
+    const createOpts = { url: offerUrl, active: true };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);
@@ -3433,6 +3433,9 @@ async function checkProfileCompletenessFromFirestore(bankId) {
   const profile = parseFirestoreDoc(await profileRes.json());
   const sgEuWorkAuthorization = deriveEuWorkAuthorizationFromProfile(profile);
   const isBpce = bankId === 'bpce' || (typeof bankId === 'string' && bankId.toLowerCase().includes('bpce'));
+  const isDeloitte = bankId === 'deloitte';
+  const isSg = bankId === 'societe_generale';
+  const isHsbc = bankId === 'hsbc';
   const bpceHasContent = !!((profile.bpce_handicap || '').trim() || (profile.bpce_vivier_natixis || '').trim() || (profile.bpce_application_source || '').trim() || (profile.linkedin_url || '').trim() || profile.bpce_job_alerts);
   const required = {
     civility: profile.civility,
@@ -3453,11 +3456,12 @@ async function checkProfileCompletenessFromFirestore(bankId) {
     educationLevel: profile.education_level,
     institutionType: profile.institution_type,
     diplomaStatus: profile.diploma_status,
-    deloitteWorked: profile.deloitte_worked === 'yes' || profile.deloitte_worked === 'no',
-    sg_eu_work_authorization: sgEuWorkAuthorization === 'yes' || sgEuWorkAuthorization === 'no',
-    sg_notice_period: ['none', '1_month', '2_months', '3_months', 'more_than_3_months'].includes(
+    // Champs spécifiques banque : non requis pour les autres banques
+    deloitteWorked: isDeloitte ? (profile.deloitte_worked === 'yes' || profile.deloitte_worked === 'no') : true,
+    sg_eu_work_authorization: isSg ? (sgEuWorkAuthorization === 'yes' || sgEuWorkAuthorization === 'no') : true,
+    sg_notice_period: isSg ? ['none', '1_month', '2_months', '3_months', 'more_than_3_months'].includes(
       String(profile.sg_notice_period || '').trim()
-    ),
+    ) : true,
     cv: !!((profile.cv_storage_path || profile.cv_url || '').trim())
   };
   if (isBpce) {
