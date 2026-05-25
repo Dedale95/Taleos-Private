@@ -4142,6 +4142,7 @@ function normalizeSite(site, offerUrl) {
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';
+  if (raw.includes('hsbc') || url.includes('portal.careers.hsbc.com') || url.includes('apply.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
   return 'unknown';
 }
 
