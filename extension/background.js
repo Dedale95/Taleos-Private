@@ -2428,7 +2428,8 @@ async function runTestConnection(msg) {
     }
     // HSBC : si déjà connecté → sign out déclenché → attendre la page de connexion puis retry
     if (bankId === 'hsbc' && fillRes?.[0]?.result?.needRetry) {
-      await new Promise(r => setTimeout(r, 4000)); // attendre redirect post-sign-out
+      await waitForLoad(); // attendre que la page post-sign-out soit chargée
+      await new Promise(r => setTimeout(r, 2000)); // marge supplémentaire
       try {
         await chrome.scripting.executeScript({
           target: { tabId },
@@ -2436,17 +2437,6 @@ async function runTestConnection(msg) {
         });
       } catch (_) {}
       fillRes = await runFill(0);
-    }
-    // HSBC : déjà connecté et confirmé sans sign out → succès direct
-    if (bankId === 'hsbc' && fillRes?.[0]?.result?.alreadyLoggedIn) {
-      const { taleosIdToken } = await chrome.storage.local.get(['taleosIdToken']);
-      if (taleosIdToken) {
-        await saveCareerConnectionToFirestore(firebaseUserId, taleosIdToken, bankId, bankName || 'HSBC', email, btoa(password || ''));
-      }
-      await closeConnectionTestTabs();
-      await chrome.storage.local.remove('taleos_connection_test');
-      await restoreTaleosTabIfNeeded();
-      return { success: true, message: 'Déjà connecté — identifiants enregistrés.' };
     }
     if (fillRes?.[0]?.result?.error && !fillRes[0].result?.submitted) {
       await closeConnectionTestTabs();

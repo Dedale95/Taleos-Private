@@ -325,17 +325,21 @@
       return fillAndSubmit(bankId, email, password);
     }
     if (bankId === 'hsbc') {
-      // Si déjà connecté (formulaire de connexion absent, bouton Sign Out présent)
-      // → clic Sign Out pour pouvoir tester les identifiants proprement
+      // Si déjà connecté (formulaire de connexion absent)
+      // → chercher Sign Out et se déconnecter pour tester les identifiants proprement
       const loginFormVisible = !!(document.getElementById('username') || document.querySelector('input[name="logonID"]'));
       if (!loginFormVisible) {
-        const signOutBtn = document.getElementById('_signout') || document.querySelector('[class*="loggedInStatus"], a[title="Sign Out"]');
-        if (signOutBtn) {
-          signOutBtn.click();
-          return { done: false, needRetry: true, phase: 'signout' };
+        const signOutEl =
+          document.querySelector('#_signout') ||
+          document.querySelector('#lnkLogout') ||
+          document.querySelector('a.loggedInStatus[title="Sign Out"]') ||
+          document.querySelector('a[title="Sign Out"]') ||
+          findVisibleByText('a, button, [role="button"], input[type="button"], input[type="submit"]', /sign out|log out/i);
+        if (!signOutEl) {
+          return { done: false, error: 'Déjà connecté — bouton Sign Out introuvable. Déconnectez-vous manuellement puis relancez le test.' };
         }
-        // Déjà connecté mais pas de bouton signout visible → succès immédiat
-        return { done: true, submitted: false, alreadyLoggedIn: true };
+        signOutEl.click();
+        return { done: false, needRetry: true, phase: 'signout' };
       }
       return fillAndSubmit(bankId, email, password);
     }
