@@ -8,6 +8,10 @@ on:
       - "extension/**"
       - ".github/workflows/package-extension-test-build.yml"
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   package:
     runs-on: ubuntu-latest
@@ -55,16 +59,24 @@ jobs:
           ls -t taleos-extension-*.zip 2>/dev/null | tail -n +4 | xargs -r rm --
           cd ../..
 
-          # Mettre à jour le fichier de version
-          cat > HTML/extension-version.json << EOF
-          {
-            "version": "${VERSION}",
-            "version_name": "${VERSION_NAME}",
-            "published_at": "${DATE}",
-            "release_notes": "Voir le changelog sur le dépôt GitHub.",
-            "download_url": "${DOWNLOAD_URL}"
-          }
-          EOF
+          # Mettre à jour le fichier de version en conservant les release_notes existantes
+          node -e "
+            const fs = require('fs');
+            let notes = '';
+            try {
+              const existing = JSON.parse(fs.readFileSync('HTML/extension-version.json', 'utf8'));
+              notes = existing.release_notes || '';
+            } catch(e) {}
+            const data = {
+              version: '${VERSION}',
+              version_name: '${VERSION_NAME}',
+              published_at: '${DATE}',
+              release_notes: notes,
+              download_url: '${DOWNLOAD_URL}'
+            };
+            fs.writeFileSync('HTML/extension-version.json', JSON.stringify(data, null, 2) + '\n');
+            console.log('Written extension-version.json with download_url:', data.download_url);
+          "
 
       - name: Commit and push version files
         run: |
@@ -79,3 +91,51 @@ jobs:
             git push
           fi
 
+      - name: Sync to Taleos-Public
+        if: success()
+        run: |
+          set -euo pipefail
+
+          # Cloner le repo public
+          git clone "https://x-access-token:${{ secrets.PUBLIC_REPO_PUSH_TOKEN }}@github.com/Dedale95/Taleos-Public.git" public-repo
+
+          # Préserver les fichiers de données générés par les autres workflows
+          mkdir -p /tmp/public-data
+          for f in HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_full.json HTML/scraped_jobs_summary.json; do
+            bak="$(echo "$f" | tr '/' '_').bak"
+            [ -f "public-repo/$f" ] && cp "public-repo/$f" "/tmp/public-data/$bak" && echo "💾 Sauvegardé: $f" || true
+          done
+
+          # Synchroniser les fichiers HTML (y compris downloads/)
+          rm -rf public-repo/HTML
+          cp -R HTML public-repo/HTML
+
+          # Restaurer les fichiers de données
+          for f in HTML/scraped_jobs_live.json HTML/scraped_jobs.json HTML/scraped_jobs_full.json HTML/scraped_jobs_summary.json; do
+            bak="$(echo "$f" | tr '/' '_').bak"
+            [ -f "/tmp/public-data/$bak" ] && cp "/tmp/public-data/$bak" "public-repo/$f" && echo "✅ Préservé: $f" || true
+          done
+
+          # Pousser vers Taleos-Public
+          cd public-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet && git diff --cached --quiet; then
+            git add .
+          fi
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+          else
+            git commit -m "chore: publish extension v${{ steps.manifest.outputs.version }}"
+            git push origin main
+          fi
+
+      - name: Trigger GitHub Pages build
+        if: success()
+        run: |
+          sleep 15
+          gh api -X POST repos/Dedale95/Taleos-Public/pages/builds \
+            --header "Authorization: token ${{ secrets.PUBLIC_REPO_PUSH_TOKEN }}" || true
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_PUSH_TOKEN }}
