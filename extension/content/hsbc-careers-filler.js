@@ -627,6 +627,27 @@
       return;
     }
 
+    // Cas 1.5 : déjà connecté — page profil SF (/portalcareer ou navBarLevel=MY_PROFILE)
+    // Le flow credential ouvre la page de login mais si la session est active, SF redirige
+    // vers le profil. Il faut alors naviguer directement vers l'offre Eightfold.
+    const isProfilePage = host.includes('career2.successfactors.eu')
+      && href.includes('hsbcholdin')
+      && (href.includes('navBarLevel=MY_PROFILE')
+          || (path.startsWith('/portalcareer') && !href.includes('career_ns=')));
+
+    if (isProfilePage) {
+      if (entry.offerUrl) {
+        log(`Déjà connecté sur SF HSBC — navigation directe vers l'offre : ${entry.offerUrl}`);
+        showBanner('Déjà connecté — ouverture de l\'offre…');
+        await sleep(500);
+        location.href = entry.offerUrl;
+      } else {
+        log('Déjà connecté sur SF HSBC — pas d\'offerUrl en attente');
+        showBanner('Déjà connecté à HSBC ✅', 'success');
+      }
+      return;
+    }
+
     // Cas 2 : formulaire candidature SF (new-user registration + apply)
     const isSFForm = host.includes('career2.successfactors.eu')
       && path.startsWith('/career')
@@ -639,9 +660,10 @@
       return;
     }
 
-    // Cas 3 : page listing SF (avant clic Apply)
+    // Cas 3 : page listing SF (avant clic Apply) — uniquement les vraies pages listing
     const isSFListing = host.includes('career2.successfactors.eu')
-      && href.includes('hsbcholdin');
+      && href.includes('hsbcholdin')
+      && href.includes('career_ns=job_listing');
 
     if (isSFListing) {
       await handleListingPage(profile);
