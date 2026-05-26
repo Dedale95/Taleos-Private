@@ -338,7 +338,16 @@
         if (!signOutEl) {
           return { done: false, error: 'Déjà connecté — bouton Sign Out introuvable. Déconnectez-vous manuellement puis relancez le test.' };
         }
-        signOutEl.click();
+        // Le href contient "javascript:logoutUrl('/path...', 'https://...')"
+        // Un .click() natif est bloqué par la CSP de SF → extraire l'URL et naviguer directement
+        const rawHref = signOutEl.getAttribute('href') || '';
+        const urlMatch = rawHref.match(/logoutUrl\(\s*['"]([^'"]+)['"]/);
+        if (urlMatch && urlMatch[1]) {
+          window.location.href = urlMatch[1]; // navigation directe, contourne la CSP
+        } else {
+          // Fallback si le format du href a changé : MouseEvent (isTrusted=false, peut ne pas marcher)
+          signOutEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        }
         return { done: false, needRetry: true, phase: 'signout' };
       }
       return fillAndSubmit(bankId, email, password);
