@@ -114,6 +114,10 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // 4. Bannière Taleos
   // ══════════════════════════════════════════════════════════════════════════════
+  function activateTab() {
+    chrome.runtime.sendMessage({ action: 'hsbc_activate_tab' }).catch(() => {});
+  }
+
   function showBanner(text, type = 'info') {
     const api = globalThis.__TALEOS_AUTOMATION_BANNER__;
     let el = document.getElementById(BANNER_ID);
@@ -446,6 +450,7 @@
       '✅ Rempli — entrez votre mot de passe puis cliquez "Apply" pour envoyer',
       'success'
     );
+    activateTab(); // amener l'onglet en avant-plan pour que l'utilisateur voie le formulaire
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -469,6 +474,7 @@
     if (!applyBtn) {
       log('⚠️ Bouton Apply introuvable sur la page SF listing');
       showBanner('Bouton Apply non trouvé — cliquez manuellement', 'warn');
+      activateTab();
       return;
     }
 
@@ -571,6 +577,7 @@
     if (!applyBtn) {
       log('⚠️ Bouton Apply introuvable sur la page Eightfold');
       showBanner('Bouton Apply non trouvé — cliquez manuellement', 'warn');
+      activateTab();
       return;
     }
 
@@ -660,19 +667,23 @@
       return;
     }
 
-    // Cas 3 : page listing SF (avant clic Apply) — uniquement les vraies pages listing
+    // Cas 3 : page listing SF (avant clic Apply)
+    // Large, mais les exclusions ci-dessus (login, profil, form) couvrent déjà les faux positifs
     const isSFListing = host.includes('career2.successfactors.eu')
       && href.includes('hsbcholdin')
-      && href.includes('career_ns=job_listing');
+      && !href.includes('login_ns=login')
+      && !href.includes('navBarLevel=MY_PROFILE')
+      && !path.startsWith('/portalcareer');
 
     if (isSFListing) {
       await handleListingPage(profile);
       return;
     }
 
-    // Cas 3 : page offre Eightfold
+    // Cas 4 : page offre Eightfold (portal.careers.hsbc.com) ou apply.careers.hsbc.com
+    // On ne restreint pas le path pour couvrir tous les formats d'URL Eightfold
     const isEightfold = host.includes('portal.careers.hsbc.com')
-      && path.includes('/careers/job/');
+      || host.includes('apply.careers.hsbc.com');
 
     if (isEightfold) {
       await handleEightfoldOffer(profile);

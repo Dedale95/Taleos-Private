@@ -1091,6 +1091,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ tabId: sender.tab?.id || null });
     return true;
   }
+  if (msg.action === 'hsbc_activate_tab') {
+    // Amène l'onglet HSBC en avant-plan (formulaire rempli ou action manuelle requise)
+    chrome.storage.local.get(['taleos_hsbc_tab_id']).then(({ taleos_hsbc_tab_id }) => {
+      if (taleos_hsbc_tab_id) {
+        chrome.tabs.update(taleos_hsbc_tab_id, { active: true }).catch(() => {});
+      } else if (sender.tab?.id) {
+        chrome.tabs.update(sender.tab.id, { active: true }).catch(() => {});
+      }
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
   // Remplit un textarea Knockout depuis le monde principal de la page.
   // Nécessaire car :
   //   1. Les content scripts tournent dans un monde isolé (pas d'accès à window.ko).

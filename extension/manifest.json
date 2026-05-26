@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.115",
-  "version_name": "1.2.115-hsbc-already-logged-in-navigate",
+  "version": "1.2.116",
+  "version_name": "1.2.116-hsbc-tab-activate-detection-fix",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
