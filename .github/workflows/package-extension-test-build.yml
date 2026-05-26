@@ -88,6 +88,8 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: publish extension v${{ steps.manifest.outputs.version }}"
+            # Rebase sur origin/main pour éviter les rejets en cas de runs simultanés
+            git pull --rebase origin main
             git push
           fi
 
