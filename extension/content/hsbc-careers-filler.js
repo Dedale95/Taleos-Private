@@ -630,27 +630,7 @@
       } else {
         log('Page Sign In HSBC — pas d\'identifiants configurés dans Connexions. Connectez-vous manuellement ou créez un compte.');
         showBanner('Connectez-vous à votre compte HSBC pour continuer', 'warn');
-      }
-      return;
-    }
-
-    // Cas 1.5 : déjà connecté — page profil SF (/portalcareer ou navBarLevel=MY_PROFILE)
-    // Le flow credential ouvre la page de login mais si la session est active, SF redirige
-    // vers le profil. Il faut alors naviguer directement vers l'offre Eightfold.
-    const isProfilePage = host.includes('career2.successfactors.eu')
-      && href.includes('hsbcholdin')
-      && (href.includes('navBarLevel=MY_PROFILE')
-          || (path.startsWith('/portalcareer') && !href.includes('career_ns=')));
-
-    if (isProfilePage) {
-      if (entry.offerUrl) {
-        log(`Déjà connecté sur SF HSBC — navigation directe vers l'offre : ${entry.offerUrl}`);
-        showBanner('Déjà connecté — ouverture de l\'offre…');
-        await sleep(500);
-        location.href = entry.offerUrl;
-      } else {
-        log('Déjà connecté sur SF HSBC — pas d\'offerUrl en attente');
-        showBanner('Déjà connecté à HSBC ✅', 'success');
+        activateTab();
       }
       return;
     }

@@ -3164,13 +3164,10 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }
     } catch (_) {}
 
-    // Si des identifiants HSBC sont configurés → ouvrir la page Sign In SF directement
-    // (l'offre Eightfold sera rouverte après connexion réussie)
-    const hsbcHasCredentials = !!(profile.auth_email || '').trim();
-    const hsbcStartUrl = hsbcHasCredentials
-      ? (CONNECTION_TEST_URLS.hsbc || offerUrl)
-      : offerUrl;
-    const createOpts = { url: hsbcStartUrl, active: true };
+    // Toujours ouvrir l'offre Eightfold directement.
+    // Si SF demande une connexion, le filler la gère avec les identifiants configurés.
+    // Passer par SF login en premier crée une boucle : profil SF → Eightfold → Apply → profil SF → ...
+    const createOpts = { url: offerUrl, active: true };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);
