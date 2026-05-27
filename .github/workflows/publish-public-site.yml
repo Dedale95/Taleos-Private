@@ -2,18 +2,6 @@ name: Publish Public Site
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
-    paths:
-      - "HTML/**"
-      - "PYTHON/**"
-      - "index.html"
-      - "landing_page_finance.html"
-      - "scraped_jobs_live.json"
-      - "scraped_jobs.json"
-      - "scraped_jobs_summary.json"
-      - "scraped_jobs.csv"
-      - ".github/workflows/publish-public-site.yml"
 
 jobs:
   publish:
@@ -92,3 +80,13 @@ jobs:
           git add .
           git commit -m "chore: publish public site from private source"
           git push origin main
+
+      - name: Build GitHub Pages
+        shell: bash
+        run: |
+          sleep 10
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.PUBLIC_REPO_PUSH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Dedale95/Taleos-Public/pages/builds \
+            | jq '.status // "triggered"'
