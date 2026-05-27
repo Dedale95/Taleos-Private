@@ -346,21 +346,23 @@
     log(`Début remplissage pour ${p.firstName} ${p.lastName} <${p.email}>`);
     showBanner('Remplissage en cours…');
 
-    // Attendre que le formulaire soit prêt
-    const emailField = await waitFor(() => document.getElementById('fbclc_userName'), 8000);
-    if (!emailField) {
-      log('⚠️ Formulaire SF non détecté (fbclc_userName absent) — abandon');
-      showBanner('Formulaire non détecté', 'error');
-      return;
-    }
+    // Attendre que le formulaire soit prêt (jusqu'à 10s)
+    // fbclc_userName = champ email du formulaire nouveau compte (non connecté)
+    // Pour un utilisateur déjà connecté (/portalcareer), ce champ est absent — on continue quand même
     await sleep(600);
+    const emailField = document.getElementById('fbclc_userName');
 
-    // ── Identifiants (email uniquement — mot de passe laissé à l'utilisateur) ──
-    setNativeValue(emailField, p.email);
-    await sleep(150);
-    const emailConf = document.getElementById('fbclc_emailConf');
-    if (emailConf) setNativeValue(emailConf, p.email);
-    log(`✅ Email → ${p.email}`);
+    if (emailField) {
+      // ── Identifiants (formulaire nouveau compte) ──
+      setNativeValue(emailField, p.email);
+      await sleep(150);
+      const emailConf = document.getElementById('fbclc_emailConf');
+      if (emailConf) setNativeValue(emailConf, p.email);
+      log(`✅ Email → ${p.email}`);
+    } else {
+      log('ℹ️ fbclc_userName absent — utilisateur déjà connecté, remplissage partiel du formulaire');
+      showBanner('Connecté — remplissage du formulaire en cours…');
+    }
 
     // ── Noms ────────────────────────────────────────────────────────────────────
     const fName = document.getElementById('fbclc_fName');
@@ -668,12 +670,15 @@
       return;
     }
 
-    // Cas 2 : formulaire candidature SF (new-user registration + apply)
+    // Cas 2 : formulaire candidature SF
+    // Couvre /career (nouveau compte) et /portalcareer (utilisateur déjà connecté)
     const isSFForm = host.includes('career2.successfactors.eu')
-      && path.startsWith('/career')
+      && (path.startsWith('/career') || path.startsWith('/portalcareer'))
       && !href.includes('career_ns=job_listing')
       && !href.includes('career_ns=job_search')
-      && !href.includes('login_ns=login');
+      && !href.includes('login_ns=login')
+      && !href.includes('loginFlowRequired=true')
+      && !href.includes('navBarLevel=MY_PROFILE');
 
     if (isSFForm) {
       await fillApplicationForm(profile);

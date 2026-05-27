@@ -1084,6 +1084,14 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   console.log(`[Taleos HSBC] Ré-injection filler sur page SF (tabId=${tabId})`);
   await new Promise(r => setTimeout(r, 800));
   try {
+    // Effacer le garde anti-double AVANT la ré-injection :
+    // Le content script déclaré a pu tourner en premier (avec un tabId encore stale),
+    // poser __TALEOS_HSBC_FILLER_RUNNING__ = true et sortir. Sans ce clear, la
+    // ré-injection programmatique (avec le bon tabId) serait silencieusement bloquée.
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => { globalThis.__TALEOS_HSBC_FILLER_RUNNING__ = false; }
+    });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/hsbc_blueprint.js'] });
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content/hsbc-careers-filler.js'] });
   } catch (e) {
@@ -2746,17 +2754,33 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   const routeAs = computeLegacyRouteAs(bankId, offerUrl);
 
   // ── File d'attente : si une candidature est déjà active pour cette banque, mettre en queue ──
+  // Mais d'abord : si l'onglet associé au pending est fermé, nettoyer le pending (sinon la queue
+  // bloquerait indéfiniment les relances après fermeture manuelle de l'onglet).
   const _pendingKey = pendingKeyForBank(bankId);
   if (_pendingKey) {
     const _existing = await chrome.storage.local.get(_pendingKey);
     if (_existing[_pendingKey]) {
-      const _queueKey = `taleos_queue_${String(bankId).toLowerCase()}`;
-      const _stored = await chrome.storage.local.get(_queueKey);
-      const _queue = _stored[_queueKey] || [];
-      _queue.push({ offerUrl, bankId, jobId, jobTitle, companyName, offerMeta, taleosTabId, timestamp: Date.now() });
-      await chrome.storage.local.set({ [_queueKey]: _queue });
-      console.log(`[Taleos] Queue ${bankId} : ${_queue.length} en attente`);
-      return { queued: true, position: _queue.length };
+      const _pendingEntry = _existing[_pendingKey];
+      const _pendingTabId = _pendingEntry?.tabId || null;
+      const _tabOpen = _pendingTabId
+        ? await chrome.tabs.get(_pendingTabId).then(() => true).catch(() => false)
+        : false;
+      if (!_tabOpen) {
+        // Onglet fermé → nettoyer le pending et laisser le nouveau clic passer normalement
+        console.log(`[Taleos] ${bankId} : pending orphelin (onglet #${_pendingTabId} fermé) → nettoyage avant relance`);
+        const _tabIdKey = bankId === 'hsbc' ? 'taleos_hsbc_tab_id' : null;
+        const _keysToRemove = _tabIdKey ? [_pendingKey, _tabIdKey] : [_pendingKey];
+        await chrome.storage.local.remove(_keysToRemove).catch(() => {});
+      } else {
+        // Onglet encore ouvert → mettre en queue
+        const _queueKey = `taleos_queue_${String(bankId).toLowerCase()}`;
+        const _stored = await chrome.storage.local.get(_queueKey);
+        const _queue = _stored[_queueKey] || [];
+        _queue.push({ offerUrl, bankId, jobId, jobTitle, companyName, offerMeta, taleosTabId, timestamp: Date.now() });
+        await chrome.storage.local.set({ [_queueKey]: _queue });
+        console.log(`[Taleos] Queue ${bankId} : ${_queue.length} en attente`);
+        return { queued: true, position: _queue.length };
+      }
     }
   }
 
