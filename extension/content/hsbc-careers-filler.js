@@ -571,10 +571,53 @@
     location.href = offerUrl;
   }
 
-  async function handleEightfoldOffer(profile) {
-    log('Page offre Eightfold HSBC — recherche bouton Apply…');
-    showBanner('Ouverture de la page SuccessFactors…');
+  /**
+   * Cherche l'URL SF dans la page Eightfold sans cliquer.
+   * Eightfold stocke les données de poste dans des globals JS et des scripts inline.
+   */
+  function extractSFApplyUrl() {
+    try {
+      // 1. Data-attributes sur ou autour du bouton
+      const btn = document.querySelector('[data-test-id="apply-button"]');
+      if (btn) {
+        for (let el = btn; el && el !== document.body; el = el.parentElement) {
+          for (const attr of ['data-apply-url', 'data-href', 'href', 'data-external-url']) {
+            const v = el.getAttribute(attr);
+            if (v && (v.includes('successfactors') || v.includes('hsbcholdin'))) return v;
+          }
+        }
+      }
+      // 2. Scripts inline — chercher une URL SF
+      for (const s of document.querySelectorAll('script:not([src])')) {
+        const m = s.textContent?.match(/https:\/\/career2\.successfactors\.eu\/[^"'\\]+hsbcholdin[^"'\\]*/);
+        if (m) return m[0].replace(/\\u0026/g, '&');
+      }
+      // 3. Globals JS Eightfold
+      for (const key of ['__INITIAL_STATE__', '__NEXT_DATA__', '__eightfold__', 'eightfoldData', 'positionData']) {
+        if (!window[key]) continue;
+        const str = JSON.stringify(window[key]);
+        const m = str?.match(/https:\/\/career2\.successfactors\.eu\/[^"\\]+hsbcholdin[^"\\]*/);
+        if (m) return m[0].replace(/\\u0026/g, '&').replace(/\\/g, '');
+      }
+    } catch (_) {}
+    return null;
+  }
 
+  async function handleEightfoldOffer(profile) {
+    log('Page offre Eightfold HSBC — recherche URL Apply…');
+    showBanner('Récupération du lien de candidature…');
+
+    // ── Étape 1 : URL trouvable sans cliquer ? ──────────────────────────────
+    const urlFromPage = extractSFApplyUrl();
+    if (urlFromPage) {
+      log(`URL SF trouvée dans la page : ${urlFromPage}`);
+      showBanner('Redirection vers le formulaire…');
+      await sleep(400);
+      location.href = urlFromPage;
+      return;
+    }
+
+    // ── Étape 2 : trouver le bouton ─────────────────────────────────────────
     const applyBtn = await waitFor(
       () =>
         document.querySelector('[data-test-id="apply-button"]') ||
@@ -587,48 +630,72 @@
       8000
     );
     if (!applyBtn) {
-      log('⚠️ Bouton Apply introuvable sur la page Eightfold');
+      log('⚠️ Bouton Apply introuvable');
       showBanner('Bouton Apply non trouvé — cliquez manuellement', 'warn');
       activateTab();
       return;
     }
 
-    // Eightfold appelle window.open() pour ouvrir SF dans un popup.
-    // Les bloqueurs de popups empêchent cela → on intercepte window.open pour
+    // ── Étape 3 : intercepter window.open avant le clic ────────────────────
+    // Le bouton Eightfold est un <button> (pas un <a>), son handler JS appelle
+    // window.open(sfUrl, '_blank'). Le clic programmatique n'est pas un geste
+    // utilisateur → Chrome peut bloquer le popup. On patche window.open pour
     // capturer l'URL et naviguer dans le même onglet.
     let capturedUrl = null;
-    const originalOpen = window.open;
+    const origOpen = window.open;
     window.open = function(url, target, features) {
-      if (url && (url.includes('successfactors') || url.includes('career2') || url.includes('hsbc'))) {
-        capturedUrl = String(url);
-        log(`URL SF capturée via window.open : ${capturedUrl}`);
-        // Retourner un faux objet window pour éviter les erreurs JS d'Eightfold
-        return { focus() {}, closed: false, location: { href: url } };
+      const u = String(url || '');
+      if (u && u !== 'about:blank' && (u.includes('successfactors') || u.includes('hsbcholdin') || u.includes('career2'))) {
+        capturedUrl = u;
+        log(`URL SF capturée via window.open : ${u}`);
+        return { focus() {}, closed: false, location: { href: u } };
       }
-      return originalOpen.call(window, url, target, features);
+      // Si Eightfold passe 'about:blank' d'abord, on crée un faux objet dont
+      // on surveille l'affectation de location.href
+      if (u === '' || u === 'about:blank') {
+        const fakeWin = Object.create(null);
+        fakeWin.focus = () => {};
+        fakeWin.closed = false;
+        const locProxy = { href: u };
+        Object.defineProperty(fakeWin, 'location', {
+          get: () => locProxy,
+          set: (v) => {
+            const s = String(v || '');
+            if (s.includes('successfactors') || s.includes('hsbcholdin')) {
+              capturedUrl = s;
+              log(`URL SF capturée via fakeWin.location = ${s}`);
+            }
+            locProxy.href = s;
+          }
+        });
+        return fakeWin;
+      }
+      return origOpen.call(window, url, target, features);
     };
 
-    log('Clic bouton Apply (window.open intercepté)…');
+    // Prévenir le background de surveiller un éventuel nouvel onglet SF
+    // (fallback si window.open n'est pas interceptable)
+    chrome.runtime.sendMessage({ action: 'hsbc_watch_apply_new_tab' }).catch(() => {});
+
+    log('Clic bouton Apply Eightfold…');
     applyBtn.click();
 
-    // Attendre que window.open soit appelé (max 5s)
+    // Attendre capture URL (max 5s)
     let waited = 0;
     while (!capturedUrl && waited < 5000) {
       await sleep(200);
       waited += 200;
     }
-
-    // Restaurer window.open dans tous les cas
-    window.open = originalOpen;
+    window.open = origOpen;
 
     if (capturedUrl) {
       log(`✅ Navigation vers SF (même onglet) : ${capturedUrl}`);
-      showBanner('Redirection vers le formulaire de candidature…');
+      showBanner('Redirection vers le formulaire…');
       await sleep(300);
       location.href = capturedUrl;
     } else {
-      // Fallback : window.open n'a pas été appelé — peut-être navigation directe déjà en cours
-      log('ℹ️ window.open non intercepté — vérification navigation directe…');
+      // Le background.js gère l'éventuel nouvel onglet SF et ferme celui-ci
+      log('URL non interceptée — le background surveille les nouveaux onglets SF');
       showBanner('Ouverture du formulaire en cours…');
     }
   }

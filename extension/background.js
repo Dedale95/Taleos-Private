@@ -1147,6 +1147,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ tabId: sender.tab?.id || null });
     return true;
   }
+  if (msg.action === 'hsbc_watch_apply_new_tab') {
+    // Le filler Eightfold a cliqué Apply mais n'a pas pu intercepter l'URL via window.open.
+    // On surveille pendant 10s l'ouverture d'un nouvel onglet SF (career2.successfactors.eu).
+    // Quand il apparaît : on met à jour taleos_pending_hsbc.tabId et on ferme l'onglet Eightfold.
+    const eightfoldTabId = sender.tab?.id || null;
+    let handled = false;
+    const onCreated = async (newTab) => {
+      if (handled) return;
+      const url = newTab.url || '';
+      if (!url.includes('career2.successfactors.eu') && !url.includes('hsbcholdin')) return;
+      handled = true;
+      chrome.tabs.onCreated.removeListener(onCreated);
+      clearTimeout(watchTimer);
+      console.log(`[Taleos HSBC] Nouvel onglet SF détecté #${newTab.id} — mise à jour tabId + fermeture Eightfold #${eightfoldTabId}`);
+      // Mettre à jour le tabId dans le pending
+      const stored = await chrome.storage.local.get(['taleos_pending_hsbc']);
+      if (stored.taleos_pending_hsbc) {
+        await chrome.storage.local.set({
+          taleos_pending_hsbc: { ...stored.taleos_pending_hsbc, tabId: newTab.id },
+          taleos_hsbc_tab_id: newTab.id
+        });
+      }
+      // Fermer l'onglet Eightfold
+      if (eightfoldTabId) chrome.tabs.remove(eightfoldTabId).catch(() => {});
+    };
+    const watchTimer = setTimeout(() => {
+      chrome.tabs.onCreated.removeListener(onCreated);
+    }, 10000);
+    chrome.tabs.onCreated.addListener(onCreated);
+    sendResponse({ ok: true });
+    return true;
+  }
   if (msg.action === 'hsbc_activate_tab') {
     // Amène l'onglet HSBC en avant-plan (formulaire rempli ou action manuelle requise)
     chrome.storage.local.get(['taleos_hsbc_tab_id']).then(({ taleos_hsbc_tab_id }) => {
