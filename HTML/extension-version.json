@@ -1,7 +1,7 @@
 {
   "version": "1.2.120",
   "version_name": "1.2.120-hsbc-login-page-detection-fix",
-  "published_at": "2026-05-27T00:00:00Z",
+  "published_at": "2026-05-27T12:50:15Z",
   "release_notes": "HSBC fix détection page login : l'URL career?loginFlowRequired=true n'était pas reconnue comme page Sign In (seule login_ns=login était détectée). Le filler tombait en Cas 2 (formulaire candidature) et échouait sur fbclc_userName. Correction : isLoginPage vérifie aussi loginFlowRequired=true. Amélioration des sélecteurs email pour couvrir le formulaire 'Career Opportunities: Sign In'.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.120.zip"
 }
