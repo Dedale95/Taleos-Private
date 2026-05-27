@@ -1,7 +1,7 @@
 {
   "version": "1.2.127",
   "version_name": "1.2.127-hsbc-apply-page",
-  "published_at": "2026-05-27T00:00:00Z",
+  "published_at": "2026-05-27T19:51:53Z",
   "release_notes": "HSBC fix page intermédiaire apply.careers.hsbc.com : ajout du script content sur ce domaine + handler dédié. Stratégie : 1) chercher ats_job_id dans la page, 2) extraire l'ID numérique du path URL et tenter directement l'URL SF, 3) naviguer via le href du bouton POSTULER, 4) fallback clic programmatique.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.127.zip"
 }
