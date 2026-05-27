@@ -636,68 +636,19 @@
       return;
     }
 
-    // ── Étape 3 : intercepter window.open avant le clic ────────────────────
-    // Le bouton Eightfold est un <button> (pas un <a>), son handler JS appelle
-    // window.open(sfUrl, '_blank'). Le clic programmatique n'est pas un geste
-    // utilisateur → Chrome peut bloquer le popup. On patche window.open pour
-    // capturer l'URL et naviguer dans le même onglet.
-    let capturedUrl = null;
-    const origOpen = window.open;
-    window.open = function(url, target, features) {
-      const u = String(url || '');
-      if (u && u !== 'about:blank' && (u.includes('successfactors') || u.includes('hsbcholdin') || u.includes('career2'))) {
-        capturedUrl = u;
-        log(`URL SF capturée via window.open : ${u}`);
-        return { focus() {}, closed: false, location: { href: u } };
-      }
-      // Si Eightfold passe 'about:blank' d'abord, on crée un faux objet dont
-      // on surveille l'affectation de location.href
-      if (u === '' || u === 'about:blank') {
-        const fakeWin = Object.create(null);
-        fakeWin.focus = () => {};
-        fakeWin.closed = false;
-        const locProxy = { href: u };
-        Object.defineProperty(fakeWin, 'location', {
-          get: () => locProxy,
-          set: (v) => {
-            const s = String(v || '');
-            if (s.includes('successfactors') || s.includes('hsbcholdin')) {
-              capturedUrl = s;
-              log(`URL SF capturée via fakeWin.location = ${s}`);
-            }
-            locProxy.href = s;
-          }
-        });
-        return fakeWin;
-      }
-      return origOpen.call(window, url, target, features);
-    };
-
-    // Prévenir le background de surveiller un éventuel nouvel onglet SF
-    // (fallback si window.open n'est pas interceptable)
+    // ── Étape 3 : clic + background surveille le nouvel onglet SF ──────────
+    // Le bouton Eightfold est un <button role="link"> sans href : son handler JS
+    // appelle window.open(sfUrl, '_blank'). On prévient d'abord le background de
+    // surveiller tout nouvel onglet qui chargera career2.successfactors.eu, puis
+    // on clique. Quand l'onglet SF est confirmé, background.js ferme cet onglet
+    // Eightfold et ré-injecte le filler dans le nouvel onglet.
     chrome.runtime.sendMessage({ action: 'hsbc_watch_apply_new_tab' }).catch(() => {});
+    await sleep(100); // laisser le listener s'installer côté background
 
     log('Clic bouton Apply Eightfold…');
+    showBanner('Clic sur Postulez maintenant…');
     applyBtn.click();
-
-    // Attendre capture URL (max 5s)
-    let waited = 0;
-    while (!capturedUrl && waited < 5000) {
-      await sleep(200);
-      waited += 200;
-    }
-    window.open = origOpen;
-
-    if (capturedUrl) {
-      log(`✅ Navigation vers SF (même onglet) : ${capturedUrl}`);
-      showBanner('Redirection vers le formulaire…');
-      await sleep(300);
-      location.href = capturedUrl;
-    } else {
-      // Le background.js gère l'éventuel nouvel onglet SF et ferme celui-ci
-      log('URL non interceptée — le background surveille les nouveaux onglets SF');
-      showBanner('Ouverture du formulaire en cours…');
-    }
+    log('✅ Clic effectué — background surveille l\'ouverture de l\'onglet SF');
   }
 
   // ══════════════════════════════════════════════════════════════════════════════

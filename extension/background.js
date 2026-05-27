@@ -1148,34 +1148,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === 'hsbc_watch_apply_new_tab') {
-    // Le filler Eightfold a cliqué Apply mais n'a pas pu intercepter l'URL via window.open.
-    // On surveille pendant 10s l'ouverture d'un nouvel onglet SF (career2.successfactors.eu).
-    // Quand il apparaît : on met à jour taleos_pending_hsbc.tabId et on ferme l'onglet Eightfold.
+    // Le filler Eightfold a cliqué Apply : le bouton va ouvrir un nouvel onglet SF.
+    // Les nouveaux onglets démarrent avec URL vide → on surveille onCreated (tabId)
+    // PUIS onUpdated (URL) pour détecter quand l'onglet charge career2.successfactors.eu.
     const eightfoldTabId = sender.tab?.id || null;
     let handled = false;
-    const onCreated = async (newTab) => {
+    const watchedTabs = new Set();
+
+    const onCreated = (newTab) => {
+      if (handled || newTab.id === eightfoldTabId) return;
+      watchedTabs.add(newTab.id);
+      console.log(`[Taleos HSBC] Nouvel onglet #${newTab.id} surveillé (Apply Eightfold)`);
+    };
+
+    const onUpdated = async (tabId, info, tab) => {
       if (handled) return;
-      const url = newTab.url || '';
+      if (!watchedTabs.has(tabId)) return;
+      if (info.status !== 'complete') return;
+      const url = tab.url || '';
       if (!url.includes('career2.successfactors.eu') && !url.includes('hsbcholdin')) return;
+
       handled = true;
-      chrome.tabs.onCreated.removeListener(onCreated);
       clearTimeout(watchTimer);
-      console.log(`[Taleos HSBC] Nouvel onglet SF détecté #${newTab.id} — mise à jour tabId + fermeture Eightfold #${eightfoldTabId}`);
+      chrome.tabs.onCreated.removeListener(onCreated);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+
+      console.log(`[Taleos HSBC] Onglet SF confirmé #${tabId} — fermeture Eightfold #${eightfoldTabId} + mise à jour tabId`);
+
       // Mettre à jour le tabId dans le pending
       const stored = await chrome.storage.local.get(['taleos_pending_hsbc']);
       if (stored.taleos_pending_hsbc) {
         await chrome.storage.local.set({
-          taleos_pending_hsbc: { ...stored.taleos_pending_hsbc, tabId: newTab.id },
-          taleos_hsbc_tab_id: newTab.id
+          taleos_pending_hsbc: { ...stored.taleos_pending_hsbc, tabId },
+          taleos_hsbc_tab_id: tabId
         });
       }
+
       // Fermer l'onglet Eightfold
       if (eightfoldTabId) chrome.tabs.remove(eightfoldTabId).catch(() => {});
+
+      // Effacer le guard et ré-injecter le filler
+      hsbcLastInject.delete(tabId);
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, func: () => { globalThis.__TALEOS_HSBC_FILLER_RUNNING__ = false; } });
+        await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/hsbc_blueprint.js'] });
+        await chrome.scripting.executeScript({ target: { tabId }, files: ['content/hsbc-careers-filler.js'] });
+      } catch (e) {
+        console.error('[Taleos HSBC] Ré-injection après watch:', e);
+      }
     };
+
     const watchTimer = setTimeout(() => {
       chrome.tabs.onCreated.removeListener(onCreated);
-    }, 10000);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+    }, 15000);
+
     chrome.tabs.onCreated.addListener(onCreated);
+    chrome.tabs.onUpdated.addListener(onUpdated);
     sendResponse({ ok: true });
     return true;
   }
