@@ -1,7 +1,7 @@
 {
   "version": "1.2.126",
   "version_name": "1.2.126-hsbc-ats-job-id",
-  "published_at": "2026-05-27T00:00:00Z",
+  "published_at": "2026-05-27T19:12:52Z",
   "release_notes": "HSBC fix Apply Eightfold : on ne clique plus sur le bouton Eightfold (event.isTrusted non falsifiable). La page Eightfold contient un <script> JSON avec ats_job_id (ex: '44076') = career_job_req_id dans SF. Le filler extrait cet ID, construit l'URL SF directement (career2.successfactors.eu/career?company=hsbcholdin&navBarLevel=JOB_DETAIL&career_job_req_id=...) et navigue dans le même onglet. La fiche poste SF s'ouvre, handleListingPage clique Apply (SF n'exige pas isTrusted), le formulaire se remplit.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.126.zip"
 }
