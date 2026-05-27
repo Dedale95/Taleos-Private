@@ -637,17 +637,100 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // 11. Point d'entrée principal
+  // 11. Gestion de la page apply.careers.hsbc.com (intermédiaire HSBC)
+  // ══════════════════════════════════════════════════════════════════════════════
+  /**
+   * apply.careers.hsbc.com/job/TITLE/JOB_ID/
+   *
+   * Cette page est un intermédiaire entre la fiche SF listing et le formulaire de
+   * candidature. Elle affiche un bouton "POSTULER". Stratégie :
+   *
+   *  1. Chercher ats_job_id dans le HTML (peut-être présent comme sur Eightfold)
+   *  2. Extraire l'ID numérique du path URL et l'essayer comme career_job_req_id SF
+   *  3. Chercher le bouton/lien POSTULER et naviguer via son href (si c'est un <a>)
+   *  4. Fallback : clic programmatique sur le bouton
+   */
+  async function handleApplyCareerPage(profile) {
+    log('Page apply.careers.hsbc.com — extraction du lien SF…');
+    showBanner('Récupération du lien de candidature…');
+
+    // 1. Chercher ats_job_id dans la page (même méthode que Eightfold)
+    let sfUrl = null;
+    const deadline1 = Date.now() + 4000;
+    while (!sfUrl && Date.now() < deadline1) {
+      sfUrl = extractSFApplyUrl();
+      if (!sfUrl) await sleep(300);
+    }
+
+    if (sfUrl) {
+      log(`✅ URL SF via ats_job_id → navigation : ${sfUrl}`);
+      showBanner('Redirection vers la fiche poste SF…');
+      await sleep(400);
+      location.href = sfUrl;
+      return;
+    }
+
+    // 2. Essayer l'ID numérique de l'URL comme career_job_req_id
+    // URL format : /job/TITLE-SLUG/1360785157/
+    const urlIdMatch = location.pathname.match(/\/job\/[^/]+\/(\d+)\/?$/);
+    if (urlIdMatch && urlIdMatch[1]) {
+      const jobId = urlIdMatch[1];
+      const candidateSfUrl = `https://career2.successfactors.eu/career?company=hsbcholdin&career_ns=job_listing&navBarLevel=JOB_DETAIL&rcm_site_locale=en_GB&career_job_req_id=${jobId}`;
+      log(`ID URL détecté (${jobId}) → tentative URL SF : ${candidateSfUrl}`);
+      showBanner('Redirection vers la fiche poste SF…');
+      await sleep(400);
+      location.href = candidateSfUrl;
+      return;
+    }
+
+    // 3. Chercher le bouton/lien POSTULER et naviguer via son href si disponible
+    const applyEl = await waitFor(() => {
+      const all = Array.from(document.querySelectorAll('a, button'));
+      return all.find(el => /postuler|apply\s*now|candidater/i.test(el.textContent.trim())) || null;
+    }, 8000);
+
+    if (!applyEl) {
+      log('⚠️ Bouton POSTULER introuvable sur apply.careers.hsbc.com');
+      showBanner('Bouton POSTULER non trouvé — cliquez manuellement', 'warn');
+      activateTab();
+      return;
+    }
+
+    // Si c'est un lien (<a href="...">) → naviguer directement sans déclencher d'évènement
+    const href = applyEl.tagName === 'A'
+      ? (applyEl.getAttribute('href') || '')
+      : (applyEl.dataset?.href || applyEl.getAttribute('data-url') || '');
+
+    if (href && (href.startsWith('http') || href.startsWith('/'))) {
+      const target = href.startsWith('http') ? href : new URL(href, location.origin).href;
+      log(`✅ Lien POSTULER href="${target}" → navigation directe`);
+      showBanner('Ouverture du formulaire de candidature…');
+      await sleep(300);
+      location.href = target;
+      return;
+    }
+
+    // 4. Fallback : clic programmatique (apply.careers.hsbc.com peut ne pas vérifier isTrusted)
+    log('Clic programmatique sur le bouton POSTULER…');
+    showBanner('Ouverture du formulaire de candidature…');
+    applyEl.click();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 12. Point d'entrée principal
   // ══════════════════════════════════════════════════════════════════════════════
   async function main() {
     // Détection de la page via le blueprint
     const page = blueprint?.detectPage?.();
     if (!page) {
-      // Vérification manuelle minimale : on est sur HSBC SF ou Eightfold ?
+      // Vérification manuelle minimale : on est sur HSBC SF, Eightfold ou apply.careers.hsbc.com ?
       const host = location.hostname;
       const href = location.href;
-      if (!host.includes('career2.successfactors.eu') && !host.includes('portal.careers.hsbc.com')) return;
-      if (!href.includes('hsbcholdin') && !host.includes('portal.careers.hsbc.com')) return;
+      const isHsbcHost = host.includes('career2.successfactors.eu')
+        || host.includes('portal.careers.hsbc.com')
+        || host.includes('apply.careers.hsbc.com');
+      if (!isHsbcHost) return;
+      if (!href.includes('hsbcholdin') && !host.includes('portal.careers.hsbc.com') && !host.includes('apply.careers.hsbc.com')) return;
     }
 
     const entry = await getPendingEntry();
@@ -735,12 +818,16 @@
       return;
     }
 
-    // Cas 4 : page offre Eightfold (portal.careers.hsbc.com) ou apply.careers.hsbc.com
-    // On ne restreint pas le path pour couvrir tous les formats d'URL Eightfold
-    const isEightfold = host.includes('portal.careers.hsbc.com')
-      || host.includes('apply.careers.hsbc.com');
+    // Cas 4 : page intermédiaire apply.careers.hsbc.com (ex. /job/TITLE/ID/)
+    // Cette page apparaît quand la fiche SF listing redirige vers le portail apply HSBC.
+    if (host.includes('apply.careers.hsbc.com')) {
+      await handleApplyCareerPage(profile);
+      return;
+    }
 
-    if (isEightfold) {
+    // Cas 5 : page offre Eightfold (portal.careers.hsbc.com)
+    // On ne restreint pas le path pour couvrir tous les formats d'URL Eightfold
+    if (host.includes('portal.careers.hsbc.com')) {
       await handleEightfoldOffer(profile);
       return;
     }
