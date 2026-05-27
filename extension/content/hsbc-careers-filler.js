@@ -490,12 +490,24 @@
     showBanner('Connexion à votre compte HSBC…');
 
     const emailInput = await waitFor(
-      () => document.getElementById('username') || document.querySelector('input[name="logonID"], input[autocomplete="username"]'),
-      6000
+      () =>
+        document.getElementById('username') ||
+        document.querySelector('input[name="logonID"]') ||
+        document.querySelector('input[autocomplete="username"]') ||
+        document.querySelector('input[type="email"]') ||
+        document.querySelector('input[name="email"]') ||
+        document.querySelector('input[id*="email" i]') ||
+        document.querySelector('input[placeholder*="email" i]') ||
+        // Formulaire "Career Opportunities: Sign In" (HSBC SF loginFlowRequired)
+        document.querySelector('input[id*="user" i]:not([type="hidden"])') ||
+        Array.from(document.querySelectorAll('input:not([type="password"]):not([type="hidden"])')).find(
+          el => /email|user|login/i.test(el.id + el.name + el.placeholder)
+        ),
+      8000
     );
     const pwdInput = await waitFor(
       () => document.getElementById('password') || document.querySelector('input[type="password"]'),
-      6000
+      8000
     );
 
     if (!emailInput || !pwdInput) {
@@ -640,8 +652,9 @@
     }
 
     // Cas 1 : page Sign In SF (utilisateur qui a déjà un compte HSBC)
+    // Détecte aussi loginFlowRequired=true (URL ouverte par le background) quand SF n'est pas encore connecté
     const isLoginPage = host.includes('career2.successfactors.eu')
-      && href.includes('login_ns=login')
+      && (href.includes('login_ns=login') || href.includes('loginFlowRequired=true'))
       && href.includes('hsbcholdin');
 
     if (isLoginPage) {
