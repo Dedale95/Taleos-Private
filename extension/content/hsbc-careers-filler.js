@@ -572,106 +572,68 @@
   }
 
   /**
-   * Cherche l'URL SF dans la page Eightfold sans cliquer.
-   * Eightfold stocke les données de poste dans des globals JS et des scripts inline.
+   * Construit l'URL SF depuis le champ ats_job_id du JSON Eightfold.
+   *
+   * La page Eightfold (portal.careers.hsbc.com) contient un <script> JSON avec :
+   *   { "positions": [{ "ats_job_id": "44076", ... }] }
+   *
+   * ats_job_id = career_job_req_id dans SF → on construit directement l'URL
+   * de la fiche poste SF, que le filler peut traiter via handleListingPage
+   * (clic Apply sur SF ne demande pas isTrusted, ouvre le form dans le même onglet).
    */
   function extractSFApplyUrl() {
     try {
-      // 1. Data-attributes sur ou autour du bouton
-      const btn = document.querySelector('[data-test-id="apply-button"]');
-      if (btn) {
-        for (let el = btn; el && el !== document.body; el = el.parentElement) {
-          for (const attr of ['data-apply-url', 'data-href', 'href', 'data-external-url']) {
-            const v = el.getAttribute(attr);
-            if (v && (v.includes('successfactors') || v.includes('hsbcholdin'))) return v;
-          }
+      // 1. Chercher ats_job_id dans TOUS les scripts (inline + JSON)
+      for (const s of document.querySelectorAll('script')) {
+        if (s.src) continue;
+        const text = s.textContent || '';
+        if (!text.includes('ats_job_id')) continue;
+        const m = text.match(/"ats_job_id"\s*:\s*"(\d+)"/);
+        if (m && m[1]) {
+          const sfUrl = `https://career2.successfactors.eu/career?company=hsbcholdin&career_ns=job_listing&navBarLevel=JOB_DETAIL&rcm_site_locale=en_GB&career_job_req_id=${m[1]}`;
+          log(`ats_job_id=${m[1]} trouvé → URL SF : ${sfUrl}`);
+          return sfUrl;
         }
       }
-      // 2. Scripts inline — chercher une URL SF
+      // 2. Chercher dans le HTML brut (fallback si le script est dynamique)
+      const bodyHtml = document.documentElement.innerHTML;
+      const m2 = bodyHtml.match(/"ats_job_id"\s*:\s*"(\d+)"/);
+      if (m2 && m2[1]) {
+        const sfUrl = `https://career2.successfactors.eu/career?company=hsbcholdin&career_ns=job_listing&navBarLevel=JOB_DETAIL&rcm_site_locale=en_GB&career_job_req_id=${m2[1]}`;
+        log(`ats_job_id=${m2[1]} (fallback HTML) → URL SF : ${sfUrl}`);
+        return sfUrl;
+      }
+      // 3. Chercher une URL SF complète déjà présente dans la page (ancien comportement)
       for (const s of document.querySelectorAll('script:not([src])')) {
         const m = s.textContent?.match(/https:\/\/career2\.successfactors\.eu\/[^"'\\]+hsbcholdin[^"'\\]*/);
         if (m) return m[0].replace(/\\u0026/g, '&');
-      }
-      // 3. Globals JS Eightfold
-      for (const key of ['__INITIAL_STATE__', '__NEXT_DATA__', '__eightfold__', 'eightfoldData', 'positionData']) {
-        if (!window[key]) continue;
-        const str = JSON.stringify(window[key]);
-        const m = str?.match(/https:\/\/career2\.successfactors\.eu\/[^"\\]+hsbcholdin[^"\\]*/);
-        if (m) return m[0].replace(/\\u0026/g, '&').replace(/\\/g, '');
       }
     } catch (_) {}
     return null;
   }
 
   async function handleEightfoldOffer(profile) {
-    log('Page offre Eightfold HSBC — recherche URL Apply…');
-    showBanner('Récupération du lien de candidature…');
+    log('Page offre Eightfold HSBC — extraction ats_job_id…');
+    showBanner('Récupération du lien de candidature SF…');
 
-    // ── Étape 1 : URL trouvable sans cliquer ? ──────────────────────────────
-    const urlFromPage = extractSFApplyUrl();
-    if (urlFromPage) {
-      log(`URL SF trouvée dans la page : ${urlFromPage}`);
-      showBanner('Redirection vers le formulaire…');
+    // Attendre que le JSON Eightfold soit chargé dans la page (max 6s)
+    let sfUrl = null;
+    const deadline = Date.now() + 6000;
+    while (!sfUrl && Date.now() < deadline) {
+      sfUrl = extractSFApplyUrl();
+      if (!sfUrl) await sleep(300);
+    }
+
+    if (sfUrl) {
+      log(`✅ URL SF construite depuis ats_job_id → navigation : ${sfUrl}`);
+      showBanner('Redirection vers la fiche poste SF…');
       await sleep(400);
-      location.href = urlFromPage;
-      return;
-    }
-
-    // ── Étape 2 : trouver le bouton ─────────────────────────────────────────
-    const applyBtn = await waitFor(
-      () =>
-        document.querySelector('[data-test-id="apply-button"]') ||
-        document.querySelector('[class*="position-apply-button"]') ||
-        document.getElementById('applyButton_top') ||
-        document.getElementById('applyButton_bottom') ||
-        Array.from(document.querySelectorAll('button')).find(b =>
-          /apply|postuler|candidater/i.test(b.textContent)
-        ),
-      8000
-    );
-    if (!applyBtn) {
-      log('⚠️ Bouton Apply introuvable');
-      showBanner('Bouton Apply non trouvé — cliquez manuellement', 'warn');
+      location.href = sfUrl;
+    } else {
+      log('⚠️ ats_job_id introuvable dans la page Eightfold');
+      showBanner('Lien SF non trouvé — cliquez manuellement sur Postulez maintenant', 'warn');
       activateTab();
-      return;
     }
-
-    // ── Étape 3 : demander le clic utilisateur ─────────────────────────────
-    // Le bouton Eightfold vérifie event.isTrusted — seul un vrai clic physique
-    // déclenche le window.open vers SF. On ne peut pas forger isTrusted depuis
-    // un content script. → On met le bouton en évidence et on demande à
-    // l'utilisateur de cliquer une seule fois ; le background prend le relais.
-
-    // Enregistrer le listener avant le clic
-    chrome.runtime.sendMessage({ action: 'hsbc_watch_apply_new_tab' }).catch(() => {});
-
-    // Mettre l'onglet au premier plan
-    activateTab();
-
-    // Animation de pulsation sur le bouton
-    const pulseStyle = document.createElement('style');
-    pulseStyle.textContent = `
-      @keyframes taleos-btn-pulse {
-        0%   { box-shadow: 0 0 0 0   rgba(255,255,255,.8); }
-        70%  { box-shadow: 0 0 0 14px rgba(255,255,255,0); }
-        100% { box-shadow: 0 0 0 0   rgba(255,255,255,0); }
-      }
-      [data-test-id="apply-button"] {
-        outline: 3px solid #fff !important;
-        animation: taleos-btn-pulse 1.2s infinite !important;
-      }
-    `;
-    document.head.appendChild(pulseStyle);
-
-    showBanner('👆 Cliquez sur "Postulez maintenant" — Taleos remplit le formulaire ensuite');
-    log('En attente du clic utilisateur sur Apply (event.isTrusted requis par Eightfold)');
-
-    // Écouter le clic réel pour mettre à jour la bannière
-    applyBtn.addEventListener('click', () => {
-      pulseStyle.remove();
-      showBanner('Ouverture du formulaire de candidature…');
-      log('✅ Clic utilisateur détecté — background surveille l\'onglet SF');
-    }, { once: true });
   }
 
   // ══════════════════════════════════════════════════════════════════════════════

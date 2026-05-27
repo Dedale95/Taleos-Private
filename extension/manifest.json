@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.125",
-  "version_name": "1.2.125-hsbc-user-click-apply",
+  "version": "1.2.126",
+  "version_name": "1.2.126-hsbc-ats-job-id",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
