@@ -619,6 +619,26 @@
       return;
     }
 
+    // Cas 0.5 : page profil SF (déjà connecté, loginFlowRequired a redirigé vers MY_PROFILE)
+    // → naviguer directement vers l'offre Eightfold dans le même onglet
+    const isProfilePage = host.includes('career2.successfactors.eu')
+      && href.includes('navBarLevel=MY_PROFILE');
+
+    if (isProfilePage) {
+      const targetUrl = entry.offerUrl || '';
+      if (targetUrl) {
+        log(`Déjà connecté (page profil) → navigation vers l'offre : ${targetUrl}`);
+        showBanner('Déjà connecté — ouverture de l\'offre…');
+        await sleep(500);
+        location.href = targetUrl;
+      } else {
+        log('Déjà connecté mais offerUrl absent — rien à faire');
+        showBanner('Connecté. Naviguez vers l\'offre manuellement.', 'warn');
+        activateTab();
+      }
+      return;
+    }
+
     // Cas 1 : page Sign In SF (utilisateur qui a déjà un compte HSBC)
     const isLoginPage = host.includes('career2.successfactors.eu')
       && href.includes('login_ns=login')

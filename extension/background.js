@@ -3212,10 +3212,12 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }
     } catch (_) {}
 
-    // Toujours ouvrir l'offre Eightfold directement.
-    // Si SF demande une connexion, le filler la gère avec les identifiants configurés.
-    // Passer par SF login en premier crée une boucle : profil SF → Eightfold → Apply → profil SF → ...
-    const createOpts = { url: offerUrl, active: true };
+    // Ouvrir la page de connexion SF HSBC en premier.
+    // Flux : SF login → connexion avec identifiants → même onglet → URL offre Eightfold → Apply → formulaire SF.
+    // L'offerUrl (Eightfold) est stocké dans hsbcPendingBase.offerUrl ;
+    // handleLoginPage() l'utilise pour naviguer après connexion.
+    const HSBC_SF_LOGIN_URL = 'https://career2.successfactors.eu/career?career_company=hsbcholdin&lang=en_GB&company=hsbcholdin&site=&loginFlowRequired=true';
+    const createOpts = { url: HSBC_SF_LOGIN_URL, active: true };
     if (taleosTabId) {
       try {
         const taleosTab = await chrome.tabs.get(taleosTabId);
