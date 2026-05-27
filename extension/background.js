@@ -221,6 +221,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   }
   if (tabId && bid === 'societe_generale') sgLastInject.delete(tabId);
   if (tabId && bid === 'credit_agricole') caLastInject.delete(tabId);
+  if (tabId && bid === 'hsbc') hsbcLastInject.delete(tabId);
   // Lancer la prochaine candidature en attente pour cette banque
   dequeueAndStartNext(bid).catch(() => {});
 }
@@ -229,6 +230,7 @@ let authSyncResolve = null;
 const sgLastInject = new Map();
 const caLastInject = new Map();
 const bpifranceLastInject = new Map();
+const hsbcLastInject = new Map();
 
 async function scheduleApplyStuckWatchdog() {
   try {
@@ -1040,6 +1042,52 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     });
   } catch (e) {
     console.error('[Taleos CA] Injection phase 3:', e);
+  }
+});
+
+/**
+ * Listener persistant HSBC — corrige le cas où le bouton Apply sur Eightfold
+ * ouvre SuccessFactors dans un NOUVEL onglet (tabId différent de taleos_hsbc_tab_id).
+ * Quand un onglet charge career2.successfactors.eu avec hsbcholdin :
+ *   1. On met à jour taleos_pending_hsbc.tabId et taleos_hsbc_tab_id
+ *   2. On ré-injecte le filler pour garantir son exécution sur la nouvelle page SF
+ */
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete') return;
+  const url = (tab?.url || '');
+  if (!url.includes('career2.successfactors.eu')) return;
+  if (!url.includes('hsbcholdin')) return;
+
+  // Anti-double-injection
+  if (hsbcLastInject.get(tabId) && Date.now() - hsbcLastInject.get(tabId) < 8000) return;
+  hsbcLastInject.set(tabId, Date.now());
+
+  const stored = await chrome.storage.local.get(['taleos_pending_hsbc', 'taleos_hsbc_tab_id']);
+  const entry = stored.taleos_pending_hsbc;
+  if (!entry?.profile) return;
+
+  const age = Date.now() - (entry.timestamp || 0);
+  if (age > 5 * 60 * 1000) {
+    chrome.storage.local.remove(['taleos_pending_hsbc', 'taleos_hsbc_tab_id']);
+    return;
+  }
+
+  // Si l'onglet SF est différent de l'onglet Eightfold (Apply a ouvert un nouvel onglet)
+  if (stored.taleos_hsbc_tab_id && tabId !== stored.taleos_hsbc_tab_id) {
+    console.log(`[Taleos HSBC] SF ouvert dans nouvel onglet ${tabId} (≠ Eightfold ${stored.taleos_hsbc_tab_id}) — mise à jour tabId`);
+    await chrome.storage.local.set({
+      taleos_pending_hsbc: { ...entry, tabId },
+      taleos_hsbc_tab_id: tabId
+    });
+  }
+
+  console.log(`[Taleos HSBC] Ré-injection filler sur page SF (tabId=${tabId})`);
+  await new Promise(r => setTimeout(r, 800));
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/hsbc_blueprint.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content/hsbc-careers-filler.js'] });
+  } catch (e) {
+    console.error('[Taleos HSBC] Ré-injection SF:', e);
   }
 });
 
