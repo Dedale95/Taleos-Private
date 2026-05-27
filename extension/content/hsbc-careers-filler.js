@@ -636,19 +636,42 @@
       return;
     }
 
-    // ── Étape 3 : clic + background surveille le nouvel onglet SF ──────────
-    // Le bouton Eightfold est un <button role="link"> sans href : son handler JS
-    // appelle window.open(sfUrl, '_blank'). On prévient d'abord le background de
-    // surveiller tout nouvel onglet qui chargera career2.successfactors.eu, puis
-    // on clique. Quand l'onglet SF est confirmé, background.js ferme cet onglet
-    // Eightfold et ré-injecte le filler dans le nouvel onglet.
-    chrome.runtime.sendMessage({ action: 'hsbc_watch_apply_new_tab' }).catch(() => {});
-    await sleep(100); // laisser le listener s'installer côté background
+    // ── Étape 3 : demander le clic utilisateur ─────────────────────────────
+    // Le bouton Eightfold vérifie event.isTrusted — seul un vrai clic physique
+    // déclenche le window.open vers SF. On ne peut pas forger isTrusted depuis
+    // un content script. → On met le bouton en évidence et on demande à
+    // l'utilisateur de cliquer une seule fois ; le background prend le relais.
 
-    log('Clic bouton Apply Eightfold…');
-    showBanner('Clic sur Postulez maintenant…');
-    applyBtn.click();
-    log('✅ Clic effectué — background surveille l\'ouverture de l\'onglet SF');
+    // Enregistrer le listener avant le clic
+    chrome.runtime.sendMessage({ action: 'hsbc_watch_apply_new_tab' }).catch(() => {});
+
+    // Mettre l'onglet au premier plan
+    activateTab();
+
+    // Animation de pulsation sur le bouton
+    const pulseStyle = document.createElement('style');
+    pulseStyle.textContent = `
+      @keyframes taleos-btn-pulse {
+        0%   { box-shadow: 0 0 0 0   rgba(255,255,255,.8); }
+        70%  { box-shadow: 0 0 0 14px rgba(255,255,255,0); }
+        100% { box-shadow: 0 0 0 0   rgba(255,255,255,0); }
+      }
+      [data-test-id="apply-button"] {
+        outline: 3px solid #fff !important;
+        animation: taleos-btn-pulse 1.2s infinite !important;
+      }
+    `;
+    document.head.appendChild(pulseStyle);
+
+    showBanner('👆 Cliquez sur "Postulez maintenant" — Taleos remplit le formulaire ensuite');
+    log('En attente du clic utilisateur sur Apply (event.isTrusted requis par Eightfold)');
+
+    // Écouter le clic réel pour mettre à jour la bannière
+    applyBtn.addEventListener('click', () => {
+      pulseStyle.remove();
+      showBanner('Ouverture du formulaire de candidature…');
+      log('✅ Clic utilisateur détecté — background surveille l\'onglet SF');
+    }, { once: true });
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
