@@ -575,14 +575,12 @@
     log('Page offre Eightfold HSBC — recherche bouton Apply…');
     showBanner('Ouverture de la page SuccessFactors…');
 
-    // Sur Eightfold, le bouton Apply appelle checkDpcs2AndProceed
-    // qui peut afficher une popup DPCS avant de naviguer vers SF.
     const applyBtn = await waitFor(
       () =>
-        document.getElementById('applyButton_top') ||
-        document.getElementById('applyButton_bottom') ||
         document.querySelector('[data-test-id="apply-button"]') ||
         document.querySelector('[class*="position-apply-button"]') ||
+        document.getElementById('applyButton_top') ||
+        document.getElementById('applyButton_bottom') ||
         Array.from(document.querySelectorAll('button')).find(b =>
           /apply|postuler|candidater/i.test(b.textContent)
         ),
@@ -595,8 +593,44 @@
       return;
     }
 
+    // Eightfold appelle window.open() pour ouvrir SF dans un popup.
+    // Les bloqueurs de popups empêchent cela → on intercepte window.open pour
+    // capturer l'URL et naviguer dans le même onglet.
+    let capturedUrl = null;
+    const originalOpen = window.open;
+    window.open = function(url, target, features) {
+      if (url && (url.includes('successfactors') || url.includes('career2') || url.includes('hsbc'))) {
+        capturedUrl = String(url);
+        log(`URL SF capturée via window.open : ${capturedUrl}`);
+        // Retourner un faux objet window pour éviter les erreurs JS d'Eightfold
+        return { focus() {}, closed: false, location: { href: url } };
+      }
+      return originalOpen.call(window, url, target, features);
+    };
+
+    log('Clic bouton Apply (window.open intercepté)…');
     applyBtn.click();
-    log('✅ Clic Apply Eightfold → attente navigation vers SuccessFactors');
+
+    // Attendre que window.open soit appelé (max 5s)
+    let waited = 0;
+    while (!capturedUrl && waited < 5000) {
+      await sleep(200);
+      waited += 200;
+    }
+
+    // Restaurer window.open dans tous les cas
+    window.open = originalOpen;
+
+    if (capturedUrl) {
+      log(`✅ Navigation vers SF (même onglet) : ${capturedUrl}`);
+      showBanner('Redirection vers le formulaire de candidature…');
+      await sleep(300);
+      location.href = capturedUrl;
+    } else {
+      // Fallback : window.open n'a pas été appelé — peut-être navigation directe déjà en cours
+      log('ℹ️ window.open non intercepté — vérification navigation directe…');
+      showBanner('Ouverture du formulaire en cours…');
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
