@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.128",
-  "version_name": "1.2.128-hsbc-apply-button-fix",
+  "version": "1.2.129",
+  "version_name": "1.2.129-hsbc-portalcareer-fix",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

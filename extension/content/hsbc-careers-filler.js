@@ -572,65 +572,115 @@
   }
 
   /**
-   * Construit l'URL SF depuis le champ ats_job_id du JSON Eightfold.
+   * Cherche l'URL de candidature SF dans les scripts Eightfold.
    *
-   * La page Eightfold (portal.careers.hsbc.com) contient un <script> JSON avec :
-   *   { "positions": [{ "ats_job_id": "44076", ... }] }
+   * Priorité :
+   *   1. URL portalcareer complète dans les scripts inline (inclut _s.crb si présent)
+   *   2. ats_job_id → construit portalcareer?career_ns=job_application (pas job_listing !)
+   *   3. Fallback ats_job_id dans le HTML brut
    *
-   * ats_job_id = career_job_req_id dans SF → on construit directement l'URL
-   * de la fiche poste SF, que le filler peut traiter via handleListingPage
-   * (clic Apply sur SF ne demande pas isTrusted, ouvre le form dans le même onglet).
+   * IMPORTANT : on cible career_ns=job_application et non job_listing.
+   *   job_listing redirige vers apply.careers.hsbc.com — ce n'est pas le bon flux.
+   *   job_application va directement au formulaire SF (portalcareer).
    */
   function extractSFApplyUrl() {
     try {
-      // 1. Chercher ats_job_id dans TOUS les scripts (inline + JSON)
-      for (const s of document.querySelectorAll('script')) {
-        if (s.src) continue;
+      // Normaliser les slashes JSON-échappés (\/ → /) pour les regex
+      const normalize = str => str.replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+
+      // 1. Chercher l'URL portalcareer complète dans les scripts inline
+      //    Eightfold l'embarque dans le JSON de la page (avec _s.crb si l'utilisateur est connecté)
+      for (const s of document.querySelectorAll('script:not([src])')) {
+        const raw = s.textContent || '';
+        if (!raw.includes('career2.successfactors.eu')) continue;
+        const text = normalize(raw);
+        const m = text.match(/https?:\/\/career2\.successfactors\.eu\/portalcareer[^"'\s<>]*/);
+        if (m && m[0].includes('hsbcholdin')) {
+          log(`URL portalcareer directe trouvée dans <script> : ${m[0]}`);
+          return m[0];
+        }
+      }
+
+      // 2. Chercher ats_job_id → construire URL candidature directe
+      for (const s of document.querySelectorAll('script:not([src])')) {
         const text = s.textContent || '';
         if (!text.includes('ats_job_id')) continue;
         const m = text.match(/"ats_job_id"\s*:\s*"(\d+)"/);
         if (m && m[1]) {
-          const sfUrl = `https://career2.successfactors.eu/career?company=hsbcholdin&career_ns=job_listing&navBarLevel=JOB_DETAIL&rcm_site_locale=en_GB&career_job_req_id=${m[1]}`;
-          log(`ats_job_id=${m[1]} trouvé → URL SF : ${sfUrl}`);
+          const sfUrl = `https://career2.successfactors.eu/portalcareer?company=hsbcholdin&career_ns=job_application&src=Eightfold&career_job_req_id=${m[1]}&lang=fr_FR`;
+          log(`ats_job_id=${m[1]} → URL candidature SF : ${sfUrl}`);
           return sfUrl;
         }
       }
-      // 2. Chercher dans le HTML brut (fallback si le script est dynamique)
-      const bodyHtml = document.documentElement.innerHTML;
+
+      // 3. Fallback : ats_job_id dans le HTML brut
+      const bodyHtml = normalize(document.documentElement.innerHTML);
       const m2 = bodyHtml.match(/"ats_job_id"\s*:\s*"(\d+)"/);
       if (m2 && m2[1]) {
-        const sfUrl = `https://career2.successfactors.eu/career?company=hsbcholdin&career_ns=job_listing&navBarLevel=JOB_DETAIL&rcm_site_locale=en_GB&career_job_req_id=${m2[1]}`;
-        log(`ats_job_id=${m2[1]} (fallback HTML) → URL SF : ${sfUrl}`);
+        const sfUrl = `https://career2.successfactors.eu/portalcareer?company=hsbcholdin&career_ns=job_application&src=Eightfold&career_job_req_id=${m2[1]}&lang=fr_FR`;
+        log(`ats_job_id=${m2[1]} (fallback HTML) → URL candidature SF : ${sfUrl}`);
         return sfUrl;
       }
-      // 3. Chercher une URL SF complète déjà présente dans la page (ancien comportement)
-      for (const s of document.querySelectorAll('script:not([src])')) {
-        const m = s.textContent?.match(/https:\/\/career2\.successfactors\.eu\/[^"'\\]+hsbcholdin[^"'\\]*/);
-        if (m) return m[0].replace(/\\u0026/g, '&');
+    } catch (_) {}
+    return null;
+  }
+
+  /**
+   * Tente d'extraire l'URL de candidature SF depuis le React fiber du bouton Apply.
+   *
+   * Le bouton [data-test-id="apply-button"] est rendu par React/Eightfold.
+   * Son composant parent stocke l'URL (avec _s.crb) dans ses props/state.
+   * On remonte le fiber jusqu'à trouver une URL career2.successfactors.eu.
+   */
+  function extractApplyUrlFromButtonFiber() {
+    try {
+      const btn = document.querySelector('[data-test-id="apply-button"]');
+      if (!btn) return null;
+
+      const fiberKey = Object.keys(btn).find(k =>
+        k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance')
+      );
+      if (!fiberKey) { log('React fiber non trouvé sur le bouton Apply'); return null; }
+
+      let fiber = btn[fiberKey];
+      for (let depth = 0; fiber && depth < 30; fiber = fiber.return, depth++) {
+        let dataStr = '';
+        try { dataStr += JSON.stringify(fiber.memoizedProps || {}); } catch (_) {}
+        try { dataStr += JSON.stringify(fiber.memoizedState || {}); } catch (_) {}
+        if (!dataStr || !dataStr.includes('career2.successfactors.eu')) continue;
+
+        // Normaliser les slashes échappés
+        const text = dataStr.replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+        const m = text.match(/https?:\/\/career2\.successfactors\.eu\/portalcareer[^"'\s\\]*/);
+        if (m && m[0].includes('hsbcholdin')) {
+          log(`URL portalcareer trouvée dans React fiber (depth=${depth}) : ${m[0]}`);
+          return m[0];
+        }
       }
     } catch (_) {}
     return null;
   }
 
   async function handleEightfoldOffer(profile) {
-    log('Page offre Eightfold HSBC — extraction ats_job_id…');
-    showBanner('Récupération du lien de candidature SF…');
+    log('Page offre Eightfold HSBC — extraction URL de candidature…');
+    showBanner('Récupération du lien de candidature…');
 
-    // Attendre que le JSON Eightfold soit chargé dans la page (max 6s)
+    // Attendre que le JSON Eightfold soit chargé (max 8s)
+    // Ordre : React fiber (URL exacte avec _s.crb) → scripts inline → ats_job_id fallback
     let sfUrl = null;
-    const deadline = Date.now() + 6000;
+    const deadline = Date.now() + 8000;
     while (!sfUrl && Date.now() < deadline) {
-      sfUrl = extractSFApplyUrl();
+      sfUrl = extractApplyUrlFromButtonFiber() || extractSFApplyUrl();
       if (!sfUrl) await sleep(300);
     }
 
     if (sfUrl) {
-      log(`✅ URL SF construite depuis ats_job_id → navigation : ${sfUrl}`);
-      showBanner('Redirection vers la fiche poste SF…');
+      log(`✅ URL candidature SF → navigation : ${sfUrl}`);
+      showBanner('Redirection vers le formulaire de candidature…');
       await sleep(400);
       location.href = sfUrl;
     } else {
-      log('⚠️ ats_job_id introuvable dans la page Eightfold');
+      log('⚠️ URL candidature introuvable dans la page Eightfold');
       showBanner('Lien SF non trouvé — cliquez manuellement sur Postulez maintenant', 'warn');
       activateTab();
     }
