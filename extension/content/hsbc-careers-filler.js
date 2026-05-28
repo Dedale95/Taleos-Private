@@ -92,7 +92,8 @@
     const phone     = String(raw.phone_number || raw['phone-number'] || raw.phone || '').replace(/\D/g, '');
     const phoneCode = String(raw.phone_country_code || '+33').trim();
 
-    // Genre : mappe vers les options exactes du formulaire SF HSBC
+    // Genre : stocké en anglais (Male/Female/Other) dans Firebase
+    // La conversion FR (Mâle/Femelle) se fait dans fillApplicationForm
     const genderRaw = String(raw.gender || '').trim();
     let gender = 'Prefer not to say';
     if (/^male$/i.test(genderRaw))   gender = 'Male';
@@ -339,11 +340,49 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // 9. Remplissage du formulaire principal (SF new-user application form)
+  // 9. Remplissage du formulaire principal (SF portalcareer application form)
   // ══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Sélectionne une valeur dans un picklist en essayant plusieurs variantes de texte.
+   * Utilisé pour gérer la localisation (EN/FR) sans double appel.
+   */
+  async function selectPicklistMulti(inputEl, candidates, label = '') {
+    if (!inputEl) { log(`⚠️ Picklist "${label}" introuvable`); return false; }
+
+    const btnId  = inputEl.id.replace(':_input', ':_selectButton');
+    const btn    = document.getElementById(btnId);
+    if (btn) btn.click();
+    else inputEl.click();
+
+    const listId = await waitFor(() => inputEl.getAttribute('aria-owns'), 4000, 150);
+    if (!listId) { log(`⚠️ Picklist "${label}" : liste non ouverte`); return false; }
+
+    const list = await waitFor(() => {
+      const el = document.getElementById(listId);
+      return (el && el.querySelectorAll('[role="option"]').length > 0) ? el : null;
+    }, 5000, 200);
+    if (!list) { log(`⚠️ Picklist "${label}" : options non chargées`); return false; }
+
+    const options = Array.from(list.querySelectorAll('[role="option"]'));
+    const available = options.map(o => o.textContent.trim());
+
+    for (const candidate of candidates) {
+      const target = options.find(o => o.textContent.trim() === candidate);
+      if (target) {
+        target.click();
+        log(`✅ ${label} → "${candidate}"`);
+        return true;
+      }
+    }
+    log(`⚠️ Picklist "${label}" : aucune valeur trouvée parmi [${candidates.join('|')}]. Disponibles : ${available.join(' | ')}`);
+    return false;
+  }
+
   async function fillApplicationForm(profile) {
     const p = normalizeProfile(profile);
     log(`Début remplissage pour ${p.firstName} ${p.lastName} <${p.email}>`);
+    log(`[Firebase] famille_hsbc=${profile.hsbc_family_at_hsbc || '—'} | ancien_emp=${profile.hsbc_former_employee || '—'} | droit_travail=${profile.hsbc_work_right || '—'} | auditeurs=${profile.hsbc_auditors_employee || '—'} | genre=${p.gender}`);
     showBanner('Remplissage en cours…');
 
     // Attendre que le formulaire soit prêt (jusqu'à 10s)
@@ -382,25 +421,40 @@
     if (phoneField) { setNativeValue(phoneField, p.phone); log(`✅ Téléphone → ${p.phone}`); }
 
     // ── Questions HSBC spécifiques ────────────────────────────────────────────────
+    // Le formulaire est en fr_FR → options en français. On essaie FR puis EN (robustesse).
     await sleep(400);
-    // Proches travaillant chez HSBC → Non
-    await selectPicklist(document.getElementById('13:_input'), 'No', 'Proches HSBC');
+
+    // Famille travaillant chez HSBC (depuis profil Firebase, défaut : Non)
+    const hsbcFamily = profile.hsbc_family_at_hsbc || 'Non';
+    log(`[Formulaire] Famille HSBC → Firebase="${hsbcFamily}"`);
+    await selectPicklistMulti(document.getElementById('13:_input'), [hsbcFamily, hsbcFamily === 'Non' ? 'No' : 'Yes'], 'Proches HSBC');
     await sleep(350);
 
-    // Ancien employé / prestataire → Non
-    await selectPicklist(document.getElementById('17:_input'), 'No', 'Ancien employé HSBC');
+    // Ancien employé / prestataire (depuis profil Firebase, défaut : Non)
+    const hsbcFormer = profile.hsbc_former_employee || 'Non';
+    log(`[Formulaire] Ancien employé HSBC → Firebase="${hsbcFormer}"`);
+    await selectPicklistMulti(document.getElementById('17:_input'), [hsbcFormer, hsbcFormer === 'Non' ? 'No' : 'Yes'], 'Ancien employé HSBC');
     await sleep(350);
 
-    // Genre
-    await selectPicklist(document.getElementById('21:_input'), p.gender, 'Genre');
+    // Genre — le formulaire utilise Mâle/Femelle/Prefer not to say
+    const genderRaw = String(profile.gender || '').trim();
+    const genderFr = /^male$/i.test(genderRaw) ? 'Mâle'
+      : /^female$/i.test(genderRaw) ? 'Femelle'
+      : 'Prefer not to say';
+    log(`[Formulaire] Genre → Firebase="${genderRaw}" → formulaire="${genderFr}"`);
+    await selectPicklistMulti(document.getElementById('21:_input'), [genderFr, p.gender], 'Genre');
     await sleep(350);
 
-    // Droit au travail dans le pays → Oui
-    await selectPicklist(document.getElementById('25:_input'), 'Yes', 'Droit au travail');
+    // Droit au travail (depuis profil Firebase, défaut : Oui)
+    const hsbcWorkRight = profile.hsbc_work_right || 'Oui';
+    log(`[Formulaire] Droit au travail → Firebase="${hsbcWorkRight}"`);
+    await selectPicklistMulti(document.getElementById('25:_input'), [hsbcWorkRight, hsbcWorkRight === 'Oui' ? 'Yes' : 'No'], 'Droit au travail');
     await sleep(350);
 
-    // Employé par les auditeurs externes HSBC → Non
-    await selectPicklist(document.getElementById('29:_input'), 'No', "Auditeurs externes HSBC");
+    // Auditeurs externes HSBC (depuis profil Firebase, défaut : Non)
+    const hsbcAuditors = profile.hsbc_auditors_employee || 'Non';
+    log(`[Formulaire] Auditeurs externes → Firebase="${hsbcAuditors}"`);
+    await selectPicklistMulti(document.getElementById('29:_input'), [hsbcAuditors, hsbcAuditors === 'Non' ? 'No' : 'Yes'], 'Auditeurs externes HSBC');
     await sleep(350);
 
     // ── Pays ─────────────────────────────────────────────────────────────────────
