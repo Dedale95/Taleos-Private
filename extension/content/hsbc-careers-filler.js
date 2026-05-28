@@ -107,7 +107,7 @@
       gender,
       // Fichiers — noms exacts Firebase (ne pas renommer)
       cvStoragePath:  String(raw.cv_storage_path || '').trim(),
-      cvFilename:     String(raw.cv_filename      || 'cv.pdf').trim(),
+      cvFilename:     String(raw.cv_filename      || '').trim() || null,
     };
   }
 
@@ -254,7 +254,7 @@
     // Lire le nom du CV déjà affiché (si présent)
     const existingLabel = document.querySelector('[id$="_attachDownloadLabelLink"]');
     const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
-    const targetName    = String(filename || 'cv.pdf').trim();
+    const targetName    = String(filename || '?').trim();
     log(`   CV : formulaire='${existingName}' | Firebase='${targetName}' → Remplacement (toujours à jour)`);
 
     // Télécharger depuis Firebase AVANT toute interaction UI
@@ -267,7 +267,9 @@
     const fileInput = document.querySelector('input[name="fileData1"]');
     if (!fileInput) { log('   ⚠️ input[name="fileData1"] introuvable'); return false; }
 
-    const effectiveFilename = String(filename || r.filename || 'cv.pdf').trim();
+    // Nom exact Firebase — jamais renommé
+    const effectiveFilename = String(filename || r.filename || '').trim();
+    if (!effectiveFilename) { log('   ⚠️ CV : nom de fichier absent (cv_filename non défini dans Firebase)'); return false; }
     const bin   = atob(r.base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

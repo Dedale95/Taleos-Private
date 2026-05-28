@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.135",
-  "version_name": "1.2.135-hsbc-cv-direct-inject",
+  "version": "1.2.136",
+  "version_name": "1.2.136-hsbc-cv-keep-firebase-name",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
