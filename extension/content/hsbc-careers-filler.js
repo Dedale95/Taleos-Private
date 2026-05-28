@@ -242,35 +242,31 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // 7. Upload CV depuis Firebase Storage
   // ══════════════════════════════════════════════════════════════════════════════
+  /**
+   * Télécharge le CV depuis Firebase Storage et l'injecte directement dans
+   * l'input[name="fileData1"] du widget SF (toujours présent dans le DOM).
+   * L'onchange JUIC déclenche l'upload côté SF, qu'un CV existe déjà ou non.
+   * On remplace TOUJOURS — la version Firebase est la plus à jour.
+   */
   async function uploadCV(storagePath, filename) {
-    if (!storagePath) { log('⚠️ CV : cv_storage_path absent → skip'); return false; }
+    if (!storagePath) { log('   ⚠️ CV : cv_storage_path absent → skip'); return false; }
 
-    // Lire le CV actuel affiché dans le formulaire (IDs dynamiques — lire par classe)
+    // Lire le nom du CV déjà affiché (si présent)
     const existingLabel = document.querySelector('[id$="_attachDownloadLabelLink"]');
     const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
     const targetName    = String(filename || 'cv.pdf').trim();
     log(`   CV : formulaire='${existingName}' | Firebase='${targetName}' → Remplacement (toujours à jour)`);
 
-    // Télécharger d'abord depuis Firebase (avant toute interaction UI)
+    // Télécharger depuis Firebase AVANT toute interaction UI
     const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
     if (!r?.base64) { log(`   ⚠️ CV introuvable dans Firebase Storage (${storagePath})`); return false; }
 
-    // Ouvrir le widget : crayon si CV existe, bouton upload sinon (IDs dynamiques)
-    const attachBtn = document.querySelector('[id$="_attachIcon"].addAttachments')
-      || document.querySelector('.attachActions [id$="_attachIcon"]')
-      || document.querySelector('.addAttachments');
-    if (!attachBtn) { log('   ⚠️ Bouton upload/modifier CV introuvable'); return false; }
-    attachBtn.click();
-    await sleep(800);
+    // L'input file est toujours présent dans le DOM SF (même quand un CV existe déjà).
+    // On lui injecte directement le fichier — l'onchange JUIC ("uploadFiles") déclenche l'upload.
+    // Pas besoin de cliquer le crayon ni d'ouvrir un sous-menu.
+    const fileInput = document.querySelector('input[name="fileData1"]');
+    if (!fileInput) { log('   ⚠️ input[name="fileData1"] introuvable'); return false; }
 
-    // Attendre l'input file (nom stable : fileData1)
-    const fileInput = await waitFor(
-      () => document.querySelector('input[name="fileData1"]'),
-      4000
-    );
-    if (!fileInput) { log('   ⚠️ Input file CV introuvable après ouverture du widget'); return false; }
-
-    // Construire le File avec le nom exact Firebase
     const effectiveFilename = String(filename || r.filename || 'cv.pdf').trim();
     const bin   = atob(r.base64);
     const bytes = new Uint8Array(bin.length);
@@ -280,32 +276,41 @@
     const dt = new DataTransfer();
     dt.items.add(file);
     fileInput.files = dt.files;
+    // Déclencher l'onchange JUIC qui lance l'upload SF
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
     fileInput.dispatchEvent(new Event('input',  { bubbles: true }));
 
-    // Attendre confirmation d'upload (IDs dynamiques — chercher par classe)
+    log(`   ⏳ Upload en cours : "${effectiveFilename}"…`);
+
+    // Attendre confirmation d'upload (icône succès JUIC visible, IDs dynamiques)
     const success = await waitFor(() => {
       const el = document.querySelector('[id$="_attachSuccess"]:not(.displayNone)');
       return el || null;
-    }, 20000, 500);
+    }, 25000, 500);
 
     if (success) {
       log(`   ✅ CV → remplacé par "${effectiveFilename}"`);
       return true;
     }
 
-    // Vérification alternative : fbja_uploadedResumeId rempli
-    const uploadedId = document.getElementById('fbja_uploadedResumeId');
-    if (uploadedId?.value) {
-      log(`   ✅ CV → uploadé "${effectiveFilename}" (fbja_uploadedResumeId)`);
+    // Fallback : vérifier que le label du CV a changé
+    const newLabel = document.querySelector('[id$="_attachDownloadLabelLink"]');
+    const newName  = newLabel ? newLabel.textContent.trim() : '';
+    if (newName && newName !== existingName) {
+      log(`   ✅ CV → label mis à jour : "${newName}"`);
       return true;
     }
 
-    log(`   ⚠️ Timeout upload CV — vérifiez manuellement (${effectiveFilename})`);
+    // Fallback 2 : fbja_uploadedResumeId rempli
+    const uploadedId = document.getElementById('fbja_uploadedResumeId');
+    if (uploadedId?.value) {
+      log(`   ✅ CV → uploadé (fbja_uploadedResumeId="${uploadedId.value}") : "${effectiveFilename}"`);
+      return true;
+    }
+
+    log(`   ⚠️ Timeout upload CV (25s) — vérifiez que "${effectiveFilename}" est bien chargé`);
     return false;
   }
-
-  // ══════════════════════════════════════════════════════════════════════════════
   // 8. Acceptation de la politique de confidentialité
   // ══════════════════════════════════════════════════════════════════════════════
   async function acceptPrivacy() {
