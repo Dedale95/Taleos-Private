@@ -662,20 +662,78 @@
   }
 
   async function handleEightfoldOffer(profile) {
-    log('Page offre Eightfold HSBC — extraction URL de candidature…');
+    log('Page offre Eightfold HSBC — extraction URL candidature…');
     showBanner('Récupération du lien de candidature…');
 
-    // Attendre que le JSON Eightfold soit chargé (max 8s)
-    // Ordre : React fiber (URL exacte avec _s.crb) → scripts inline → ats_job_id fallback
+    // ── Stratégie A : interception window.open dans le MAIN world ──────────────
+    //
+    // Le filler tourne dans l'isolated world de Chrome.
+    // On injecte un <script> dans le MAIN world pour patcher window.open AVANT
+    // que le bouton l'appelle. DOM partagé → on lit le résultat via dataset.
+    //
+    // Pourquoi cette approche :
+    //   - event.isTrusted=false bloque window.open() via le popup blocker natif
+    //   - Notre patch remplace window.open → le blocker natif ne s'interpose plus
+    //   - Le handler Eightfold s'exécute normalement et appelle window.open(url)
+    //   - Notre fonction capture l'URL (avec _s.crb) et la stocke dans le DOM
+
+    const applyBtn = await waitFor(
+      () => document.querySelector('[data-test-id="apply-button"]'),
+      10000
+    );
+
+    if (applyBtn) {
+      log('Bouton Apply trouvé — injection intercepteur window.open dans le MAIN world…');
+
+      // Nettoyer toute capture précédente
+      delete document.documentElement.dataset.taleosHsbcUrl;
+
+      // Injection dans le MAIN world via <script> tag
+      const scriptEl = document.createElement('script');
+      scriptEl.textContent = `(function(){
+        var _orig = window.open;
+        window.open = function(url, target, features) {
+          var s = String(url || '');
+          if (s.includes('career2.successfactors.eu')) {
+            document.documentElement.dataset.taleosHsbcUrl = s;
+            console.log('[Taleos] window.open intercepté :', s);
+            return { closed: false, close: function(){} };
+          }
+          return _orig ? _orig.apply(this, arguments) : null;
+        };
+      })();`;
+      document.documentElement.appendChild(scriptEl);
+      scriptEl.remove();
+
+      // Cliquer (isolated world → déclenche le handler MAIN world d'Eightfold)
+      applyBtn.click();
+      await sleep(800);
+
+      // Lire le résultat depuis le DOM (partagé entre les deux mondes)
+      const capturedUrl = document.documentElement.dataset.taleosHsbcUrl || '';
+      if (capturedUrl && capturedUrl.includes('career2.successfactors.eu')) {
+        log(`✅ URL capturée via window.open MAIN world : ${capturedUrl}`);
+        showBanner('Navigation vers le formulaire de candidature…');
+        await sleep(300);
+        location.href = capturedUrl;
+        return;
+      }
+      log('Interception window.open : URL non capturée (isTrusted check Eightfold actif ou window.open non appelé)');
+    } else {
+      log('⚠️ Bouton [data-test-id="apply-button"] non trouvé');
+    }
+
+    // ── Stratégie B : URL dans les données de la page ──────────────────────────
+    // React fiber du bouton → scripts inline → ats_job_id + portalcareer
     let sfUrl = null;
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 5000;
     while (!sfUrl && Date.now() < deadline) {
       sfUrl = extractApplyUrlFromButtonFiber() || extractSFApplyUrl();
       if (!sfUrl) await sleep(300);
     }
 
     if (sfUrl) {
-      log(`✅ URL candidature SF → navigation : ${sfUrl}`);
+      log(`✅ URL SF extraite de la page → navigation : ${sfUrl}`);
       showBanner('Redirection vers le formulaire de candidature…');
       await sleep(400);
       location.href = sfUrl;
