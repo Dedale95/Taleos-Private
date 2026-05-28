@@ -1,7 +1,7 @@
 {
   "version": "1.2.131",
   "version_name": "1.2.131-hsbc-bg-mainworld-patch",
-  "published_at": "2026-05-28T00:00:00Z",
+  "published_at": "2026-05-28T06:34:12Z",
   "release_notes": "HSBC fix CSP : injection window.open interceptor via background.js (chrome.scripting.executeScript world=MAIN bypasse le CSP). Le content script (isolated world) ne peut pas injecter de <script> inline sur portal.careers.hsbc.com. Le background injecte dans le MAIN world et émet un CustomEvent sur le document (partagé MAIN↔isolated) pour transmettre l'URL SF avec _s.crb au content script qui navigue dans le même onglet.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.131.zip"
 }
