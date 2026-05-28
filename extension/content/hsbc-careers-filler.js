@@ -10,8 +10,7 @@
  * Source données :  chrome.storage.local.taleos_pending_hsbc.profile
  * Upload CV :       chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath })
  *
- * IMPORTANT : ne soumet jamais (#fbqa_apply n'est jamais cliqué automatiquement).
- * Le candidat entre son mot de passe et soumet manuellement.
+ * Soumission : automatique après 60 secondes (#fbqa_apply) une fois le formulaire rempli.
  *
  * Noms de fichiers : utilise exactement cv_filename / letter_filename tels que stockés dans Firebase
  * (pas de renommage).
@@ -244,31 +243,38 @@
   // 7. Upload CV depuis Firebase Storage
   // ══════════════════════════════════════════════════════════════════════════════
   async function uploadCV(storagePath, filename) {
-    if (!storagePath) { log('⚠️ cv_storage_path absent — CV non uploadé'); return false; }
+    if (!storagePath) { log('⚠️ CV : cv_storage_path absent → skip'); return false; }
 
-    // Ouvrir le widget d'upload
-    const attachIcon = document.getElementById('59:_attachIcon');
-    if (!attachIcon) { log('⚠️ Bouton upload CV (59:_attachIcon) introuvable'); return false; }
-    attachIcon.click();
+    // Lire le CV actuel affiché dans le formulaire (IDs dynamiques — lire par classe)
+    const existingLabel = document.querySelector('[id$="_attachDownloadLabelLink"]');
+    const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
+    const targetName    = String(filename || 'cv.pdf').trim();
+    log(`   CV : formulaire='${existingName}' | Firebase='${targetName}' → Remplacement (toujours à jour)`);
+
+    // Télécharger d'abord depuis Firebase (avant toute interaction UI)
+    const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
+    if (!r?.base64) { log(`   ⚠️ CV introuvable dans Firebase Storage (${storagePath})`); return false; }
+
+    // Ouvrir le widget : crayon si CV existe, bouton upload sinon (IDs dynamiques)
+    const attachBtn = document.querySelector('[id$="_attachIcon"].addAttachments')
+      || document.querySelector('.attachActions [id$="_attachIcon"]')
+      || document.querySelector('.addAttachments');
+    if (!attachBtn) { log('   ⚠️ Bouton upload/modifier CV introuvable'); return false; }
+    attachBtn.click();
     await sleep(800);
 
-    // Attendre l'input file
+    // Attendre l'input file (nom stable : fileData1)
     const fileInput = await waitFor(
-      () => document.getElementById('60:_file') || document.querySelector('input[name="fileData1"]'),
+      () => document.querySelector('input[name="fileData1"]'),
       4000
     );
-    if (!fileInput) { log('⚠️ Input file CV introuvable après ouverture du widget'); return false; }
+    if (!fileInput) { log('   ⚠️ Input file CV introuvable après ouverture du widget'); return false; }
 
-    // Télécharger depuis Firebase via background.js
-    log(`⏳ Téléchargement CV depuis Firebase : ${storagePath}`);
-    const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
-    if (!r?.base64) { log(`⚠️ CV introuvable dans Firebase Storage (${storagePath})`); return false; }
-
-    // Construire le File avec le nom exact Firebase (pas de renommage)
-    const bin = atob(r.base64);
+    // Construire le File avec le nom exact Firebase
+    const effectiveFilename = String(filename || r.filename || 'cv.pdf').trim();
+    const bin   = atob(r.base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const effectiveFilename = String(filename || r.filename || 'cv.pdf').trim();
     const file = new File([bytes], effectiveFilename, { type: r.type || 'application/pdf' });
 
     const dt = new DataTransfer();
@@ -277,25 +283,25 @@
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
     fileInput.dispatchEvent(new Event('input',  { bubbles: true }));
 
-    // Attendre confirmation d'upload (59:_attachSuccess visible)
+    // Attendre confirmation d'upload (IDs dynamiques — chercher par classe)
     const success = await waitFor(() => {
-      const el = document.getElementById('59:_attachSuccess');
-      return el && !el.classList.contains('displayNone') ? el : null;
+      const el = document.querySelector('[id$="_attachSuccess"]:not(.displayNone)');
+      return el || null;
     }, 20000, 500);
 
     if (success) {
-      log(`✅ CV uploadé : ${effectiveFilename}`);
+      log(`   ✅ CV → remplacé par "${effectiveFilename}"`);
       return true;
     }
 
     // Vérification alternative : fbja_uploadedResumeId rempli
     const uploadedId = document.getElementById('fbja_uploadedResumeId');
     if (uploadedId?.value) {
-      log(`✅ CV uploadé (via fbja_uploadedResumeId) : ${effectiveFilename}`);
+      log(`   ✅ CV → uploadé "${effectiveFilename}" (fbja_uploadedResumeId)`);
       return true;
     }
 
-    log(`⚠️ Timeout upload CV — vérifiez manuellement (${effectiveFilename})`);
+    log(`   ⚠️ Timeout upload CV — vérifiez manuellement (${effectiveFilename})`);
     return false;
   }
 
@@ -371,49 +377,69 @@
   }
 
   /**
-   * Sélectionne une valeur dans un picklist en essayant plusieurs variantes de texte.
-   * Utilisé pour gérer la localisation (EN/FR) sans double appel.
-   * Compare en ignorant espaces insécables et espaces superflus.
+   * Sélectionne une valeur dans un picklist (paginatedPicklist SF).
+   * Lit d'abord la valeur actuelle et skip si déjà correcte.
+   * Essaie plusieurs variantes texte (EN/FR) pour la localisation.
    */
   async function selectPicklistMulti(inputEl, candidates, label = '') {
-    if (!inputEl) { log(`⚠️ Picklist "${label}" introuvable`); return false; }
+    if (!inputEl) { log(`   ⚠️ Picklist "${label}" introuvable`); return false; }
 
-    const normalize = s => s.replace(/ /g, ' ').trim();
+    // Normalise : retire espaces insécables (U+00A0), trim
+    const norm = s => String(s || '').replace(/ /g, ' ').replace(/ {2,}/g, ' ').trim();
 
-    const btnId  = inputEl.id.replace(':_input', ':_selectButton');
-    const btn    = document.getElementById(btnId);
-    if (btn) btn.click();
-    else inputEl.click();
+    const candidatesNorm = candidates.map(c => norm(c)).filter(Boolean);
+    const firebaseVal    = candidatesNorm[0] || '';
+
+    // Lire la valeur actuelle affichée dans l'input texte du picklist SF
+    const currentVal = norm(inputEl.value);
+
+    // Skip si déjà la bonne valeur
+    if (currentVal && candidatesNorm.some(c => c === currentVal)) {
+      log(`   ✅ ${label} : formulaire='${currentVal}' | Firebase='${firebaseVal}' → Skip`);
+      return true;
+    }
+
+    log(`   ✏️ ${label} : formulaire='${currentVal || 'vide'}' | Firebase='${firebaseVal}' → Renseignement`);
+
+    const btnId = inputEl.id.replace(':_input', ':_selectButton');
+    const btn   = document.getElementById(btnId);
+    if (btn) btn.click(); else inputEl.click();
 
     const listId = await waitFor(() => inputEl.getAttribute('aria-owns'), 4000, 150);
-    if (!listId) { log(`⚠️ Picklist "${label}" : liste non ouverte`); return false; }
+    if (!listId) { log(`   ⚠️ ${label} : liste non ouverte`); return false; }
 
     const list = await waitFor(() => {
       const el = document.getElementById(listId);
       return (el && el.querySelectorAll('[role="option"]').length > 0) ? el : null;
     }, 5000, 200);
-    if (!list) { log(`⚠️ Picklist "${label}" : options non chargées`); return false; }
+    if (!list) { log(`   ⚠️ ${label} : options non chargées`); return false; }
 
-    const options = Array.from(list.querySelectorAll('[role="option"]'));
-    const available = options.map(o => normalize(o.textContent));
+    const options   = Array.from(list.querySelectorAll('[role="option"]'));
+    const available = options.map(o => norm(o.textContent));
 
     for (const candidate of candidates) {
-      const candidateNorm = normalize(String(candidate));
-      const target = options.find(o => normalize(o.textContent) === candidateNorm);
+      const cn = norm(candidate);
+      const target = options.find(o => norm(o.textContent) === cn);
       if (target) {
         target.click();
-        log(`✅ ${label} → "${candidateNorm}"`);
+        log(`   ✅ ${label} → "${cn}"`);
         return true;
       }
     }
-    log(`⚠️ Picklist "${label}" : aucune valeur trouvée parmi [${candidates.join('|')}]. Disponibles : ${available.join(' | ')}`);
+    log(`   ⚠️ ${label} : aucune valeur parmi [${candidatesNorm.join('|')}]. Disponibles : ${available.join(' | ')}`);
     return false;
   }
 
   async function fillApplicationForm(profile) {
     const p = normalizeProfile(profile);
-    log(`Début remplissage pour ${p.firstName} ${p.lastName} <${p.email}>`);
-    log(`[Firebase] famille_hsbc=${profile.hsbc_family_at_hsbc || '—'} | ancien_emp=${profile.hsbc_former_employee || '—'} | droit_travail=${profile.hsbc_work_right || '—'} | auditeurs=${profile.hsbc_auditors_employee || '—'} | genre=${p.gender}`);
+    log(`Remplissage HSBC — ${p.firstName} ${p.lastName} <${p.email}>`);
+    log('── Firebase snapshot ─────────────────────────────────');
+    log(`   Genre     : ${profile.gender || '—'} (→ formulaire: ${/^male$/i.test(profile.gender||'') ? 'Mâle' : /^female$/i.test(profile.gender||'') ? 'Femelle' : 'Prefer not to say'})`);
+    log(`   Famille   : ${profile.hsbc_family_at_hsbc || '—'}`);
+    log(`   Ancien emp: ${profile.hsbc_former_employee || '—'}${profile.hsbc_employee_id ? ' (ID: ' + profile.hsbc_employee_id + ')' : ''}`);
+    log(`   Travail   : ${profile.hsbc_work_right || '—'}`);
+    log(`   Auditeurs : ${profile.hsbc_auditors_employee || '—'}`);
+    log('── Remplissage ───────────────────────────────────────');
     showBanner('Remplissage en cours…');
 
     // Attendre que le formulaire soit prêt (jusqu'à 10s)
@@ -430,8 +456,8 @@
       if (emailConf) setNativeValue(emailConf, p.email);
       log(`✅ Email → ${p.email}`);
     } else {
-      log('ℹ️ fbclc_userName absent — utilisateur déjà connecté, remplissage partiel du formulaire');
-      showBanner('Connecté — remplissage du formulaire en cours…');
+      log('ℹ️ fbclc_userName absent — utilisateur déjà connecté');
+      showBanner('Remplissage en cours…');
     }
 
     // ── Noms ────────────────────────────────────────────────────────────────────
@@ -457,18 +483,15 @@
 
     // Famille travaillant chez HSBC (depuis profil Firebase, défaut : Non)
     const hsbcFamily = profile.hsbc_family_at_hsbc || 'Non';
-    log(`[Firebase→Formulaire] Famille HSBC : "${hsbcFamily}"`);
     const familyInput = document.getElementById('13:_input')
       || findPicklistInputByLabel(['famille', 'family', 'relative', 'proche']);
-    log(`[Formulaire] Famille HSBC → input=${familyInput?.id || 'non trouvé'}`);
     await selectPicklistMulti(familyInput, [hsbcFamily, hsbcFamily === 'Non' ? 'No' : 'Yes'], 'Proches HSBC');
     await sleep(350);
 
     // Si famille = Oui → remplir le champ texte détails famille
     if (hsbcFamily === 'Oui') {
       const familyDetails = String(profile.hsbc_family_details || '').trim();
-      log(`[Firebase→Formulaire] Détails famille HSBC : "${familyDetails}"`);
-      if (familyDetails) {
+        if (familyDetails) {
         // Attendre l'apparition du champ texte conditionnel
         const familyTextarea = await waitFor(
           () => Array.from(document.querySelectorAll('textarea, input[type="text"]'))
@@ -487,18 +510,15 @@
 
     // Ancien employé / prestataire (depuis profil Firebase, défaut : Non)
     const hsbcFormer = profile.hsbc_former_employee || 'Non';
-    log(`[Firebase→Formulaire] Ancien employé HSBC : "${hsbcFormer}"`);
     const formerInput = document.getElementById('17:_input')
       || findPicklistInputByLabel(['ancien', 'former', 'contractor', 'prestataire', 'employé']);
-    log(`[Formulaire] Ancien employé → input=${formerInput?.id || 'non trouvé'}`);
     await selectPicklistMulti(formerInput, [hsbcFormer, hsbcFormer === 'Non' ? 'No' : 'Yes'], 'Ancien employé HSBC');
     await sleep(350);
 
     // Si ancien employé = Oui → remplir l'Employee ID
     if (hsbcFormer === 'Oui') {
       const empId = String(profile.hsbc_employee_id || '').trim();
-      log(`[Firebase→Formulaire] Employee ID HSBC : "${empId}"`);
-      if (empId) {
+        if (empId) {
         const empIdField = await waitFor(
           () => Array.from(document.querySelectorAll('input[type="text"], input:not([type])'))
             .find(el => {
@@ -523,28 +543,22 @@
       : isFemale
         ? ['Femelle', 'Female', 'Femme', 'F']
         : ['Prefer not to say', 'Je préfère ne pas répondre', 'Autre', 'Other'];
-    log(`[Firebase→Formulaire] Genre : Firebase="${genderRaw}" → essai=[${genderCandidates.join('|')}]`);
     const genderInput = document.getElementById('21:_input')
       || findPicklistInputByLabel(['sexe', 'gender', 'genre']);
-    log(`[Formulaire] Genre → input=${genderInput?.id || 'non trouvé'}`);
     await selectPicklistMulti(genderInput, genderCandidates, 'Genre');
     await sleep(350);
 
     // Droit au travail (depuis profil Firebase, défaut : Oui)
     const hsbcWorkRight = profile.hsbc_work_right || 'Oui';
-    log(`[Firebase→Formulaire] Droit au travail : "${hsbcWorkRight}"`);
     const workRightInput = document.getElementById('25:_input')
       || findPicklistInputByLabel(['autorisé', 'autorisation', 'travail', 'work', 'legally']);
-    log(`[Formulaire] Droit au travail → input=${workRightInput?.id || 'non trouvé'}`);
     await selectPicklistMulti(workRightInput, [hsbcWorkRight, hsbcWorkRight === 'Oui' ? 'Yes' : 'No'], 'Droit au travail');
     await sleep(350);
 
     // Auditeurs externes HSBC (depuis profil Firebase, défaut : Non)
     const hsbcAuditors = profile.hsbc_auditors_employee || 'Non';
-    log(`[Firebase→Formulaire] Auditeurs externes : "${hsbcAuditors}"`);
     const auditorsInput = document.getElementById('29:_input')
       || findPicklistInputByLabel(['audit', 'auditeur', 'external audit']);
-    log(`[Formulaire] Auditeurs externes → input=${auditorsInput?.id || 'non trouvé'}`);
     await selectPicklistMulti(auditorsInput, [hsbcAuditors, hsbcAuditors === 'Non' ? 'No' : 'Yes'], 'Auditeurs externes HSBC');
     await sleep(350);
 
@@ -591,13 +605,29 @@
     await sleep(500);
     await acceptPrivacy();
 
-    // ── Fin ───────────────────────────────────────────────────────────────────────
-    log('✅ Formulaire rempli — entrez votre mot de passe puis cliquez Appliquer');
-    showBanner(
-      '✅ Rempli — entrez votre mot de passe puis cliquez "Apply" pour envoyer',
-      'success'
-    );
-    activateTab(); // amener l'onglet en avant-plan pour que l'utilisateur voie le formulaire
+    // ── Fin : soumission automatique après 60 secondes ─────────────────────────
+    log('✅ Formulaire rempli — soumission automatique dans 60 secondes');
+    activateTab();
+
+    let remaining = 60;
+    showBanner(`✅ Formulaire rempli — soumission dans ${remaining}s…`, 'success');
+    const countdown = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        showBanner(`✅ Formulaire rempli — soumission dans ${remaining}s…`, remaining <= 10 ? 'warn' : 'success');
+      } else {
+        clearInterval(countdown);
+        const submitBtn = document.getElementById('fbqa_apply');
+        if (submitBtn) {
+          log('✅ Soumission automatique (fbqa_apply)');
+          submitBtn.click();
+          showBanner('✅ Candidature soumise !', 'success');
+        } else {
+          log('⚠️ Bouton "Postuler" (fbqa_apply) introuvable — cliquez manuellement');
+          showBanner('⚠️ Cliquez sur "Postuler" pour soumettre', 'warn');
+        }
+      }
+    }, 1000);
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
