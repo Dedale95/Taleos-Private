@@ -1209,6 +1209,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  if (msg.action === 'hsbc_inject_mainworld_patch') {
+    // Injecte dans le MAIN world du tab HSBC un intercepteur window.open.
+    // Pourquoi background.js et pas le content script :
+    //   Le content script (isolated world) ne peut pas injecter de <script> inline
+    //   car la page Eightfold (portal.careers.hsbc.com) a un CSP strict.
+    //   chrome.scripting.executeScript bypass ce CSP car l'API Chrome injecte
+    //   directement via le DevTools Protocol, sans passer par le DOM.
+    //
+    // Quand le bouton [data-test-id="apply-button"] appelle window.open(url_avec_s_crb) :
+    //   1. Notre intercepteur capture l'URL SF complète (avec _s.crb)
+    //   2. Il émet un CustomEvent sur document (partagé entre MAIN et isolated world)
+    //   3. Le content script capte l'event et navigue dans le même onglet
+    const tabId = sender.tab?.id;
+    if (!tabId) { sendResponse({ ok: false, error: 'no tabId' }); return true; }
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => {
+        if (window.__taleosOpenPatched) return;
+        window.__taleosOpenPatched = true;
+        const orig = window.open;
+        window.open = function (url, target, features) {
+          const s = String(url || '');
+          if (s.includes('career2.successfactors.eu')) {
+            document.documentElement.dataset.taleosHsbcUrl = s;
+            document.dispatchEvent(new CustomEvent('__taleos_hsbc_url__', { detail: s }));
+            console.log('[Taleos MAIN] window.open intercepté →', s);
+            return { closed: false, close: function () {} };
+          }
+          return orig ? orig.apply(this, arguments) : null;
+        };
+        console.log('[Taleos MAIN] window.open patché pour HSBC');
+      }
+    }).then(() => sendResponse({ ok: true }))
+      .catch((e) => {
+        console.error('[Taleos HSBC] inject mainworld patch:', e);
+        sendResponse({ ok: false, error: e.message });
+      });
+    return true;
+  }
   if (msg.action === 'hsbc_activate_tab') {
     // Amène l'onglet HSBC en avant-plan (formulaire rempli ou action manuelle requise)
     chrome.storage.local.get(['taleos_hsbc_tab_id']).then(({ taleos_hsbc_tab_id }) => {

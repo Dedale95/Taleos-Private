@@ -668,14 +668,14 @@
     // ── Stratégie A : interception window.open dans le MAIN world ──────────────
     //
     // Le filler tourne dans l'isolated world de Chrome.
-    // On injecte un <script> dans le MAIN world pour patcher window.open AVANT
-    // que le bouton l'appelle. DOM partagé → on lit le résultat via dataset.
+    // On demande au background d'injecter le patch via chrome.scripting.executeScript
+    // avec world:'MAIN' — cette API bypasse le CSP de la page (contrairement à <script>).
     //
-    // Pourquoi cette approche :
-    //   - event.isTrusted=false bloque window.open() via le popup blocker natif
-    //   - Notre patch remplace window.open → le blocker natif ne s'interpose plus
-    //   - Le handler Eightfold s'exécute normalement et appelle window.open(url)
-    //   - Notre fonction capture l'URL (avec _s.crb) et la stocke dans le DOM
+    // Canal de communication MAIN ↔ isolated : CustomEvent sur le document partagé.
+    //
+    // Quand le bouton appelle window.open(url_avec_s_crb) :
+    //   MAIN world : capture l'URL, émet '__taleos_hsbc_url__'
+    //   Isolated world (ce code) : reçoit l'event, navigue dans le même onglet
 
     const applyBtn = await waitFor(
       () => document.querySelector('[data-test-id="apply-button"]'),
@@ -683,42 +683,38 @@
     );
 
     if (applyBtn) {
-      log('Bouton Apply trouvé — injection intercepteur window.open dans le MAIN world…');
+      log('Bouton Apply trouvé — injection intercepteur window.open (background → MAIN world)…');
 
-      // Nettoyer toute capture précédente
+      // Demander au background d'injecter le patch dans le MAIN world
+      const patchResult = await chrome.runtime.sendMessage({ action: 'hsbc_inject_mainworld_patch' })
+        .catch(() => ({ ok: false, error: 'sendMessage failed' }));
+      log(`Patch MAIN world : ${patchResult?.ok ? 'OK' : 'Échec — ' + (patchResult?.error || '?')}`);
+
+      // Écouter le CustomEvent (le MAIN world va l'émettre sur document)
+      let capturedUrl = null;
+      const urlListener = (e) => { capturedUrl = String(e.detail || ''); };
+      document.addEventListener('__taleos_hsbc_url__', urlListener, { once: true });
+
+      // Nettoyer le dataset de toute capture précédente
       delete document.documentElement.dataset.taleosHsbcUrl;
 
-      // Injection dans le MAIN world via <script> tag
-      const scriptEl = document.createElement('script');
-      scriptEl.textContent = `(function(){
-        var _orig = window.open;
-        window.open = function(url, target, features) {
-          var s = String(url || '');
-          if (s.includes('career2.successfactors.eu')) {
-            document.documentElement.dataset.taleosHsbcUrl = s;
-            console.log('[Taleos] window.open intercepté :', s);
-            return { closed: false, close: function(){} };
-          }
-          return _orig ? _orig.apply(this, arguments) : null;
-        };
-      })();`;
-      document.documentElement.appendChild(scriptEl);
-      scriptEl.remove();
-
-      // Cliquer (isolated world → déclenche le handler MAIN world d'Eightfold)
+      // Cliquer sur le bouton (isolated world → déclenche le handler MAIN world d'Eightfold)
       applyBtn.click();
-      await sleep(800);
+      await sleep(1000);
 
-      // Lire le résultat depuis le DOM (partagé entre les deux mondes)
-      const capturedUrl = document.documentElement.dataset.taleosHsbcUrl || '';
-      if (capturedUrl && capturedUrl.includes('career2.successfactors.eu')) {
-        log(`✅ URL capturée via window.open MAIN world : ${capturedUrl}`);
+      document.removeEventListener('__taleos_hsbc_url__', urlListener);
+
+      // Fallback : lire aussi le dataset (double sécurité si l'event était déjà passé)
+      const finalUrl = capturedUrl || document.documentElement.dataset.taleosHsbcUrl || '';
+
+      if (finalUrl && finalUrl.includes('career2.successfactors.eu')) {
+        log(`✅ URL capturée via CustomEvent/dataset MAIN world : ${finalUrl}`);
         showBanner('Navigation vers le formulaire de candidature…');
         await sleep(300);
-        location.href = capturedUrl;
+        location.href = finalUrl;
         return;
       }
-      log('Interception window.open : URL non capturée (isTrusted check Eightfold actif ou window.open non appelé)');
+      log('Interception window.open : URL non capturée (Eightfold vérifie probablement event.isTrusted)');
     } else {
       log('⚠️ Bouton [data-test-id="apply-button"] non trouvé');
     }
