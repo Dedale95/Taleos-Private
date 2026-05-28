@@ -651,17 +651,16 @@
    *  4. Fallback : clic programmatique sur le bouton
    */
   async function handleApplyCareerPage(profile) {
-    log('Page apply.careers.hsbc.com — extraction du lien SF…');
-    showBanner('Récupération du lien de candidature…');
+    log('Page apply.careers.hsbc.com — recherche bouton POSTULER…');
+    showBanner('Ouverture du formulaire de candidature…');
 
-    // 1. Chercher ats_job_id dans la page (même méthode que Eightfold)
+    // 1. Chercher ats_job_id dans la page (cas rare — peut être absent)
     let sfUrl = null;
-    const deadline1 = Date.now() + 4000;
+    const deadline1 = Date.now() + 2000;
     while (!sfUrl && Date.now() < deadline1) {
       sfUrl = extractSFApplyUrl();
       if (!sfUrl) await sleep(300);
     }
-
     if (sfUrl) {
       log(`✅ URL SF via ats_job_id → navigation : ${sfUrl}`);
       showBanner('Redirection vers la fiche poste SF…');
@@ -670,24 +669,17 @@
       return;
     }
 
-    // 2. Essayer l'ID numérique de l'URL comme career_job_req_id
-    // URL format : /job/TITLE-SLUG/1360785157/
-    const urlIdMatch = location.pathname.match(/\/job\/[^/]+\/(\d+)\/?$/);
-    if (urlIdMatch && urlIdMatch[1]) {
-      const jobId = urlIdMatch[1];
-      const candidateSfUrl = `https://career2.successfactors.eu/career?company=hsbcholdin&career_ns=job_listing&navBarLevel=JOB_DETAIL&rcm_site_locale=en_GB&career_job_req_id=${jobId}`;
-      log(`ID URL détecté (${jobId}) → tentative URL SF : ${candidateSfUrl}`);
-      showBanner('Redirection vers la fiche poste SF…');
-      await sleep(400);
-      location.href = candidateSfUrl;
-      return;
-    }
-
-    // 3. Chercher le bouton/lien POSTULER et naviguer via son href si disponible
-    const applyEl = await waitFor(() => {
-      const all = Array.from(document.querySelectorAll('a, button'));
-      return all.find(el => /postuler|apply\s*now|candidater/i.test(el.textContent.trim())) || null;
-    }, 8000);
+    // 2. Trouver le bouton POSTULER (data-test-id fiable, puis texte)
+    // ATTENTION : "Postulez maintenant" ≠ "Postuler" — utiliser /postule/i pour couvrir les deux
+    const applyEl = await waitFor(() =>
+      document.querySelector('[data-test-id="apply-button"]') ||
+      document.querySelector('[data-test-id*="apply"]') ||
+      Array.from(document.querySelectorAll('a, button')).find(
+        el => /postule|apply/i.test(el.textContent.trim())
+      ) ||
+      null,
+      10000
+    );
 
     if (!applyEl) {
       log('⚠️ Bouton POSTULER introuvable sur apply.careers.hsbc.com');
@@ -695,25 +687,44 @@
       activateTab();
       return;
     }
+    log(`Bouton trouvé : <${applyEl.tagName.toLowerCase()} data-test-id="${applyEl.dataset?.testId || ''}">`);
 
-    // Si c'est un lien (<a href="...">) → naviguer directement sans déclencher d'évènement
-    const href = applyEl.tagName === 'A'
-      ? (applyEl.getAttribute('href') || '')
-      : (applyEl.dataset?.href || applyEl.getAttribute('data-url') || '');
-
-    if (href && (href.startsWith('http') || href.startsWith('/'))) {
-      const target = href.startsWith('http') ? href : new URL(href, location.origin).href;
-      log(`✅ Lien POSTULER href="${target}" → navigation directe`);
-      showBanner('Ouverture du formulaire de candidature…');
+    // 3. Si c'est un <a> avec href → naviguer directement (sans problème isTrusted)
+    const directHref = applyEl.tagName === 'A' ? applyEl.getAttribute('href') : null;
+    if (directHref && (directHref.startsWith('http') || directHref.startsWith('/'))) {
+      const target = directHref.startsWith('http') ? directHref : new URL(directHref, location.origin).href;
+      log(`✅ <a href> POSTULER → navigation : ${target}`);
+      showBanner('Navigation vers le formulaire…');
       await sleep(300);
       location.href = target;
       return;
     }
 
-    // 4. Fallback : clic programmatique (apply.careers.hsbc.com peut ne pas vérifier isTrusted)
-    log('Clic programmatique sur le bouton POSTULER…');
-    showBanner('Ouverture du formulaire de candidature…');
+    // 4. Intercepter window.open avant le clic pour capturer l'URL
+    // (Le bouton peut appeler window.open() — on détourne vers location.href)
+    let capturedUrl = null;
+    const origOpen = window.open;
+    window.open = function(url) {
+      capturedUrl = url ? String(url) : null;
+      log(`window.open intercepté → URL capturée : ${capturedUrl}`);
+      return null; // empêcher l'ouverture du popup
+    };
+
     applyEl.click();
+    await sleep(600);
+    window.open = origOpen;
+
+    if (capturedUrl) {
+      log(`✅ URL window.open capturée → navigation : ${capturedUrl}`);
+      showBanner('Navigation vers le formulaire de candidature…');
+      await sleep(200);
+      location.href = capturedUrl;
+      return;
+    }
+
+    // 5. Si pas de capture, le clic a peut-être déclenché une navigation directe
+    log('Clic effectué — si la page ne change pas, cliquez manuellement sur POSTULER');
+    showBanner('Ouverture du formulaire en cours…');
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
