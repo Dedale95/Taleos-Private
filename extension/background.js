@@ -3927,6 +3927,7 @@ async function fetchProfile(uid, bankId, token) {
     contract_types: contractList,
     available_date: normalizedAvailableDate,
     available_from_raw: normalizedAvailableDate,
+    salary_currency: (profile.salary_currency || '').trim(),
     salary_expectations: (profile.salary_expectations || '').trim(),
     continents: profile.continents || [],
     target_countries: profile.preferred_countries || [],
@@ -3973,9 +3974,7 @@ async function fetchProfile(uid, bankId, token) {
     gs_race_additional_origins: Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [],
     gs_disability: (profile.gs_disability || '').trim(),
     // Nomura — Questions spécifiques
-    nomura_worked_before: (profile.nomura_worked_before || '').trim(),
-    nomura_currency: (profile.nomura_currency || '').trim(),
-    nomura_salary_expectations: (profile.nomura_salary_expectations || '').trim()
+    nomura_worked_before: (profile.nomura_worked_before || '').trim()
   };
 }
 

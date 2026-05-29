@@ -417,15 +417,15 @@
     // ── Devise (picklist SF, ID 17:_input) ───────────────────────────────────
     const currencyInput = document.getElementById('17:_input')
       || findPicklistInputByLabel(['currency', 'devise', 'monnaie']);
-    const currencyVal = profile.nomura_currency || 'EUR';
+    const currencyVal = profile.salary_currency || 'EUR';
     await selectPicklistMulti(currencyInput, [currencyVal], 'Devise');
     await sleep(350);
 
     // ── Attentes salariales ───────────────────────────────────────────────────
     const salaryEl = document.getElementById('tor__fcust_salaryExpect');
-    if (salaryEl && profile.nomura_salary_expectations) {
-      setNativeValue(salaryEl, String(profile.nomura_salary_expectations));
-      log(`✅ Attentes salariales → ${profile.nomura_salary_expectations}`);
+    if (salaryEl && profile.salary_expectations) {
+      setNativeValue(salaryEl, String(profile.salary_expectations));
+      log(`✅ Attentes salariales → ${profile.salary_expectations}`);
     }
 
     // ── Préavis en semaines ────────────────────────────────────────────────────
