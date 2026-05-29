@@ -281,7 +281,7 @@
         || document.querySelector('.addAttachments')
         || document.querySelector('[id$="_attach"] [role="button"]')
         || document.querySelector('.attachmentLabel');  // bouton upload si pas de CV
-      if (!actionBtn) { log('   ⚠️ Bouton d'action CV introuvable'); return false; }
+      if (!actionBtn) { log(`   ⚠️ Bouton d'action CV introuvable`); return false; }
       actionBtn.click();
       await sleep(600);
 
@@ -300,7 +300,7 @@
         log('   ℹ️ Sous-menu CV → "Upload from Computer" cliqué');
         await sleep(400);
       } else {
-        log('   ℹ️ Sous-menu CV non détecté — l'input devrait être accessible directement');
+        log(`   ℹ️ Sous-menu CV non détecté — l'input devrait être accessible directement`);
       }
 
       // ── Étape 3 : attendre que l'input file apparaisse dans le DOM ──────────
@@ -1171,7 +1171,7 @@
       if (profile.auth_email) {
         await handleLoginPage(profile, entry.offerUrl || '');
       } else {
-        log('Page Sign In HSBC — pas d\'identifiants configurés dans Connexions. Connectez-vous manuellement ou créez un compte.');
+        log(`Page Sign In HSBC — pas d\'identifiants configurés dans Connexions. Connectez-vous manuellement ou créez un compte.`);
         showBanner('Connectez-vous à votre compte HSBC pour continuer', 'warn');
         activateTab();
       }
