@@ -24,7 +24,8 @@
     console.log('[Nomura Filler] ⛔ Déjà en cours (__TALEOS_NOMURA_FILLER_RUNNING__=true) — exit');
     return;
   }
-  globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = true;
+  // NOTE: guard activé APRÈS vérification de la session en attente (§12) pour ne pas bloquer
+  // les injections sur des pages sans session active (navigation sans Taleos).
 
   const BANNER_ID   = 'taleos-nomura-banner';
   const STORAGE_KEY = 'taleos_pending_nomura';
@@ -250,8 +251,16 @@
     const effectiveFilename = String(filename || r.filename || '').trim();
     if (!effectiveFilename) { log(`   ⚠️ ${label} : filename absent → skip`); return false; }
 
+    // Dériver l'ID de base depuis le sélecteur (ex. '[id="58:_attachIcon"]' → '58')
+    // pour lire/confirmer le label du BON fichier (CV ou LM) et non le premier trouvé.
+    const baseIdMatch = attachBtnSelector.match(/id="(\d+):/);
+    const baseId = baseIdMatch ? baseIdMatch[1] : null;
+    const getSpecificLabel = () =>
+      (baseId ? document.getElementById(`${baseId}:_attachDownloadLabelLink`) : null)
+      || document.querySelector('[id$="_attachDownloadLabelLink"]');
+
     // Lire le nom déjà affiché (pour log)
-    const existingLabel = document.querySelector('[id$="_attachDownloadLabelLink"]');
+    const existingLabel = getSpecificLabel();
     const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
     log(`   ${label} : formulaire='${existingName}' | Firebase='${effectiveFilename}' → Remplacement`);
 
@@ -300,13 +309,13 @@
     const success = await waitFor(() => {
       const ok  = document.querySelector('[id$="_attachSuccess"]:not(.displayNone)');
       if (ok) return ok;
-      const lbl = document.querySelector('[id$="_attachDownloadLabelLink"]');
+      const lbl = getSpecificLabel();
       if (lbl && lbl.textContent.trim() !== existingName) return lbl;
       return null;
     }, 25000, 500);
 
     if (success) {
-      const confirmedName = document.querySelector('[id$="_attachDownloadLabelLink"]')?.textContent.trim() || effectiveFilename;
+      const confirmedName = getSpecificLabel()?.textContent.trim() || effectiveFilename;
       log(`   ✅ ${label} → "${confirmedName}"`);
       return true;
     }
@@ -635,8 +644,11 @@
   const entry = await getPendingEntry();
   if (!entry?.profile) {
     log('Pas de session Nomura en attente — exit');
-    return;
+    return; // Pas de session : on ne pose PAS le guard pour ne pas bloquer les prochaines injections
   }
+
+  // Session active confirmée → verrouiller le guard
+  globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = true;
 
   const profile = entry.profile;
   const url = location.href;
@@ -648,10 +660,10 @@
     url.includes('career4.successfactors.com') &&
     (url.includes('career_ns=job_application') || url.includes('portalcareer'));
 
-  // ── Page offre / listing Nomura ───────────────────────────────────────────────
+  // ── Page offre Nomura (careers.nomura.com) ou listing SF sans formulaire ──────
   const isListingPage =
-    url.includes('career4.successfactors.com') &&
-    !isApplicationForm;
+    url.includes('careers.nomura.com') ||
+    (url.includes('career4.successfactors.com') && !isApplicationForm);
 
   if (isApplicationForm) {
     // Vérifier si on est sur la page de connexion SF (loginFlowRequired)

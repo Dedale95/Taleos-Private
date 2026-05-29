@@ -1137,10 +1137,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   console.log(`[Taleos Nomura] Ré-injection filler sur page SF (tabId=${tabId})`);
   await new Promise(r => setTimeout(r, 800));
   try {
-    await chrome.scripting.executeScript({
+    // Vérifier le guard AVANT d'injecter — si le manifest content script a déjà lancé le filler, on skip
+    const guardCheck = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () => { globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = false; }
+      func: () => globalThis.__TALEOS_NOMURA_FILLER_RUNNING__
     });
+    if (guardCheck?.[0]?.result === true) {
+      console.log(`[Taleos Nomura] Guard actif — filler déjà en cours (persistent listener skip)`);
+      return;
+    }
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content/nomura-careers-filler.js'] });
   } catch (e) {
     console.error('[Taleos Nomura] Ré-injection SF:', e);
@@ -3527,10 +3532,15 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       chrome.tabs.onUpdated.removeListener(_nomuraInitListener);
       await new Promise(r => setTimeout(r, 1200));
       try {
-        await chrome.scripting.executeScript({
+        // Vérifier le guard AVANT d'injecter — le manifest content script peut avoir déjà lancé le filler
+        const guardCheck = await chrome.scripting.executeScript({
           target: { tabId: _nomuraTabId },
-          func: () => { globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = false; }
+          func: () => globalThis.__TALEOS_NOMURA_FILLER_RUNNING__
         });
+        if (guardCheck?.[0]?.result === true) {
+          console.log(`[Taleos Nomura] Guard actif — filler déjà en cours (one-shot listener skip)`);
+          return;
+        }
         await chrome.scripting.executeScript({ target: { tabId: _nomuraTabId }, files: ['scripts/taleos-automation-banner.js'] });
         await chrome.scripting.executeScript({ target: { tabId: _nomuraTabId }, files: ['content/nomura-careers-filler.js'] });
         console.log(`[Taleos Nomura] Injection initiale OK (tabId=${_nomuraTabId}, url=${tabUrl.slice(0, 80)})`);
@@ -3951,6 +3961,11 @@ async function fetchProfile(uid, bankId, token) {
       phoneCountryCode = '+33';
       phoneNumber = phone.slice(1).replace(/\D/g, '');
     }
+  }
+  // Si l'indicatif pays est présent mais que le numéro commence par 0 (ex. 0758953565),
+  // supprimer le 0 initial pour éviter +330758953565 → +33758953565
+  if (phoneCountryCode && phoneNumber.startsWith('0')) {
+    phoneNumber = phoneNumber.slice(1);
   }
   if (!phoneCountryCode) phoneCountryCode = '+33';
   const normalizedAvailableDate = normalizeAvailableDateForAutomation(
