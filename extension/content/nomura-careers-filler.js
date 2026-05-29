@@ -241,17 +241,22 @@
   // ══════════════════════════════════════════════════════════════════════════════
 
   /**
-   * Cherche le bouton d'upload SF (addAttachments) correspondant à 'cv' ou 'lm'.
+   * Cherche le bouton d'upload SF correspondant à 'cv' ou 'lm'.
    *
-   * Stratégie (par ordre de priorité) :
-   *   1. Correspondance par aria-labelledby (recherche dans les labels ARIA référencés)
-   *   2. Tri par préfixe numérique JUIC — SF rend toujours CV en premier (ID bas) et LM en second (ID haut)
+   * Cherche TOUS les _attachIcon (addAttachments ET removeAttachments) car :
+   * - Slot vide     → bouton class="addAttachments"  (icône +)
+   * - Slot occupé   → bouton class="removeAttachments" (icône poubelle)
+   * Dans les deux cas le même _attachIcon est utilisé (la class change selon état).
    *
-   * On n'utilise PAS le texte du conteneur parent car, après upload du CV, le conteneur
-   * peut contenir le nom du fichier CV ("Resume - ...") et polluer la détection LM.
+   * Stratégie :
+   *   1. aria-labelledby — labels ARIA de la section (CV ou Cover Letter)
+   *   2. Tri numérique JUIC en fallback (SF rend CV en premier = ID plus bas)
    */
   function findAttachButton(cvOrLm) {
-    const all = Array.from(document.querySelectorAll('.addAttachments[id$="_attachIcon"]'));
+    // Tous les boutons d'action des slots de pièces jointes (qu'ils soient add ou remove)
+    const all = Array.from(document.querySelectorAll(
+      '.addAttachments[id$=":_attachIcon"], .removeAttachments[id$=":_attachIcon"]'
+    ));
 
     // Trier par préfixe numérique (ordre de rendu SF : CV < LM)
     all.sort((a, b) => {
@@ -266,13 +271,14 @@
 
     // 1. Recherche par labels ARIA référencés (aria-labelledby)
     for (const btn of all) {
-      const refs = (btn.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => id && id.length > 2);
+      const refs = (btn.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => id.length > 2);
       for (const id of refs) {
         const el = document.getElementById(id);
         if (el) {
           const txt = el.textContent.toLowerCase();
           if (keywords.some(k => txt.includes(k))) {
-            log(`   findAttachButton('${cvOrLm}') → #${btn.id} (aria label: "${el.textContent.trim().slice(0, 40)}")`);
+            const cls = btn.classList.contains('removeAttachments') ? 'remove' : 'add';
+            log(`   findAttachButton('${cvOrLm}') → #${btn.id} [${cls}] (aria: "${el.textContent.trim().slice(0, 40)}")`);
             return btn;
           }
         }
@@ -280,10 +286,14 @@
     }
 
     // 2. Fallback : tri numérique (CV = index 0, LM = index 1)
-    const btn = cvOrLm === 'cv' ? all[0] : all[1];
-    if (btn) log(`   findAttachButton('${cvOrLm}') → #${btn.id} (fallback index ${cvOrLm === 'cv' ? 0 : 1})`);
-    else     log(`   findAttachButton('${cvOrLm}') → null (${all.length} bouton(s) trouvé(s))`);
-    return btn || null;
+    const btn = cvOrLm === 'cv' ? all[0] : (all[1] || null);
+    if (btn) {
+      const cls = btn.classList.contains('removeAttachments') ? 'remove' : 'add';
+      log(`   findAttachButton('${cvOrLm}') → #${btn.id} [${cls}] (fallback index ${cvOrLm === 'cv' ? 0 : 1})`);
+    } else {
+      log(`   findAttachButton('${cvOrLm}') → null (${all.length} bouton(s) total)`);
+    }
+    return btn;
   }
 
   /**
@@ -319,8 +329,33 @@
     const existingLabel = getSpecificLabel();
     const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
     log(`   ${label} : formulaire='${existingName}' | Firebase='${effectiveFilename}' → Remplacement`);
-    actionBtn.click();
-    await sleep(600);
+
+    // ── Étape 0 : si le slot est occupé (removeAttachments), supprimer le fichier d'abord ──
+    let uploadBtn = actionBtn;
+    if (actionBtn.classList.contains('removeAttachments')) {
+      const btnId = actionBtn.id;
+      log(`   ${label} : slot occupé — suppression du fichier existant (${existingName})`);
+      actionBtn.click();
+      await sleep(600);
+      // Attendre que le bouton redevienne addAttachments
+      const addBtn = await waitFor(
+        () => {
+          const el = document.getElementById(btnId);
+          return el?.classList.contains('addAttachments') ? el : null;
+        },
+        6000, 200
+      );
+      if (!addBtn) {
+        log(`   ⚠️ ${label} : addAttachments non apparu après suppression — abandon`);
+        return false;
+      }
+      uploadBtn = addBtn;
+      log(`   ${label} : slot libéré — passage en mode upload`);
+    }
+
+    // ── Étape 1 : cliquer le bouton d'upload (addAttachments) ────────────────
+    uploadBtn.click();
+    await sleep(500);
 
     // ── Étape 2 : cliquer "Upload from Computer" dans le sous-menu ──────────
     const computerBtn = await waitFor(() => {
@@ -503,7 +538,9 @@
     if (expectedBtnCount > 0) {
       const btnsReady = await waitFor(
         () => {
-          const n = document.querySelectorAll('.addAttachments[id$="_attachIcon"]').length;
+          const n = document.querySelectorAll(
+            '.addAttachments[id$=":_attachIcon"], .removeAttachments[id$=":_attachIcon"]'
+          ).length;
           return n >= expectedBtnCount ? n : null;
         },
         8000, 300
@@ -521,8 +558,11 @@
     // ── Upload LM ─────────────────────────────────────────────────────────────
     if (profile.lm_storage_path) {
       // Laisser le temps à SF de mettre à jour l'UI du slot CV avant d'uploader LM
+      // (cherche add ET remove — le slot LM peut être occupé d'une session précédente)
       await waitFor(
-        () => document.querySelectorAll('.addAttachments[id$="_attachIcon"]').length >= 2,
+        () => document.querySelectorAll(
+          '.addAttachments[id$=":_attachIcon"], .removeAttachments[id$=":_attachIcon"]'
+        ).length >= 2,
         5000, 200
       );
       await uploadFile(findAttachButton('lm'), profile.lm_storage_path, profile.lm_filename, 'LM');
@@ -676,7 +716,8 @@
         Array.from(document.querySelectorAll('button, a')).find(b =>
           /apply\s*now|postuler|candidater/i.test(b.textContent.trim())
         ),
-      10000
+      10000,
+      80  // Poll rapide : le bouton est souvent déjà présent
     );
 
     if (!applyBtn) {
@@ -689,20 +730,22 @@
     applyBtn.click();
     log('✅ Clic "Apply now" → attente modal Sign In ou formulaire');
 
-    // Attendre modal "Please sign in"
-    await sleep(1500);
+    // Attendre modal "Please sign in" (si l'utilisateur n'est pas encore connecté)
+    // Réduit à 400ms : si l'utilisateur est connecté, la page navigue vers career4
+    // dès le clic et ce sleep est interrompu par la navigation.
+    await sleep(400);
     const signInLink = await waitFor(
       () => document.querySelector('a[onclick*="openSignInModal"]')
         || Array.from(document.querySelectorAll('a')).find(a =>
              /please sign in|connexion/i.test(a.textContent.trim())
            ),
-      5000, 300
+      3000, 150
     );
 
     if (signInLink) {
       signInLink.click();
       log('✅ Clic "Please sign in" → ouverture modal connexion');
-      await sleep(800);
+      await sleep(600);
       await handleSignIn(profile);
     }
     // Après connexion, background.js re-injecte le filler sur la prochaine navigation SF
