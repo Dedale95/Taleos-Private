@@ -717,6 +717,20 @@
           log('✅ Soumission automatique (fbqa_apply)');
           submitBtn.click();
           showBanner('✅ Candidature soumise !', 'success');
+          // Notifier le background IMMÉDIATEMENT (avant navigation) pour déclencher la file
+          const _jobId    = profile.jobId    || profile.job_id    || '';
+          const _jobTitle = profile.jobTitle || profile.job_title || '';
+          const _offerUrl = profile.offerUrl || profile.offer_url || location.href;
+          chrome.runtime.sendMessage({
+            action: 'candidature_success',
+            bankId: 'hsbc',
+            jobId:    _jobId,
+            jobTitle: _jobTitle,
+            companyName: 'HSBC',
+            offerUrl: _offerUrl,
+            successType: 'submitted',
+            successMessage: 'Candidature soumise automatiquement'
+          }).catch(() => null);
         } else {
           log('⚠️ Bouton "Postuler" (fbqa_apply) introuvable — cliquez manuellement');
           showBanner('⚠️ Cliquez sur "Postuler" pour soumettre', 'warn');
