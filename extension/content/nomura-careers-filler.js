@@ -221,6 +221,13 @@
       const target = options.find(o => norm(o.textContent) === cn);
       if (target) {
         target.click();
+        await sleep(200);
+        // Fermer le dropdown JUIC s'il est encore ouvert (mousedown sur body + Escape)
+        try {
+          document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+          inputEl.blur();
+        } catch (_) {}
         log(`   ✅ ${label} → "${cn}"`);
         return true;
       }
@@ -232,17 +239,50 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // 6. Upload de fichier (CV ou LM) depuis Firebase Storage
   // ══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Cherche le bouton d'upload SF (addAttachments) correspondant à 'cv' ou 'lm'
+   * en scannant les libellés ARIA et le texte du conteneur parent.
+   * Évite de hard-coder les IDs numériques JUIC qui varient selon le formulaire.
+   */
+  function findAttachButton(cvOrLm) {
+    const all = Array.from(document.querySelectorAll('.addAttachments[id$="_attachIcon"]'));
+    const cvKw = ['resume', 'curriculum', 'cv'];
+    const lmKw = ['cover', 'letter', 'covering', 'motivation', 'lettre'];
+    const keywords = cvOrLm === 'cv' ? cvKw : lmKw;
+
+    for (const btn of all) {
+      // 1. Chercher dans les éléments référencés par aria-labelledby
+      const refs = (btn.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => id && id.length > 2);
+      for (const id of refs) {
+        const el = document.getElementById(id);
+        if (el && keywords.some(k => el.textContent.toLowerCase().includes(k))) return btn;
+      }
+      // 2. Chercher dans le texte du conteneur parent (limité à 400 chars pour éviter faux positifs)
+      let el = btn.parentElement;
+      for (let i = 0; i < 6; i++) {
+        if (!el) break;
+        const text = el.textContent.toLowerCase();
+        if (text.length < 400 && keywords.some(k => text.includes(k))) return btn;
+        el = el.parentElement;
+      }
+    }
+    // Fallback par index : CV = premier, LM = deuxième
+    return cvOrLm === 'cv' ? (all[0] || null) : (all[1] || all[0] || null);
+  }
+
   /**
    * Clique sur le bouton d'upload d'une pièce jointe SF (attachIcon), récupère
    * le fichier depuis Firebase Storage et l'injecte dans l'input file JUIC.
    *
-   * @param {string} attachBtnSelector  - sélecteur du bouton d'upload (ex. '[id="56:_attachIcon"]')
-   * @param {string} storagePath        - chemin Firebase Storage
-   * @param {string} filename           - nom de fichier exact
-   * @param {string} label              - libellé pour les logs
+   * @param {HTMLElement} actionBtn  - bouton d'upload trouvé via findAttachButton()
+   * @param {string} storagePath    - chemin Firebase Storage
+   * @param {string} filename       - nom de fichier exact
+   * @param {string} label          - libellé pour les logs
    */
-  async function uploadFile(attachBtnSelector, storagePath, filename, label = 'Fichier') {
+  async function uploadFile(actionBtn, storagePath, filename, label = 'Fichier') {
     if (!storagePath) { log(`   ⚠️ ${label} : storagePath absent → skip`); return false; }
+    if (!actionBtn)   { log(`   ⚠️ ${label} : bouton d'upload introuvable`); return false; }
 
     // Télécharger depuis Firebase AVANT toute interaction UI
     const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
@@ -251,10 +291,11 @@
     const effectiveFilename = String(filename || r.filename || '').trim();
     if (!effectiveFilename) { log(`   ⚠️ ${label} : filename absent → skip`); return false; }
 
-    // Dériver l'ID de base depuis le sélecteur (ex. '[id="58:_attachIcon"]' → '58')
+    // Dériver l'ID de base depuis le bouton (ex. id="60:_attachIcon" → baseId='60')
     // pour lire/confirmer le label du BON fichier (CV ou LM) et non le premier trouvé.
-    const baseIdMatch = attachBtnSelector.match(/id="(\d+):/);
+    const baseIdMatch = (actionBtn.id || '').match(/^(\d+):/);
     const baseId = baseIdMatch ? baseIdMatch[1] : null;
+    log(`   ${label} : bouton trouvé (id=${actionBtn.id || '?'}, baseId=${baseId || '?'})`);
     const getSpecificLabel = () =>
       (baseId ? document.getElementById(`${baseId}:_attachDownloadLabelLink`) : null)
       || document.querySelector('[id$="_attachDownloadLabelLink"]');
@@ -263,12 +304,6 @@
     const existingLabel = getSpecificLabel();
     const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
     log(`   ${label} : formulaire='${existingName}' | Firebase='${effectiveFilename}' → Remplacement`);
-
-    // ── Étape 1 : cliquer le bouton d'upload ──────────────────────────────────
-    const actionBtn = document.querySelector(attachBtnSelector)
-      || document.querySelector('.addAttachments[id$="_attachIcon"]')
-      || document.querySelector('.addAttachments');
-    if (!actionBtn) { log(`   ⚠️ ${label} : bouton d'upload (${attachBtnSelector}) introuvable`); return false; }
     actionBtn.click();
     await sleep(600);
 
@@ -444,18 +479,18 @@
     // ── Code postal ───────────────────────────────────────────────────────────
     setInputAudit(document.getElementById('tor__fzip'), profile.zipcode, 'Code postal');
 
-    // ── Upload CV (56:_attachIcon) ────────────────────────────────────────────
+    // ── Upload CV ─────────────────────────────────────────────────────────────
     await sleep(600);
     if (profile.cv_storage_path) {
-      await uploadFile('[id="56:_attachIcon"].addAttachments', profile.cv_storage_path, profile.cv_filename, 'CV');
+      await uploadFile(findAttachButton('cv'), profile.cv_storage_path, profile.cv_filename, 'CV');
     } else {
       log('⚠️ cv_storage_path absent — uploadez le CV manuellement');
     }
     await sleep(800);
 
-    // ── Upload LM (58:_attachIcon) ────────────────────────────────────────────
+    // ── Upload LM ─────────────────────────────────────────────────────────────
     if (profile.lm_storage_path) {
-      await uploadFile('[id="58:_attachIcon"].addAttachments', profile.lm_storage_path, profile.lm_filename, 'LM');
+      await uploadFile(findAttachButton('lm'), profile.lm_storage_path, profile.lm_filename, 'LM');
     } else {
       log('ℹ️ lm_storage_path absent — pas de lettre de motivation uploadée');
     }
