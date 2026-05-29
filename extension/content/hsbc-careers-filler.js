@@ -437,6 +437,50 @@
     return false;
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 9a. Détection "déjà postulé"
+  // ══════════════════════════════════════════════════════════════════════════════
+  /**
+   * Appelé dès qu'on détecte le message "Vous avez déjà postulé pour ce poste."
+   * Notifie le background (mise à jour tuile + fermeture onglet) et vide le storage.
+   */
+  async function handleAlreadyApplied(profile) {
+    const jobId    = profile.jobId    || profile.job_id    || '';
+    const jobTitle = profile.jobTitle || profile.job_title || '';
+    const offerUrl = profile.offerUrl || profile.offer_url || location.href;
+
+    log('⚠️ Candidature HSBC déjà soumise pour cette offre — mise à jour tuile et fermeture onglet');
+    showBanner('⚠️ Déjà postulé pour cette offre — fermeture dans 3s…', 'warn');
+
+    await chrome.runtime.sendMessage({
+      action: 'candidature_already_applied',
+      bankId: 'hsbc',
+      jobId,
+      jobTitle,
+      companyName: 'HSBC',
+      offerUrl,
+    }).catch(() => null);
+
+    await chrome.storage.local.remove([STORAGE_KEY, TAB_ID_KEY]);
+  }
+
+  /**
+   * Vérifie si la page contient un message "déjà postulé" HSBC.
+   * Retourne true si détecté (et déclenche handleAlreadyApplied).
+   */
+  async function checkAlreadyApplied(profile) {
+    const text = document.body?.innerText || '';
+    const alreadyApplied =
+      /vous avez d[ée]j[àa] postul[ée]/i.test(text) ||
+      /you have already applied/i.test(text) ||
+      /already applied for this (job|position)/i.test(text);
+    if (alreadyApplied) {
+      await handleAlreadyApplied(profile);
+      return true;
+    }
+    return false;
+  }
+
   async function fillApplicationForm(profile) {
     const p = normalizeProfile(profile);
     log(`Remplissage HSBC — ${p.firstName} ${p.lastName} <${p.email}>`);
@@ -453,6 +497,10 @@
     // fbclc_userName = champ email du formulaire nouveau compte (non connecté)
     // Pour un utilisateur déjà connecté (/portalcareer), ce champ est absent — on continue quand même
     await sleep(600);
+
+    // Détecter "Vous avez déjà postulé pour ce poste." avant tout remplissage
+    if (await checkAlreadyApplied(profile)) return;
+
     const emailField = document.getElementById('fbclc_userName');
 
     if (emailField) {
@@ -939,6 +987,9 @@
   async function handleApplyCareerPage(profile) {
     log('Page apply.careers.hsbc.com — recherche bouton POSTULER…');
     showBanner('Ouverture du formulaire de candidature…');
+
+    // Détecter "déjà postulé" sur cette page intermédiaire aussi
+    if (await checkAlreadyApplied(profile)) return;
 
     // 1. Chercher ats_job_id dans la page (cas rare — peut être absent)
     let sfUrl = null;
