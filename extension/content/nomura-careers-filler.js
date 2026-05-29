@@ -484,6 +484,14 @@
     log(`   Salaire       : ${profile.salary_expectations || '—'}`);
     log(`   Préavis       : sg_notice_period="${profile.sg_notice_period || '—'}" → ${noticeWeeks} semaine(s)`);
     log(`   Déjà Nomura   : ${workedVal}`);
+    log(`   Genre         : ${profile.nomura_gender || '—'}`);
+    log(`   Trans         : ${profile.nomura_trans || '—'}`);
+    log(`   Gr. ethnique  : ${profile.nomura_ethnic_group || '—'} / ${profile.nomura_ethnic_subgroup || '—'}`);
+    log(`   Religion      : ${profile.nomura_religion || '—'}`);
+    log(`   Orientation   : ${profile.nomura_sexual_orientation || '—'}`);
+    log(`   Ménage @14    : ${profile.nomura_household_earner ? profile.nomura_household_earner.slice(0, 50) + '…' : '—'}`);
+    log(`   École gratuit : ${profile.nomura_free_school_meals || '—'}`);
+    log(`   Type école    : ${profile.nomura_school_type ? profile.nomura_school_type.slice(0, 50) + '…' : '—'}`);
     log('── Remplissage ───────────────────────────────────────');
     showBanner('Remplissage en cours…');
     await sleep(600);
@@ -598,7 +606,39 @@
     await selectPicklistMulti(workedInput, [workedVal], 'Déjà travaillé chez Nomura');
     await sleep(350);
 
-    // ── Politique de confidentialité ──────────────────────────────────────────
+    // ── Questions Diversité & Inclusion (optionnelles selon formulaire) ──────
+    // Chaque champ est recherché par label — on skip silencieusement s'il n'est pas présent.
+    await sleep(300);
+
+    const nomuraDivFields = [
+      { keywords: ['gender', 'identify with'],                  val: profile.nomura_gender,            label: 'Genre' },
+      { keywords: ['trans'],                                     val: profile.nomura_trans,             label: 'Trans*' },
+      { keywords: ['ethnic group', 'ethnicity'],                 val: profile.nomura_ethnic_group,      label: 'Groupe ethnique' },
+      { keywords: ['best describes your ethnic'],                val: profile.nomura_ethnic_subgroup,   label: 'Sous-groupe ethnique' },
+      { keywords: ['religion', 'belief'],                        val: profile.nomura_religion,          label: 'Religion' },
+      { keywords: ['sexual orientation'],                        val: profile.nomura_sexual_orientation,label: 'Orientation sexuelle' },
+      { keywords: ['occupation', 'household earner', 'aged about 14'], val: profile.nomura_household_earner, label: 'Profession ménage @14' },
+      { keywords: ['free school meals'],                         val: profile.nomura_free_school_meals, label: 'Repas scolaires gratuits' },
+      { keywords: ['type of school', 'ages of 11'],              val: profile.nomura_school_type,       label: 'Type d\'école 11-16' },
+      { keywords: ['primary carer', 'child or children'],        val: profile.nomura_primary_carer,     label: 'Aidant·e enfant' },
+      { keywords: ['look after', 'care for someone', 'ill health caused by disability'], val: profile.nomura_carer, label: 'Aidant·e personne malade' },
+      { keywords: ['disability confident'],                      val: profile.nomura_disability_confident, label: 'Disability Confident' }
+    ];
+
+    for (const { keywords, val, label } of nomuraDivFields) {
+      if (!val) { log(`   ⊘ ${label} : non renseigné dans le profil — skip`); continue; }
+      const input = findPicklistInputByLabel(keywords);
+      if (!input) { log(`   ⊘ ${label} : champ absent dans ce formulaire — skip`); continue; }
+      // Ne pas écraser si déjà renseigné avec la bonne valeur
+      if ((input.value || '').trim() === val.trim()) {
+        log(`   ✅ ${label} : formulaire='${val}' → Skip (déjà correct)`);
+        continue;
+      }
+      await selectPicklistMulti(input, [val], label);
+      await sleep(200);
+    }
+
+    // Politique de confidentialité ──────────────────────────────────────────
     await sleep(500);
     await acceptPrivacy();
 

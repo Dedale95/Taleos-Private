@@ -4035,7 +4035,23 @@ async function fetchProfile(uid, bankId, token) {
     gs_race_additional_origins: Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [],
     gs_disability: (profile.gs_disability || '').trim(),
     // Nomura — Questions spécifiques
-    nomura_worked_before: (profile.nomura_worked_before || '').trim()
+    nomura_worked_before: (profile.nomura_worked_before || '').trim(),
+    // Nomura — Diversité & Inclusion
+    nomura_gender: (profile.nomura_gender || '').trim(),
+    nomura_trans: (profile.nomura_trans || '').trim(),
+    nomura_ethnic_group: (profile.nomura_ethnic_group || '').trim(),
+    nomura_ethnic_subgroup: (profile.nomura_ethnic_subgroup || '').trim(),
+    nomura_ethnic_subgroup_other: (profile.nomura_ethnic_subgroup_other || '').trim(),
+    nomura_religion: (profile.nomura_religion || '').trim(),
+    nomura_sexual_orientation: (profile.nomura_sexual_orientation || '').trim(),
+    nomura_disability_details: Array.isArray(profile.nomura_disability_details) ? profile.nomura_disability_details : [],
+    nomura_disability_other: (profile.nomura_disability_other || '').trim(),
+    nomura_household_earner: (profile.nomura_household_earner || '').trim(),
+    nomura_free_school_meals: (profile.nomura_free_school_meals || '').trim(),
+    nomura_school_type: (profile.nomura_school_type || '').trim(),
+    nomura_primary_carer: (profile.nomura_primary_carer || '').trim(),
+    nomura_carer: (profile.nomura_carer || '').trim(),
+    nomura_disability_confident: (profile.nomura_disability_confident || '').trim()
   };
 }
 
