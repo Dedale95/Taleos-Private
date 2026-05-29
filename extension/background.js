@@ -180,6 +180,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'axa') return 'taleos_pending_axa';
   if (bid === 'bpifrance') return 'taleos_pending_bpifrance';
   if (bid === 'hsbc') return 'taleos_pending_hsbc';
+  if (bid === 'nomura') return 'taleos_pending_nomura';
   return null;
 }
 
@@ -2940,7 +2941,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       if (!_tabOpen) {
         // Onglet fermé → nettoyer le pending et laisser le nouveau clic passer normalement
         console.log(`[Taleos] ${bankId} : pending orphelin (onglet #${_pendingTabId} fermé) → nettoyage avant relance`);
-        const _tabIdKey = bankId === 'hsbc' ? 'taleos_hsbc_tab_id' : null;
+        const _tabIdKey = bankId === 'hsbc' ? 'taleos_hsbc_tab_id' : bankId === 'nomura' ? 'taleos_nomura_tab_id' : null;
         const _keysToRemove = _tabIdKey ? [_pendingKey, _tabIdKey] : [_pendingKey];
         await chrome.storage.local.remove(_keysToRemove).catch(() => {});
       } else {
@@ -3493,6 +3494,26 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       taleos_pending_nomura: { ...nomuraPendingBase, tabId: tab.id },
       taleos_nomura_tab_id: tab.id
     });
+    // Injection directe au chargement initial — garantit l'exécution même si la
+    // manifest content script ne couvre pas l'URL de l'offre.
+    const _nomuraTabId = tab.id;
+    const _nomuraInitListener = async (tid, info) => {
+      if (tid !== _nomuraTabId || info.status !== 'complete') return;
+      chrome.tabs.onUpdated.removeListener(_nomuraInitListener);
+      await new Promise(r => setTimeout(r, 1200));
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: _nomuraTabId },
+          func: () => { globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = false; }
+        });
+        await chrome.scripting.executeScript({ target: { tabId: _nomuraTabId }, files: ['scripts/taleos-automation-banner.js'] });
+        await chrome.scripting.executeScript({ target: { tabId: _nomuraTabId }, files: ['content/nomura-careers-filler.js'] });
+        console.log(`[Taleos Nomura] Injection initiale (tabId=${_nomuraTabId})`);
+      } catch (e) {
+        console.error('[Taleos Nomura] Injection initiale échouée:', e);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(_nomuraInitListener);
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
@@ -4482,6 +4503,7 @@ function normalizeSite(site, offerUrl) {
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';
   if (raw.includes('hsbc') || url.includes('portal.careers.hsbc.com') || url.includes('apply.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
+  if (raw.includes('nomura') || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
   return 'unknown';
 }
 
