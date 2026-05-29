@@ -566,8 +566,19 @@
     const prefName = document.getElementById('tor__fcust_PrefFName');
     if (prefName) { setNativeValue(prefName, p.firstName); log(`✅ Prénom préféré → ${p.firstName}`); }
 
+    // ── Upload CV en premier — avant les picklists ────────────────────────────────
+    // L'upload déclenche des événements JUIC qui peuvent re-rendre les widgets SF.
+    // En uploadant maintenant, tout re-render éventuel a lieu avant qu'on remplisse
+    // les picklists, ce qui évite de perdre les valeurs déjà saisies.
+    await sleep(400);
+    if (p.cvStoragePath) {
+      await uploadCV(p.cvStoragePath, p.cvFilename);
+    } else {
+      log('⚠️ cv_storage_path absent dans le profil — uploadez le CV manuellement');
+    }
+
     // ── Téléphone ────────────────────────────────────────────────────────────────
-    await sleep(300);
+    await sleep(400);
     await selectCallingCode(p.phoneCode);
     await sleep(200);
     const phoneField = document.getElementById('tor__fcellPhone');
@@ -687,14 +698,6 @@
     if (emailNotif?.checked) {
       emailNotif.click();
       log('✅ Notifications email → décochées');
-    }
-
-    // ── Upload CV ────────────────────────────────────────────────────────────────
-    await sleep(500);
-    if (p.cvStoragePath) {
-      await uploadCV(p.cvStoragePath, p.cvFilename);
-    } else {
-      log('⚠️ cv_storage_path absent dans le profil — uploadez le CV manuellement');
     }
 
     // ── Politique de confidentialité ──────────────────────────────────────────────
