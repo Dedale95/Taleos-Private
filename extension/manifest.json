@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.154",
-  "version_name": "1.2.154-nomura-lm-devise-salary",
+  "version": "1.2.155",
+  "version_name": "1.2.155-nomura-alert-lm-slot",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -280,6 +280,17 @@
         "content/hsbc-careers-filler.js"
       ],
       "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://careers.nomura.com/*"
+      ],
+      "js": [
+        "content/nomura-alert-interceptor.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
       "all_frames": false
     },
     {

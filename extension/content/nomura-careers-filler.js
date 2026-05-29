@@ -241,34 +241,49 @@
   // ══════════════════════════════════════════════════════════════════════════════
 
   /**
-   * Cherche le bouton d'upload SF (addAttachments) correspondant à 'cv' ou 'lm'
-   * en scannant les libellés ARIA et le texte du conteneur parent.
-   * Évite de hard-coder les IDs numériques JUIC qui varient selon le formulaire.
+   * Cherche le bouton d'upload SF (addAttachments) correspondant à 'cv' ou 'lm'.
+   *
+   * Stratégie (par ordre de priorité) :
+   *   1. Correspondance par aria-labelledby (recherche dans les labels ARIA référencés)
+   *   2. Tri par préfixe numérique JUIC — SF rend toujours CV en premier (ID bas) et LM en second (ID haut)
+   *
+   * On n'utilise PAS le texte du conteneur parent car, après upload du CV, le conteneur
+   * peut contenir le nom du fichier CV ("Resume - ...") et polluer la détection LM.
    */
   function findAttachButton(cvOrLm) {
     const all = Array.from(document.querySelectorAll('.addAttachments[id$="_attachIcon"]'));
-    const cvKw = ['resume', 'curriculum', 'cv'];
-    const lmKw = ['cover', 'letter', 'covering', 'motivation', 'lettre'];
+
+    // Trier par préfixe numérique (ordre de rendu SF : CV < LM)
+    all.sort((a, b) => {
+      const na = parseInt((a.id || '').match(/^(\d+):/)?.[1] || '9999', 10);
+      const nb = parseInt((b.id || '').match(/^(\d+):/)?.[1] || '9999', 10);
+      return na - nb;
+    });
+
+    const cvKw = ['resume', 'curriculum vitae', ' cv', 'lebenslauf'];
+    const lmKw = ['cover letter', 'covering letter', 'lettre de motivation', 'motivation', 'anschreiben'];
     const keywords = cvOrLm === 'cv' ? cvKw : lmKw;
 
+    // 1. Recherche par labels ARIA référencés (aria-labelledby)
     for (const btn of all) {
-      // 1. Chercher dans les éléments référencés par aria-labelledby
       const refs = (btn.getAttribute('aria-labelledby') || '').split(/\s+/).filter(id => id && id.length > 2);
       for (const id of refs) {
         const el = document.getElementById(id);
-        if (el && keywords.some(k => el.textContent.toLowerCase().includes(k))) return btn;
-      }
-      // 2. Chercher dans le texte du conteneur parent (limité à 400 chars pour éviter faux positifs)
-      let el = btn.parentElement;
-      for (let i = 0; i < 6; i++) {
-        if (!el) break;
-        const text = el.textContent.toLowerCase();
-        if (text.length < 400 && keywords.some(k => text.includes(k))) return btn;
-        el = el.parentElement;
+        if (el) {
+          const txt = el.textContent.toLowerCase();
+          if (keywords.some(k => txt.includes(k))) {
+            log(`   findAttachButton('${cvOrLm}') → #${btn.id} (aria label: "${el.textContent.trim().slice(0, 40)}")`);
+            return btn;
+          }
+        }
       }
     }
-    // Fallback par index : CV = premier, LM = deuxième
-    return cvOrLm === 'cv' ? (all[0] || null) : (all[1] || all[0] || null);
+
+    // 2. Fallback : tri numérique (CV = index 0, LM = index 1)
+    const btn = cvOrLm === 'cv' ? all[0] : all[1];
+    if (btn) log(`   findAttachButton('${cvOrLm}') → #${btn.id} (fallback index ${cvOrLm === 'cv' ? 0 : 1})`);
+    else     log(`   findAttachButton('${cvOrLm}') → null (${all.length} bouton(s) trouvé(s))`);
+    return btn || null;
   }
 
   /**
@@ -479,17 +494,37 @@
     // ── Code postal ───────────────────────────────────────────────────────────
     setInputAudit(document.getElementById('tor__fzip'), profile.zipcode, 'Code postal');
 
-    // ── Upload CV ─────────────────────────────────────────────────────────────
-    await sleep(600);
+    // ── Upload CV + LM ────────────────────────────────────────────────────────
+    // Attendre que les DEUX boutons d'upload soient présents dans le DOM avant
+    // d'appeler findAttachButton, pour éviter un fallback sur le slot CV quand
+    // le slot LM n'est pas encore rendu.
+    await sleep(400);
+    const expectedBtnCount = (profile.cv_storage_path ? 1 : 0) + (profile.lm_storage_path ? 1 : 0);
+    if (expectedBtnCount > 0) {
+      const btnsReady = await waitFor(
+        () => {
+          const n = document.querySelectorAll('.addAttachments[id$="_attachIcon"]').length;
+          return n >= expectedBtnCount ? n : null;
+        },
+        8000, 300
+      );
+      log(`   Boutons d'upload détectés : ${btnsReady || 0} (attendus : ${expectedBtnCount})`);
+    }
+
     if (profile.cv_storage_path) {
       await uploadFile(findAttachButton('cv'), profile.cv_storage_path, profile.cv_filename, 'CV');
     } else {
       log('⚠️ cv_storage_path absent — uploadez le CV manuellement');
     }
-    await sleep(800);
+    await sleep(1000);
 
     // ── Upload LM ─────────────────────────────────────────────────────────────
     if (profile.lm_storage_path) {
+      // Laisser le temps à SF de mettre à jour l'UI du slot CV avant d'uploader LM
+      await waitFor(
+        () => document.querySelectorAll('.addAttachments[id$="_attachIcon"]').length >= 2,
+        5000, 200
+      );
       await uploadFile(findAttachButton('lm'), profile.lm_storage_path, profile.lm_filename, 'LM');
     } else {
       log('ℹ️ lm_storage_path absent — pas de lettre de motivation uploadée');
@@ -695,9 +730,16 @@
     url.includes('career4.successfactors.com') &&
     (url.includes('career_ns=job_application') || url.includes('portalcareer'));
 
-  // ── Page offre Nomura (careers.nomura.com) ou listing SF sans formulaire ──────
+  // ── Page offre Nomura (fiche offre /job/ sur careers.nomura.com) ──────────────
+  // Exclure talentcommunity/apply (redirection intermédiaire → career4) et career4
+  const isNomuraJobPage =
+    url.includes('careers.nomura.com') &&
+    !url.includes('talentcommunity') &&
+    (url.includes('/job/') || url.includes('/jobs/') || url.includes('/Nomura/'));
+
+  // ── Page listing SF (career4, ni formulaire ni connexion) ─────────────────────
   const isListingPage =
-    url.includes('careers.nomura.com') ||
+    isNomuraJobPage ||
     (url.includes('career4.successfactors.com') && !isApplicationForm);
 
   if (isApplicationForm) {
