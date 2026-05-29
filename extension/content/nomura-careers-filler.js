@@ -112,6 +112,25 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // 4. Remplissage des champs texte (compatible React/Angular/JUIC)
   // ══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Renseigne un champ texte avec audit lisible :
+   *   formulaire='...' | Firebase='...' → Skip / Correction / Renseignement
+   */
+  function setInputAudit(el, firebaseVal, label) {
+    if (!el) { log(`   ⚠️ ${label} : champ introuvable`); return; }
+    const current = (el.value || '').trim();
+    const target  = String(firebaseVal || '').trim();
+    if (!target) { log(`   ⚠️ ${label} : Firebase='—' → Skip (valeur manquante)`); return; }
+    if (current === target) {
+      log(`   ✅ ${label} : formulaire='${current}' | Firebase='${target}' → Skip`);
+      return;
+    }
+    const action = current ? 'Correction' : 'Renseignement';
+    log(`   ✏️ ${label} : formulaire='${current || 'vide'}' | Firebase='${target}' → ${action}`);
+    setNativeValue(el, target);
+  }
+
   function setNativeValue(el, value) {
     if (!el) return;
     const proto = el.tagName === 'TEXTAREA'
@@ -341,7 +360,32 @@
   // 9. Remplissage du formulaire de candidature
   // ══════════════════════════════════════════════════════════════════════════════
   async function fillApplicationForm(profile) {
+    const phone      = String(profile.phone_number || profile['phone-number'] || profile.phone || '').replace(/\D/g, '');
+    const phoneCode  = String(profile.phone_country_code || '+33').trim();
+    const fullPhone  = `${phoneCode}${phone}`;
+    const noticeWeeks = noticePeriodToWeeks(profile.sg_notice_period);
+    const countryVal  = profile.country || 'France';
+    const currencyVal = profile.salary_currency || 'EUR';
+    const workedVal   = profile.nomura_worked_before || 'No';
+
     log(`Remplissage Nomura — ${profile.firstname} ${profile.lastname} <${profile.auth_email}>`);
+
+    // ── Firebase snapshot ─────────────────────────────────────────────────────
+    log('── Firebase snapshot ─────────────────────────────────');
+    log(`   Prénom        : ${profile.firstname        || '—'}`);
+    log(`   Nom           : ${profile.lastname         || '—'}`);
+    log(`   Téléphone     : ${fullPhone                || '—'} (indicatif: ${phoneCode}, num: ${phone || '—'})`);
+    log(`   Adresse       : ${profile.address          || '—'}`);
+    log(`   Ville         : ${profile.city             || '—'}`);
+    log(`   Code postal   : ${profile.zipcode          || '—'}`);
+    log(`   Pays          : ${countryVal}`);
+    log(`   CV            : ${profile.cv_filename      || '—'} (storage: ${profile.cv_storage_path ? 'présent' : 'absent'})`);
+    log(`   LM            : ${profile.lm_filename      || '—'} (storage: ${profile.lm_storage_path ? 'présent' : 'absent'})`);
+    log(`   Devise        : ${currencyVal}`);
+    log(`   Salaire       : ${profile.salary_expectations || '—'}`);
+    log(`   Préavis       : sg_notice_period="${profile.sg_notice_period || '—'}" → ${noticeWeeks} semaine(s)`);
+    log(`   Déjà Nomura   : ${workedVal}`);
+    log('── Remplissage ───────────────────────────────────────');
     showBanner('Remplissage en cours…');
     await sleep(600);
 
@@ -353,49 +397,38 @@
       await chrome.runtime.sendMessage({
         action: 'candidature_already_applied',
         bankId: 'nomura',
-        jobId:  profile.__jobId || '',
-        jobTitle: profile.__jobTitle || '',
+        jobId:     profile.__jobId    || '',
+        jobTitle:  profile.__jobTitle || '',
         companyName: 'Nomura',
-        offerUrl: profile.__offerUrl || location.href,
+        offerUrl:  profile.__offerUrl || location.href,
       }).catch(() => null);
       await chrome.storage.local.remove([STORAGE_KEY, TAB_ID_KEY]);
       return;
     }
 
-    const phone = String(profile.phone_number || profile['phone-number'] || profile.phone || '').replace(/\D/g, '');
-    const phoneCode = String(profile.phone_country_code || '+33').trim();
-    const fullPhone = `${phoneCode}${phone}`;
-
     // ── Prénom ────────────────────────────────────────────────────────────────
-    const firstNameEl = document.getElementById('tor__ffirstName');
-    if (firstNameEl) { setNativeValue(firstNameEl, profile.firstname || ''); log(`✅ Prénom → ${profile.firstname}`); }
+    setInputAudit(document.getElementById('tor__ffirstName'), profile.firstname, 'Prénom');
 
     // ── Nom ───────────────────────────────────────────────────────────────────
-    const lastNameEl = document.getElementById('tor__flastName');
-    if (lastNameEl) { setNativeValue(lastNameEl, profile.lastname || ''); log(`✅ Nom → ${profile.lastname}`); }
+    setInputAudit(document.getElementById('tor__flastName'), profile.lastname, 'Nom');
 
     // ── Téléphone (indicatif + numéro concaténés) ─────────────────────────────
-    const phoneEl = document.getElementById('tor__fcellPhone');
-    if (phoneEl) { setNativeValue(phoneEl, fullPhone); log(`✅ Téléphone → ${fullPhone}`); }
+    setInputAudit(document.getElementById('tor__fcellPhone'), fullPhone, 'Téléphone');
 
     // ── Adresse ───────────────────────────────────────────────────────────────
-    const addressEl = document.getElementById('tor__faddressLine1');
-    if (addressEl) { setNativeValue(addressEl, profile.address || ''); log(`✅ Adresse → ${profile.address}`); }
+    setInputAudit(document.getElementById('tor__faddressLine1'), profile.address, 'Adresse');
 
     // ── Pays (picklist SF, ID 9:_input) ──────────────────────────────────────
     await sleep(400);
     const countryInput = document.getElementById('9:_input')
       || findPicklistInputByLabel(['country', 'pays']);
-    const countryVal = profile.country || 'France';
     await selectPicklistMulti(countryInput, [countryVal, 'France'], 'Pays');
 
     // ── Ville ─────────────────────────────────────────────────────────────────
-    const cityEl = document.getElementById('tor__fcity');
-    if (cityEl) { setNativeValue(cityEl, profile.city || ''); log(`✅ Ville → ${profile.city}`); }
+    setInputAudit(document.getElementById('tor__fcity'), profile.city, 'Ville');
 
     // ── Code postal ───────────────────────────────────────────────────────────
-    const zipEl = document.getElementById('tor__fzip');
-    if (zipEl) { setNativeValue(zipEl, profile.zipcode || ''); log(`✅ Code postal → ${profile.zipcode}`); }
+    setInputAudit(document.getElementById('tor__fzip'), profile.zipcode, 'Code postal');
 
     // ── Upload CV (56:_attachIcon) ────────────────────────────────────────────
     await sleep(600);
@@ -417,30 +450,27 @@
     // ── Devise (picklist SF, ID 17:_input) ───────────────────────────────────
     const currencyInput = document.getElementById('17:_input')
       || findPicklistInputByLabel(['currency', 'devise', 'monnaie']);
-    const currencyVal = profile.salary_currency || 'EUR';
     await selectPicklistMulti(currencyInput, [currencyVal], 'Devise');
     await sleep(350);
 
     // ── Attentes salariales ───────────────────────────────────────────────────
-    const salaryEl = document.getElementById('tor__fcust_salaryExpect');
-    if (salaryEl && profile.salary_expectations) {
-      setNativeValue(salaryEl, String(profile.salary_expectations));
-      log(`✅ Attentes salariales → ${profile.salary_expectations}`);
-    }
+    setInputAudit(
+      document.getElementById('tor__fcust_salaryExpect'),
+      profile.salary_expectations ? String(profile.salary_expectations) : '',
+      'Attentes salariales'
+    );
 
     // ── Préavis en semaines ────────────────────────────────────────────────────
-    const noticeWeeks = noticePeriodToWeeks(profile.sg_notice_period);
-    const noticeEl = document.getElementById('tor__fcust_noticePeriod');
-    if (noticeEl) {
-      setNativeValue(noticeEl, String(noticeWeeks));
-      log(`✅ Préavis → ${noticeWeeks} semaines (depuis sg_notice_period="${profile.sg_notice_period}")`);
-    }
+    setInputAudit(
+      document.getElementById('tor__fcust_noticePeriod'),
+      String(noticeWeeks),
+      `Préavis (sg_notice_period="${profile.sg_notice_period || '—'}" → ${noticeWeeks} sem.)`
+    );
 
     // ── A déjà travaillé chez Nomura (picklist SF, ID 21:_input) ─────────────
     await sleep(350);
     const workedInput = document.getElementById('21:_input')
       || findPicklistInputByLabel(['nomura', 'previously', 'worked', 'travaillé', 'déjà']);
-    const workedVal = profile.nomura_worked_before || 'No';
     await selectPicklistMulti(workedInput, [workedVal], 'Déjà travaillé chez Nomura');
     await sleep(350);
 
