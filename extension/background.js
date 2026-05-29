@@ -2821,6 +2821,7 @@ async function injectAutomationTab(tabId, profile, scriptPath, pilotExec, bankId
 }
 
 async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleosTabId, offerMeta = null) {
+  console.log(`[Taleos handleApply] bankId="${bankId}" | company="${companyName}" | url="${offerUrl}"`);
   const lowerOfferUrl = String(offerUrl || '').toLowerCase();
   const looksLikeJpMorgan = (
     /j\.?\s*p\.?\s*morgan|jp\s*morgan|jpmorgan|jpmorgan\s+chase|jp\s*morgan\s+chase/i.test(String(companyName || ''))
@@ -2925,6 +2926,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
   }
 
   const routeAs = computeLegacyRouteAs(bankId, offerUrl);
+  console.log(`[Taleos handleApply] routeAs="${routeAs}" | profileFetched=true`);
 
   // ── File d'attente : si une candidature est déjà active pour cette banque, mettre en queue ──
   // Mais d'abord : si l'onglet associé au pending est fermé, nettoyer le pending (sinon la queue
@@ -3865,7 +3867,10 @@ async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
   const normalizedBankId = String(bankId || '').toLowerCase().trim();
-  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs', 'hsbc'].includes(normalizedBankId);
+  // Nomura gère lui-même la connexion dans le filler (handleSignIn) — les identifiants
+  // sont optionnels : si absents, le filler s'arrêtera à l'étape de connexion et demandera
+  // une saisie manuelle, mais le routage et la bannière fonctionneront quand même.
+  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs', 'hsbc', 'nomura'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');

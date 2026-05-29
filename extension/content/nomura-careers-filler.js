@@ -18,7 +18,12 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // 0. Garde-fous et initialisation
   // ══════════════════════════════════════════════════════════════════════════════
-  if (globalThis.__TALEOS_NOMURA_FILLER_RUNNING__) return;
+  // Log immédiat AVANT tout guard — visible même si le script est déjà en cours.
+  console.log(`[Nomura Filler] ▶ script chargé | url=${location.href} | guard=${!!globalThis.__TALEOS_NOMURA_FILLER_RUNNING__}`);
+  if (globalThis.__TALEOS_NOMURA_FILLER_RUNNING__) {
+    console.log('[Nomura Filler] ⛔ Déjà en cours (__TALEOS_NOMURA_FILLER_RUNNING__=true) — exit');
+    return;
+  }
   globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = true;
 
   const BANNER_ID   = 'taleos-nomura-banner';
