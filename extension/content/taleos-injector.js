@@ -258,6 +258,7 @@
     ) return 'jp_morgan';
     if (lowerUrl.includes('careers.axa.com') || lowerUrl.includes('axa.com/careers-home') || lowerUrl.includes('icims.com/jobs/') || lowerUrl.includes('icims.eu/jobs/')) return 'axa';
     if (lowerUrl.includes('portal.careers.hsbc.com') || lowerUrl.includes('apply.careers.hsbc.com') || (lowerUrl.includes('career2.successfactors.eu') && lowerUrl.includes('hsbcholdin'))) return 'hsbc';
+    if (lowerUrl.includes('career4.successfactors.com') && lowerUrl.includes('nomurahold')) return 'nomura';
     return null;
   }
 
@@ -289,6 +290,7 @@
     if (normalized.includes('jp morgan') || normalized.includes('j.p. morgan') || normalized.includes('jpmorgan')) return 'jp_morgan';
     if (normalized.startsWith('axa') || normalized.includes(' groupe axa') || normalized.includes(' gie axa') || normalized.includes('direct assurance')) return 'axa';
     if (normalized.includes('hsbc')) return 'hsbc';
+    if (normalized.includes('nomura') || normalized.includes('instinet')) return 'nomura';
     return null;
   }
 

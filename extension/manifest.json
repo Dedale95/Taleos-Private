@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.146",
-  "version_name": "1.2.146-nomura-fix-injection",
+  "version": "1.2.147",
+  "version_name": "1.2.147-nomura-fix-bankid",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
