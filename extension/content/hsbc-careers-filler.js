@@ -243,10 +243,17 @@
   // 7. Upload CV depuis Firebase Storage
   // ══════════════════════════════════════════════════════════════════════════════
   /**
-   * Télécharge le CV depuis Firebase Storage et l'injecte directement dans
-   * l'input[name="fileData1"] du widget SF (toujours présent dans le DOM).
-   * L'onchange JUIC déclenche l'upload côté SF, qu'un CV existe déjà ou non.
-   * On remplace TOUJOURS — la version Firebase est la plus à jour.
+   * Remplace le CV par la version Firebase Storage.
+   * Toujours rechargé — jamais de CV obsolète en candidature.
+   *
+   * Mécanisme SF JUIC :
+   *   Le widget attachment crée l'input[name="fileData1"] dynamiquement.
+   *   Quand un CV existe déjà, il faut :
+   *     1. Cliquer le bouton crayon (action) → sous-menu apparaît
+   *     2. Cliquer "Upload from Computer" ([id$="_uploadComputer"]) →
+   *        l'input[name="fileData1"] est injecté dans le DOM
+   *     3. Injecter le fichier + déclencher onchange JUIC "uploadFiles"
+   *   Quand aucun CV n'existe, le bouton d'upload direct mène au même input.
    */
   async function uploadCV(storagePath, filename) {
     if (!storagePath) { log('   ⚠️ CV : cv_storage_path absent → skip'); return false; }
@@ -261,15 +268,51 @@
     const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
     if (!r?.base64) { log(`   ⚠️ CV introuvable dans Firebase Storage (${storagePath})`); return false; }
 
-    // L'input file est toujours présent dans le DOM SF (même quand un CV existe déjà).
-    // On lui injecte directement le fichier — l'onchange JUIC ("uploadFiles") déclenche l'upload.
-    // Pas besoin de cliquer le crayon ni d'ouvrir un sous-menu.
-    const fileInput = document.querySelector('input[name="fileData1"]');
-    if (!fileInput) { log('   ⚠️ input[name="fileData1"] introuvable'); return false; }
-
-    // Nom exact Firebase — jamais renommé
     const effectiveFilename = String(filename || r.filename || '').trim();
-    if (!effectiveFilename) { log('   ⚠️ CV : nom de fichier absent (cv_filename non défini dans Firebase)'); return false; }
+    if (!effectiveFilename) { log('   ⚠️ CV : cv_filename absent dans Firebase → skip'); return false; }
+
+    // ── Étape 1 : activer le widget d'upload ──────────────────────────────────
+    // Essayer d'abord si l'input est déjà dans le DOM (cas sans CV existant)
+    let fileInput = document.querySelector('input[name="fileData1"]');
+
+    if (!fileInput) {
+      // Cliquer le bouton d'action (crayon si CV existe, upload sinon)
+      const actionBtn = document.querySelector('[id$="_attachIcon"].addAttachments')
+        || document.querySelector('.addAttachments')
+        || document.querySelector('[id$="_attach"] [role="button"]')
+        || document.querySelector('.attachmentLabel');  // bouton upload si pas de CV
+      if (!actionBtn) { log('   ⚠️ Bouton d'action CV introuvable'); return false; }
+      actionBtn.click();
+      await sleep(600);
+
+      // ── Étape 2 : cliquer "Upload from Computer" dans le sous-menu ──────────
+      // SF montre un dropdown avec "Computer", "Box", "Google Drive", etc.
+      // [id$="_uploadComputer"] est le bouton "depuis l'ordinateur"
+      const computerBtn = await waitFor(() => {
+        return document.querySelector('[id$="_uploadComputer"]')
+          || Array.from(document.querySelectorAll('[role="menuitem"], li, button, a'))
+              .find(el => /computer|ordinateur|local|depuis.*ordi/i.test(el.textContent) && el.offsetParent !== null)
+          || null;
+      }, 2500, 200);
+
+      if (computerBtn) {
+        computerBtn.click();
+        log('   ℹ️ Sous-menu CV → "Upload from Computer" cliqué');
+        await sleep(400);
+      } else {
+        log('   ℹ️ Sous-menu CV non détecté — l'input devrait être accessible directement');
+      }
+
+      // ── Étape 3 : attendre que l'input file apparaisse dans le DOM ──────────
+      fileInput = await waitFor(
+        () => document.querySelector('input[name="fileData1"]'),
+        4000, 200
+      );
+    }
+
+    if (!fileInput) { log('   ⚠️ input[name="fileData1"] toujours introuvable après activation'); return false; }
+
+    // ── Étape 4 : injecter le fichier + déclencher onchange JUIC ─────────────
     const bin   = atob(r.base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -278,35 +321,32 @@
     const dt = new DataTransfer();
     dt.items.add(file);
     fileInput.files = dt.files;
-    // Déclencher l'onchange JUIC qui lance l'upload SF
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
     fileInput.dispatchEvent(new Event('input',  { bubbles: true }));
 
     log(`   ⏳ Upload en cours : "${effectiveFilename}"…`);
 
-    // Attendre confirmation d'upload (icône succès JUIC visible, IDs dynamiques)
+    // ── Étape 5 : attendre la confirmation d'upload ───────────────────────────
     const success = await waitFor(() => {
-      const el = document.querySelector('[id$="_attachSuccess"]:not(.displayNone)');
-      return el || null;
+      // Icône succès JUIC visible (ID dynamique)
+      const ok = document.querySelector('[id$="_attachSuccess"]:not(.displayNone)');
+      if (ok) return ok;
+      // OU le label du CV a été mis à jour
+      const lbl = document.querySelector('[id$="_attachDownloadLabelLink"]');
+      if (lbl && lbl.textContent.trim() !== existingName) return lbl;
+      return null;
     }, 25000, 500);
 
     if (success) {
-      log(`   ✅ CV → remplacé par "${effectiveFilename}"`);
+      const confirmedName = document.querySelector('[id$="_attachDownloadLabelLink"]')?.textContent.trim() || effectiveFilename;
+      log(`   ✅ CV → remplacé par "${confirmedName}"`);
       return true;
     }
 
-    // Fallback : vérifier que le label du CV a changé
-    const newLabel = document.querySelector('[id$="_attachDownloadLabelLink"]');
-    const newName  = newLabel ? newLabel.textContent.trim() : '';
-    if (newName && newName !== existingName) {
-      log(`   ✅ CV → label mis à jour : "${newName}"`);
-      return true;
-    }
-
-    // Fallback 2 : fbja_uploadedResumeId rempli
+    // Fallback : fbja_uploadedResumeId rempli
     const uploadedId = document.getElementById('fbja_uploadedResumeId');
     if (uploadedId?.value) {
-      log(`   ✅ CV → uploadé (fbja_uploadedResumeId="${uploadedId.value}") : "${effectiveFilename}"`);
+      log(`   ✅ CV → uploadé "${effectiveFilename}" (fbja_uploadedResumeId="${uploadedId.value}")`);
       return true;
     }
 
