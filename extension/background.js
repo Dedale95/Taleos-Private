@@ -1842,7 +1842,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     trackApplyStart(msg.bankId, msg.jobTitle, msg.jobId, msg.offerUrl).catch(() => {});
     handleApply(msg.offerUrl, msg.bankId, msg.jobId, msg.jobTitle, msg.companyName, taleosTabId, msg.offerMeta || null)
       .then((result) => {
-        if (result?.error) sendResponse({ error: result.error, openUrl: true });
+        if (result?.error) sendResponse({
+          error: result.error,
+          openUrl: true,
+          missingCredentials: result.missingCredentials || false,
+          bankId: result.bankId || msg.bankId || ''
+        });
         else {
           sendResponse({
             ok: true,
