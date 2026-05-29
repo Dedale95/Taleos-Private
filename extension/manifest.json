@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.143",
-  "version_name": "1.2.143-hsbc-cv-first",
+  "version": "1.2.144",
+  "version_name": "1.2.144-nomura-connexions",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -36,6 +36,7 @@
     "https://recrutement.creditmutuel.fr/*",
     "https://talents.bpifrance.fr/*",
     "https://bpi.tzportal.io/*",
+    "https://career4.successfactors.com/*",
     "https://career5.successfactors.eu/*",
     "https://career2.successfactors.eu/*",
     "https://portal.careers.hsbc.com/*",

@@ -2085,7 +2085,8 @@ const CONNECTION_TEST_URLS = {
   bpifrance: 'https://bpi.tzportal.io//fr/login',
   allianz: 'https://career5.successfactors.eu/career?company=AZGROUPPROD&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=vGbBbLMSiPxDaedOIn8tTt8WApNMjWQcgDbELe1OyzA%253d',
   axa: 'https://careers.axa.com/careers-home/auth/1/verify-login-type',
-  hsbc: 'https://career2.successfactors.eu/career?company=hsbcholdin&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=OupXiSPpV6NVVB92Trb%252fkx9KHywNEecoMl55nAmzpZM%253d'
+  hsbc: 'https://career2.successfactors.eu/career?company=hsbcholdin&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=OupXiSPpV6NVVB92Trb%252fkx9KHywNEecoMl55nAmzpZM%253d',
+  nomura: 'https://career4.successfactors.com/career?company=nomurahold&site=VjItclVPaDlpTTV6elVtOTVzYklhTW5Vdz09&lang=en_US&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=Nomura&_s.crb=SNrcB9xhcLpoddiSLBSDMfAXxCyTprMuQj5mKg81yaA%253d'
 };
 
 async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, email, passwordEncoded) {
@@ -2490,6 +2491,15 @@ async function runTestConnection(msg) {
         }
       } catch (_) {}
     }
+    if (bankId === 'nomura') {
+      try {
+        const nomuraTabs = await chrome.tabs.query({ windowId: testWindowId, url: ['https://career4.successfactors.com/*'] });
+        for (const t of nomuraTabs) {
+          const url = String(t.url || '');
+          if (url.includes('nomurahold')) idsToClose.add(t.id);
+        }
+      } catch (_) {}
+    }
 
     if (bankId === 'credit_agricole') {
       try {
@@ -2598,6 +2608,18 @@ async function runTestConnection(msg) {
     }
     // HSBC : si déjà connecté → sign out déclenché → attendre la page de connexion puis retry
     if (bankId === 'hsbc' && fillRes?.[0]?.result?.needRetry) {
+      await waitForLoad(); // attendre que la page post-sign-out soit chargée
+      await new Promise(r => setTimeout(r, 2000)); // marge supplémentaire
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['scripts/connection-test-runner.js']
+        });
+      } catch (_) {}
+      fillRes = await runFill(0);
+    }
+    // Nomura : si déjà connecté → sign out déclenché → attendre la page de connexion puis retry
+    if (bankId === 'nomura' && fillRes?.[0]?.result?.needRetry) {
       await waitForLoad(); // attendre que la page post-sign-out soit chargée
       await new Promise(r => setTimeout(r, 2000)); // marge supplémentaire
       try {

@@ -127,6 +127,29 @@
           /errormsg_1|uierrorcontainer_2|uierrormsg/.test(html) ||
           /invalid email address or password|incorrect|invalid user id|invalid login|login failed|unable to sign in|wrong email|wrong password/.test(text);
       }
+    },
+    nomura: {
+      loginUrl: 'https://career4.successfactors.com/career?company=nomurahold&site=VjItclVPaDlpTTV6elVtOTVzYklhTW5Vdz09&lang=en_US&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=Nomura&_s.crb=SNrcB9xhcLpoddiSLBSDMfAXxCyTprMuQj5mKg81yaA%253d',
+      emailSel: '#username',
+      passwordSel: '#password',
+      submitSel: 'button[onclick*="validateFields"], .aquabtn.active button, .button_row button',
+      cookieSel: null,
+      successCheck: (url, content) => {
+        const text = (content || '').toLowerCase();
+        const html = (document.body?.innerHTML || '').toLowerCase();
+        const loginVisible = !!document.querySelector('#username') && !!document.querySelector('#password');
+        if (loginVisible) return false;
+        return /careers home|my applications|hi |welcome,|sign out|candidate profile/i.test(text) ||
+          /top_nav_my_profile|top_nav_jobs_applied|signout|logoutlink|_signout|loggedinstatus|languageselector/.test(html) ||
+          (!/career opportunities: sign in|already have an account|forgot your password\?/i.test(text) && !loginVisible);
+      },
+      failureCheck: (url, content) => {
+        const text = (content || '').toLowerCase();
+        const html = (document.body?.innerHTML || '').toLowerCase();
+        return !!document.querySelector('#errorMsg_1, #uiErrorContainer_2, #uiErrorMsg') ||
+          /errormsg_1|uierrorcontainer_2|uierrormsg/.test(html) ||
+          /invalid email address or password|incorrect|invalid user id|invalid login|login failed|unable to sign in/.test(text);
+      }
     }
   };
 
@@ -346,6 +369,37 @@
           window.location.href = urlMatch[1]; // navigation directe, contourne la CSP
         } else {
           // Fallback si le format du href a changé : MouseEvent (isTrusted=false, peut ne pas marcher)
+          signOutEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        }
+        return { done: false, needRetry: true, phase: 'signout' };
+      }
+      return fillAndSubmit(bankId, email, password);
+    }
+    if (bankId === 'nomura') {
+      // Si déjà connecté (formulaire de connexion absent)
+      // → le menu utilisateur SF a un dropdown toggle ; #_signout est dans le DOM même sans l'ouvrir
+      const loginFormVisible = !!document.getElementById('username');
+      if (!loginFormVisible) {
+        // Essayer d'ouvrir le dropdown utilisateur pour rendre #_signout accessible (si nécessaire)
+        const dropdownToggle =
+          document.querySelector('a.dropdown-toggle.languageselector') ||
+          document.querySelector('a[data-toggle="dropdown"][aria-haspopup="true"]') ||
+          document.querySelector('a.dropdown-toggle');
+        if (dropdownToggle) dropdownToggle.click();
+
+        const signOutEl =
+          document.querySelector('#_signout') ||
+          findVisibleByText('a, button, [role="menuitem"]', /sign out|log out/i);
+        if (!signOutEl) {
+          return { done: false, error: 'Déjà connecté — bouton Sign Out Nomura introuvable. Déconnectez-vous manuellement puis relancez le test.' };
+        }
+        // Le href contient "javascript:logoutUrl('/portalcareer?company=nomurahold...', '...')"
+        // CSP SF bloque .click() → extraire le chemin et naviguer directement
+        const rawHref = signOutEl.getAttribute('href') || '';
+        const urlMatch = rawHref.match(/logoutUrl\(\s*['"]([^'"]+)['"]/);
+        if (urlMatch && urlMatch[1]) {
+          window.location.href = urlMatch[1];
+        } else {
           signOutEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         }
         return { done: false, needRetry: true, phase: 'signout' };
