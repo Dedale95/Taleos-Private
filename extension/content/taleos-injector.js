@@ -462,6 +462,64 @@
     return /profil\s+incomplet|profil\s+introuvable|informations\s+manquantes|complétez.*profil|champs?\s+obligatoires|requis.*profil|avant\s+de\s+lancer\s+une\s+candidature/i.test(s);
   }
 
+  /**
+   * Popup bloquant quand les identifiants d'une banque ne sont pas configurés dans Connexions.
+   * Aucun onglet de candidature n'est ouvert dans ce cas.
+   */
+  function showConnectionMissingPopup(bankId, bankLabel) {
+    const label = bankLabel || bankId || 'cette banque';
+    try {
+      chrome.runtime.sendMessage({
+        action: 'track_event',
+        eventName: 'apply_blocked_no_credentials',
+        params: { site: normalizeSiteForGa(bankId) }
+      }).catch(function () { });
+    } catch (_) { }
+
+    const existing = document.getElementById('taleos-profile-incomplete-modal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'taleos-profile-incomplete-modal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;padding:24px;border-radius:12px;max-width:450px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.2)';
+
+    const title = document.createElement('h3');
+    title.textContent = '🔗 Connexion ' + label + ' manquante';
+    title.style.cssText = 'margin:0 0 16px;font-size:18px;color:#1f2937';
+
+    const text = document.createElement('p');
+    text.textContent = 'Vos identifiants ' + label + ' ne sont pas configurés. Rendez-vous sur la page Connexions pour les ajouter avant de lancer une candidature.';
+    text.style.cssText = 'margin:0 0 20px;font-size:14px;line-height:1.5;color:#4b5563';
+
+    const btnConfig = document.createElement('button');
+    btnConfig.textContent = 'Configurer la connexion';
+    btnConfig.style.cssText = 'margin:8px;padding:10px 20px;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px';
+
+    const btnClose = document.createElement('button');
+    btnClose.textContent = 'Fermer';
+    btnClose.style.cssText = 'margin:8px;padding:10px 20px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;font-size:14px;color:#374151';
+
+    box.appendChild(title);
+    box.appendChild(text);
+    box.appendChild(btnConfig);
+    box.appendChild(btnClose);
+    overlay.appendChild(box);
+
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+    btnConfig.addEventListener('click', function () {
+      overlay.remove();
+      window.location.href = new URL('connexions.html', window.location.href).href;
+    });
+    btnClose.addEventListener('click', function () { overlay.remove(); });
+
+    document.body.appendChild(overlay);
+  }
+
   function setButtonProcessing(btn, jobId) {
     if (!btn.dataset.taleosOriginalText) btn.dataset.taleosOriginalText = btn.textContent || '📝 Candidater';
     btn.textContent = '⏳ En cours...';
@@ -650,7 +708,11 @@
       }
       if (response?.error) {
         console.warn('[Taleos] handleApply:', response.error);
-        if (isProfileIncompleteApplyError(response.error)) {
+        if (response?.missingCredentials) {
+          // Identifiants banque absents dans Connexions → popup bloquant, aucun onglet ouvert
+          clearProcessing(jobId, true);
+          showConnectionMissingPopup(bankId, companyName);
+        } else if (isProfileIncompleteApplyError(response.error)) {
           clearProcessing(jobId, true);
           const match = String(response.error).match(/avant de lancer une candidature[:\s]+(.+)$/i);
           const missingFields = match ? match[1].split(',').map(m => m.trim()).filter(Boolean) : [];

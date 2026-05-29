@@ -2880,6 +2880,11 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     profile = await fetchProfile(taleosUserId, bankId, taleosIdToken);
   } catch (e) {
     console.error('[Taleos] Profil:', e);
+    // Distinguer "identifiants manquants dans Connexions" des autres erreurs de profil
+    const isMissingCredentials = /identifiants.*introuvable|configurez.*connexions/i.test(String(e.message || ''));
+    if (isMissingCredentials) {
+      return { error: e.message || 'Identifiants manquants', missingCredentials: true, bankId };
+    }
     return { error: e.message || 'Profil introuvable' };
   }
   profile.__jobId = jobId;
@@ -3867,10 +3872,7 @@ async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
   const normalizedBankId = String(bankId || '').toLowerCase().trim();
-  // Nomura gère lui-même la connexion dans le filler (handleSignIn) — les identifiants
-  // sont optionnels : si absents, le filler s'arrêtera à l'étape de connexion et demandera
-  // une saisie manuelle, mais le routage et la bannière fonctionneront quand même.
-  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs', 'hsbc', 'nomura'].includes(normalizedBankId);
+  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs', 'hsbc'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
