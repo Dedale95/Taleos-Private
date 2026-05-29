@@ -485,9 +485,10 @@
    * Notifie le background (mise à jour tuile + fermeture onglet) et vide le storage.
    */
   async function handleAlreadyApplied(profile) {
-    const jobId    = profile.jobId    || profile.job_id    || '';
-    const jobTitle = profile.jobTitle || profile.job_title || '';
-    const offerUrl = profile.offerUrl || profile.offer_url || location.href;
+    // Le background stocke jobId/offerUrl dans profile.__jobId / profile.__offerUrl
+    const jobId    = profile.__jobId    || profile.jobId    || profile.job_id    || '';
+    const jobTitle = profile.__jobTitle || profile.jobTitle || profile.job_title || '';
+    const offerUrl = profile.__offerUrl || profile.offerUrl || profile.offer_url || location.href;
 
     log('⚠️ Candidature HSBC déjà soumise pour cette offre — mise à jour tuile et fermeture onglet');
     showBanner('⚠️ Déjà postulé pour cette offre — fermeture dans 3s…', 'warn');
@@ -718,9 +719,10 @@
           submitBtn.click();
           showBanner('✅ Candidature soumise !', 'success');
           // Notifier le background IMMÉDIATEMENT (avant navigation) pour déclencher la file
-          const _jobId    = profile.jobId    || profile.job_id    || '';
-          const _jobTitle = profile.jobTitle || profile.job_title || '';
-          const _offerUrl = profile.offerUrl || profile.offer_url || location.href;
+          // Le background stocke jobId/offerUrl dans profile.__jobId / profile.__offerUrl
+          const _jobId    = profile.__jobId    || profile.jobId    || profile.job_id    || '';
+          const _jobTitle = profile.__jobTitle || profile.jobTitle || profile.job_title || '';
+          const _offerUrl = profile.__offerUrl || profile.offerUrl || profile.offer_url || location.href;
           chrome.runtime.sendMessage({
             action: 'candidature_success',
             bankId: 'hsbc',
