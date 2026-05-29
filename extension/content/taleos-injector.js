@@ -689,7 +689,7 @@
     if (msg.action === 'taleos_candidature_success') {
       clearProcessing(msg.jobId || '', false);
       window.dispatchEvent(new CustomEvent('taleos-extension-candidature-success', {
-        detail: { jobId: msg.jobId, status: msg.status }
+        detail: { jobId: msg.jobId, status: msg.status, successType: msg.successType || '', successMessage: msg.successMessage || '' }
       }));
     }
     if (msg.action === 'taleos_candidature_failure') {
