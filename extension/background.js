@@ -3506,11 +3506,24 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       taleos_pending_nomura: { ...nomuraPendingBase, tabId: tab.id },
       taleos_nomura_tab_id: tab.id
     });
-    // Injection directe au chargement initial — garantit l'exécution même si la
-    // manifest content script ne couvre pas l'URL de l'offre.
+    // Listener d'injection sur ce tabId : attend que l'URL soit career4.successfactors.com
+    // avec nomurahold avant d'injecter. Reste actif (ne se détruit pas prématurément sur
+    // des pages intermédiaires ou des redirects). Se détruit après injection réussie ou
+    // après 3 minutes de timeout.
     const _nomuraTabId = tab.id;
-    const _nomuraInitListener = async (tid, info) => {
+    const _nomuraInitDeadline = Date.now() + 3 * 60 * 1000;
+    const _nomuraInitListener = async (tid, info, updatedTab) => {
       if (tid !== _nomuraTabId || info.status !== 'complete') return;
+      if (Date.now() > _nomuraInitDeadline) {
+        console.log(`[Taleos Nomura] Listener init timeout (3 min) — retrait`);
+        chrome.tabs.onUpdated.removeListener(_nomuraInitListener);
+        return;
+      }
+      const tabUrl = updatedTab?.url || '';
+      if (!tabUrl.includes('career4.successfactors.com') || !tabUrl.includes('nomurahold')) {
+        console.log(`[Taleos Nomura] Attente career4/nomurahold (URL actuelle: ${tabUrl.slice(0, 80)})`);
+        return; // garder le listener actif pour la prochaine navigation
+      }
       chrome.tabs.onUpdated.removeListener(_nomuraInitListener);
       await new Promise(r => setTimeout(r, 1200));
       try {
@@ -3520,7 +3533,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
         });
         await chrome.scripting.executeScript({ target: { tabId: _nomuraTabId }, files: ['scripts/taleos-automation-banner.js'] });
         await chrome.scripting.executeScript({ target: { tabId: _nomuraTabId }, files: ['content/nomura-careers-filler.js'] });
-        console.log(`[Taleos Nomura] Injection initiale (tabId=${_nomuraTabId})`);
+        console.log(`[Taleos Nomura] Injection initiale OK (tabId=${_nomuraTabId}, url=${tabUrl.slice(0, 80)})`);
       } catch (e) {
         console.error('[Taleos Nomura] Injection initiale échouée:', e);
       }
