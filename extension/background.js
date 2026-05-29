@@ -92,7 +92,8 @@ const BANK_SCRIPT_MAP = {
   jp_morgan: 'content/jp-morgan-careers-filler.js',
   goldman_sachs: 'content/goldman-sachs-careers-filler.js',
   axa: 'content/axa-careers-filler.js',
-  hsbc: 'content/hsbc-careers-filler.js'
+  hsbc: 'content/hsbc-careers-filler.js',
+  nomura: 'content/nomura-careers-filler.js'
 };
 
 function hasBankAutomation(bankId) {
@@ -1096,6 +1097,52 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content/hsbc-careers-filler.js'] });
   } catch (e) {
     console.error('[Taleos HSBC] Ré-injection SF:', e);
+  }
+});
+
+/**
+ * Listener persistant Nomura : ré-injecte le filler à chaque navigation sur career4.successfactors.com/nomurahold.
+ * SF est multi-page (listing → connexion → formulaire) — la ré-injection garantit l'exécution sur chaque page.
+ */
+const nomuraLastInject = new Map();
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete') return;
+  const url = (tab?.url || '');
+  if (!url.includes('career4.successfactors.com')) return;
+  if (!url.includes('nomurahold')) return;
+
+  if (nomuraLastInject.get(tabId) && Date.now() - nomuraLastInject.get(tabId) < 8000) return;
+  nomuraLastInject.set(tabId, Date.now());
+
+  const stored = await chrome.storage.local.get(['taleos_pending_nomura', 'taleos_nomura_tab_id']);
+  const entry = stored.taleos_pending_nomura;
+  if (!entry?.profile) return;
+
+  const age = Date.now() - (entry.timestamp || 0);
+  if (age > 5 * 60 * 1000) {
+    chrome.storage.local.remove(['taleos_pending_nomura', 'taleos_nomura_tab_id']);
+    return;
+  }
+
+  // Mettre à jour le tabId si l'onglet a changé
+  if (stored.taleos_nomura_tab_id && tabId !== stored.taleos_nomura_tab_id) {
+    console.log(`[Taleos Nomura] SF ouvert dans nouvel onglet ${tabId} (≠ ${stored.taleos_nomura_tab_id}) — mise à jour tabId`);
+    await chrome.storage.local.set({
+      taleos_pending_nomura: { ...entry, tabId },
+      taleos_nomura_tab_id: tabId
+    });
+  }
+
+  console.log(`[Taleos Nomura] Ré-injection filler sur page SF (tabId=${tabId})`);
+  await new Promise(r => setTimeout(r, 800));
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => { globalThis.__TALEOS_NOMURA_FILLER_RUNNING__ = false; }
+    });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content/nomura-careers-filler.js'] });
+  } catch (e) {
+    console.error('[Taleos Nomura] Ré-injection SF:', e);
   }
 });
 
@@ -2705,6 +2752,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'bnp_paribas' || url.includes('group.bnpparibas') || url.includes('bwelcome.hr.bnpparibas')) return 'bnp';
   if (bid === 'goldman_sachs' || url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
   if (bid === 'hsbc' || url.includes('portal.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
+  if (bid === 'nomura' || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
   return 'other';
 }
 
@@ -3397,6 +3445,55 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       taleos_hsbc_tab_id: tab.id
     });
     await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'nomura') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    // Fermer un onglet Nomura mort s'il en existe un.
+    try {
+      const { taleos_nomura_tab_id: existingNomuraTabId } = await chrome.storage.local.get(['taleos_nomura_tab_id']);
+      if (existingNomuraTabId) {
+        const existingTab = await chrome.tabs.get(existingNomuraTabId).catch(() => null);
+        if (existingTab) {
+          console.log(`[Taleos] Nomura : fermeture onglet mort #${existingNomuraTabId} avant relance`);
+          await chrome.tabs.remove(existingNomuraTabId).catch(() => {});
+        }
+        await chrome.storage.local.remove(['taleos_nomura_tab_id', 'taleos_pending_nomura']).catch(() => {});
+      }
+    } catch (_) {}
+
+    // Ouvrir l'URL de l'offre directement (le filler gère le clic "Apply now" + connexion).
+    const nomuraCreateOpts = { url: offerUrl, active: true };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) nomuraCreateOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const nomuraPendingBase = {
+      profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'Nomura', __offerUrl: offerUrl },
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName: companyName || 'Nomura',
+      location: offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId: null,
+      timestamp: Date.now()
+    };
+    await chrome.storage.local.set({ taleos_pending_nomura: nomuraPendingBase });
+    const tab = await chrome.tabs.create(nomuraCreateOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    await chrome.storage.local.set({
+      taleos_pending_nomura: { ...nomuraPendingBase, tabId: tab.id },
+      taleos_nomura_tab_id: tab.id
+    });
+    await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
     const otherCreateOpts = { url: offerUrl, active: false };
@@ -3874,7 +3971,11 @@ async function fetchProfile(uid, bankId, token) {
     gs_sexual_orientation: (profile.gs_sexual_orientation || '').trim(),
     gs_race_ethnicity: (profile.gs_race_ethnicity || '').trim(),
     gs_race_additional_origins: Array.isArray(profile.gs_race_additional_origins) ? profile.gs_race_additional_origins : [],
-    gs_disability: (profile.gs_disability || '').trim()
+    gs_disability: (profile.gs_disability || '').trim(),
+    // Nomura — Questions spécifiques
+    nomura_worked_before: (profile.nomura_worked_before || '').trim(),
+    nomura_currency: (profile.nomura_currency || '').trim(),
+    nomura_salary_expectations: (profile.nomura_salary_expectations || '').trim()
   };
 }
 

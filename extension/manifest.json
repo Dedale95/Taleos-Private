@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.144",
-  "version_name": "1.2.144-nomura-connexions",
+  "version": "1.2.145",
+  "version_name": "1.2.145-nomura-candidature",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -277,6 +277,17 @@
         "scripts/taleos-automation-banner.js",
         "scripts/hsbc_blueprint.js",
         "content/hsbc-careers-filler.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://career4.successfactors.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/nomura-careers-filler.js"
       ],
       "run_at": "document_idle",
       "all_frames": false
