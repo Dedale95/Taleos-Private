@@ -169,6 +169,12 @@ jobs:
             db_file: bank_of_america_jobs.db
             timeout_minutes: 60
             playwright_browser: ""
+          - name: Citi
+            key: citi
+            script: citi_scraper.py
+            db_file: citi_jobs.db
+            timeout_minutes: 90
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
