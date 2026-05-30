@@ -1,6 +1,7 @@
 /**
  * Taleos - Script de test de connexion bancaire (injecté dans l'onglet)
- * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte, Bpifrance, AXA, Allianz.
+ * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte,
+ * Bpifrance, AXA, Allianz, HSBC, Nomura, Bank of America.
  * JP Morgan est géré côté background car aucune authentification par mot de passe n'est requise ici.
  */
 (function() {
@@ -126,6 +127,31 @@
         return !!document.querySelector('#errorMsg_1, #uiErrorContainer_2, #uiErrorMsg') ||
           /errormsg_1|uierrorcontainer_2|uierrormsg/.test(html) ||
           /invalid email address or password|incorrect|invalid user id|invalid login|login failed|unable to sign in|wrong email|wrong password/.test(text);
+      }
+    },
+    bank_of_america: {
+      // Portail Workday — Lateral hires (US) — même moteur que Deloitte
+      loginUrl: 'https://ghr.wd1.myworkdayjobs.com/en-US/Lateral-US/login',
+      emailSel: 'input[data-automation-id="email"]',
+      passwordSel: 'input[data-automation-id="password"]',
+      submitSel: '[data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
+      cookieSel: null,
+      successCheck: (url, content) => {
+        const html = (document.body?.innerHTML || '').toLowerCase();
+        // Page Candidate Home Workday
+        return /welcome to candidate home|my applications|candidate home/i.test(content) ||
+          !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
+          !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
+          /candidate-home|my-applications/i.test(url) ||
+          // Présence du menu utilisateur (email visible en haut) = session active
+          !!document.querySelector('span.css-1xtbc5b');
+      },
+      failureCheck: (url, content) => {
+        // Message d'erreur explicite sur la page de login Workday BofA
+        return !!document.querySelector('p.css-1hqkimk') ||
+          /you may have entered the wrong email address|wrong email/i.test(content) ||
+          /data-automation-id="errorMessage"/i.test(content) ||
+          /incorrect.*credentials|invalid.*password|login.*failed/i.test(content);
       }
     },
     nomura: {
@@ -373,6 +399,30 @@
         }
         return { done: false, needRetry: true, phase: 'signout' };
       }
+      return fillAndSubmit(bankId, email, password);
+    }
+    if (bankId === 'bank_of_america') {
+      // Si déjà connecté sur Workday BofA : le span.css-1xtbc5b (email utilisateur) est visible.
+      // Il faut cliquer dessus pour ouvrir le dropdown, puis cliquer "Sign Out" (span.css-1kj610j).
+      const userEmailEl = document.querySelector('span.css-1xtbc5b');
+      const loginFormVisible = !!document.querySelector('input[data-automation-id="email"]');
+      if (userEmailEl && !loginFormVisible) {
+        // Étape 1 : ouvrir le menu utilisateur
+        if (phase !== 'signout_step2') {
+          userEmailEl.click();
+          return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 600 };
+        }
+        // Étape 2 : cliquer Sign Out
+        const signOutEl =
+          document.querySelector('span.css-1kj610j') ||
+          findVisibleByText('span, a, button, [role="menuitem"]', /sign out|log out|déconnexion/i);
+        if (!signOutEl) {
+          return { done: false, error: 'Menu Sign Out BofA introuvable. Déconnectez-vous manuellement puis relancez le test.' };
+        }
+        signOutEl.click();
+        return { done: false, needRetry: true, phase: 'signout', retryDelayMs: 2500 };
+      }
+      // Formulaire présent → remplir normalement
       return fillAndSubmit(bankId, email, password);
     }
     if (bankId === 'nomura') {
