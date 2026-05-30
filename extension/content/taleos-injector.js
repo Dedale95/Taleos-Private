@@ -294,6 +294,30 @@
     return null;
   }
 
+  /**
+   * Force la locale fr-FR sur les URLs Workday (myworkdayjobs.com).
+   * Workday utilise sinon la langue du site (souvent ja-JP pour MUFG, en-US pour d'autres).
+   * Pattern : https://<tenant>.myworkdayjobs.com/[<locale>/]<site>/job/...
+   */
+  function normalizeWorkdayLocale(url) {
+    if (!url || !String(url).includes('myworkdayjobs.com')) return url;
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split('/').filter(Boolean);
+      // Détecte si le 1er segment est déjà une locale (ex: fr-FR, ja-JP, en-US)
+      if (parts.length > 0 && /^[a-z]{2}-[A-Z]{2}$/i.test(parts[0])) {
+        if (parts[0].toLowerCase() === 'fr-fr') return url; // déjà bon
+        parts[0] = 'fr-FR';
+      } else {
+        parts.unshift('fr-FR');
+      }
+      u.pathname = '/' + parts.join('/');
+      return u.toString();
+    } catch (e) {
+      return url;
+    }
+  }
+
   function getAxaApplyUrl(jobUrl, companyName = '') {
     const match = String(jobUrl || '').match(/\/jobs\/(\d+)(?:[/?#]|$)/i);
     if (!match) return jobUrl;
@@ -542,7 +566,8 @@
     const found = findJobCard(btn);
     if (!found) return;
 
-    const { card, jobUrl } = found;
+    const { card, jobUrl: rawJobUrl } = found;
+    const jobUrl = normalizeWorkdayLocale(rawJobUrl);
     const jobId = extractJobIdFromOnClick(btn) || (card.querySelector('.job-id')?.textContent || '').trim();
     const jobTitle = (card.querySelector('.job-title')?.textContent || '').trim();
     const companyName = (

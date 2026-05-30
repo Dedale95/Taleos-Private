@@ -682,7 +682,7 @@ def parse_wd_job(listing: dict, detail: dict | None, src: dict) -> dict | None:
     host = src["host"]
     site = src["site"]
     tenant = src["tenant"]
-    offer_url = f"https://{host}/{site}/job{ext_path}" if ext_path else ""
+    offer_url = f"https://{host}/fr-FR/{site}/job{ext_path}" if ext_path else ""
 
     # ── Date ──
     posted_raw = (detail or listing).get("startDate") or listing.get("postedOn") or ""
