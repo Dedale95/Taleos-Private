@@ -334,16 +334,37 @@
     let uploadBtn = actionBtn;
     if (actionBtn.classList.contains('removeAttachments')) {
       const btnId = actionBtn.id;
-      log(`   ${label} : slot occupé — suppression du fichier existant (${existingName})`);
-      actionBtn.click();
-      await sleep(600);
-      // Attendre que le bouton redevienne addAttachments
+      log(`   ${label} : slot occupé — clic poubelle (${existingName})`);
+      actionBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+
+      // SF affiche une dialog de confirmation "Are you sure you want to delete this file?"
+      // Le bouton OK a class="globalPrimaryButton" et son onclick appelle juic.fire.
+      const okBtn = await waitFor(
+        () => {
+          // Chercher par classe (stable) et texte "OK" visible
+          const btn = Array.from(document.querySelectorAll(
+            'button.globalPrimaryButton, button[name="OK"]'
+          )).find(b => /^ok$/i.test(b.textContent.trim()) && b.offsetParent !== null);
+          return btn || null;
+        },
+        5000, 150
+      );
+
+      if (okBtn) {
+        log(`   ${label} : popup confirmation suppression → clic OK (#${okBtn.id || '?'})`);
+        okBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        await sleep(400);
+      } else {
+        log(`   ${label} : pas de popup de confirmation détecté — suppression directe supposée`);
+      }
+
+      // Attendre que le bouton redevienne addAttachments (slot libéré)
       const addBtn = await waitFor(
         () => {
           const el = document.getElementById(btnId);
           return el?.classList.contains('addAttachments') ? el : null;
         },
-        6000, 200
+        8000, 200
       );
       if (!addBtn) {
         log(`   ⚠️ ${label} : addAttachments non apparu après suppression — abandon`);
