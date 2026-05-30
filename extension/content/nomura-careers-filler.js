@@ -702,21 +702,32 @@
     setNativeValue(emailInput, profile.auth_email || '');
     await sleep(300);
     setNativeValue(pwdInput, profile.auth_password || '');
-    await sleep(300);
+    await sleep(500);
 
-    // Bouton "Sign In"
-    const submitBtn =
-      document.getElementById('fbqa_signin') ||
-      Array.from(document.querySelectorAll('button')).find(b => /sign in|connexion/i.test(b.textContent));
+    // Bouton "Sign In" — waitFor car le bouton peut apparaître après le chargement du modal
+    const submitBtn = await waitFor(
+      () => document.getElementById('fbqa_signin') ||
+            Array.from(document.querySelectorAll('button')).find(b =>
+              /^sign in$/i.test(b.textContent.trim())
+            ),
+      5000, 200
+    );
 
     if (!submitBtn) {
       log('⚠️ Bouton Sign In (#fbqa_signin) introuvable');
       showBanner('Bouton Sign In non trouvé — cliquez manuellement', 'warn');
+      activateTab();
       return;
     }
 
-    submitBtn.click();
-    log('✅ Clic Sign In → attente connexion');
+    log(`   → Bouton trouvé : #${submitBtn.id || '?'} "${submitBtn.textContent.trim()}"`);
+
+    // JUIC utilise l'event passé à juic.fire() — dispatchEvent avec MouseEvent complet
+    // pour que l'objet event soit correctement rempli (contrairement à .click() natif).
+    submitBtn.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true, view: window
+    }));
+    log('✅ Clic Sign In (MouseEvent) → attente connexion');
     showBanner('Connexion en cours…');
 
     // Attendre la fin de la connexion (formulaire ou erreur)
