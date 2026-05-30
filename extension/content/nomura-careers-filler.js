@@ -160,22 +160,50 @@
   /**
    * Cherche un input de paginatedPicklist dont le label contient l'un des mots-clés.
    * Fallback quand l'ID numérique hardcodé ne correspond pas.
+   *
+   * Supporte plusieurs structures de rendu SF :
+   *   - ARIA aria-labelledby + label[for=] (formulaire principal)
+   *   - Table layout <tr><td>Label</td><td>input</td></tr> (section D&I / EEO)
+   *   - Conteneurs génériques .sf-ui-formElement, .app-form-field, [class*="form"]
+   *   - Fallback : remonter jusqu'à 4 niveaux dans le DOM
    */
   function findPicklistInputByLabel(keywords) {
     const inputs = Array.from(document.querySelectorAll('[id$=":_input"]'));
     const kw = keywords.map(k => k.toLowerCase());
+
     for (const input of inputs) {
+      // 1. aria-labelledby (le plus fiable)
       const lblId = input.getAttribute('aria-labelledby');
       if (lblId) {
         const lbl = document.getElementById(lblId);
         if (lbl && kw.some(k => lbl.textContent.toLowerCase().includes(k))) return input;
       }
+
+      // 2. <label for="...">
       const label = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
       if (label && kw.some(k => label.textContent.toLowerCase().includes(k))) return input;
-      const container = input.closest('.sf-ui-formElement, .app-form-field, [class*="form"]');
+
+      // 3. Conteneur proche — classes SF connues + tr (table D&I) + td/li/div génériques
+      const container = input.closest(
+        '.sf-ui-formElement, .app-form-field, [class*="form"], [class*="section"],' +
+        '[class*="field"], [class*="row"], tr'
+      );
       if (container) {
         const containerText = container.textContent.toLowerCase();
         if (kw.some(k => containerText.includes(k))) return input;
+      }
+
+      // 4. Fallback : remonter jusqu'à 4 niveaux dans le DOM
+      let el = input.parentElement;
+      for (let depth = 0; depth < 4 && el; depth++, el = el.parentElement) {
+        if (kw.some(k => (el.textContent || '').toLowerCase().includes(k))) {
+          // Vérifier que le texte pertinent est dans CE niveau et non hérité d'un niveau supérieur
+          const ownText = Array.from(el.childNodes)
+            .filter(n => n.nodeType === Node.TEXT_NODE || n.nodeType === Node.ELEMENT_NODE)
+            .map(n => (n.textContent || '').toLowerCase())
+            .join(' ');
+          if (kw.some(k => ownText.includes(k))) return input;
+        }
       }
     }
     return null;
@@ -328,7 +356,19 @@
     // Lire le nom déjà affiché (pour log)
     const existingLabel = getSpecificLabel();
     const existingName  = existingLabel ? existingLabel.textContent.trim() : 'aucun';
-    log(`   ${label} : formulaire='${existingName}' | Firebase='${effectiveFilename}' → Remplacement`);
+
+    // ── Skip si le fichier exact est déjà en place ────────────────────────────
+    // Si le slot est occupé (removeAttachments) et que le nom correspond → rien à faire.
+    if (
+      actionBtn.classList.contains('removeAttachments') &&
+      existingName && existingName !== 'aucun' &&
+      existingName === effectiveFilename
+    ) {
+      log(`   ✅ ${label} : formulaire='${existingName}' | Firebase='${effectiveFilename}' → Skip (déjà présent, identique)`);
+      return true;
+    }
+
+    log(`   ${label} : formulaire='${existingName}' | Firebase='${effectiveFilename}' → ${actionBtn.classList.contains('removeAttachments') ? 'Remplacement' : 'Upload'}`);
 
     // ── Étape 0 : si le slot est occupé (removeAttachments), supprimer le fichier d'abord ──
     let uploadBtn = actionBtn;
@@ -645,6 +685,9 @@
       { keywords: ['best describes your ethnic'],                val: profile.nomura_ethnic_subgroup,   label: 'Sous-groupe ethnique' },
       { keywords: ['religion', 'belief'],                        val: profile.nomura_religion,          label: 'Religion' },
       { keywords: ['sexual orientation'],                        val: profile.nomura_sexual_orientation,label: 'Orientation sexuelle' },
+      // "Do you consider yourself to have a disability, long-term health condition or impairment?"
+      // → dérivé de sg_handicap via gs_disability (Yes / No / Prefer not to say)
+      { keywords: ['disability', 'long-term health', 'impairment', 'consider yourself'], val: profile.gs_disability, label: 'Handicap / condition long terme' },
       { keywords: ['occupation', 'household earner', 'aged about 14'], val: profile.nomura_household_earner, label: 'Profession ménage @14' },
       { keywords: ['free school meals'],                         val: profile.nomura_free_school_meals, label: 'Repas scolaires gratuits' },
       { keywords: ['type of school', 'ages of 11'],              val: profile.nomura_school_type,       label: 'Type d\'école 11-16' },
