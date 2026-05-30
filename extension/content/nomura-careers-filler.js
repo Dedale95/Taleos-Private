@@ -742,7 +742,47 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // 11. Clic sur "Apply now" sur la page offre
+  // 11a. Portail SF sans session — connexion requise avant formulaire
+  // ══════════════════════════════════════════════════════════════════════════════
+  async function handleSFPortalLogin(profile) {
+    log('Portail SF Nomura (careers?company=nomurahold) — connexion requise…');
+    showBanner('Connexion à votre compte Nomura…');
+
+    // Cas 1 : champ username directement visible sur la page
+    const usernameField = await waitFor(
+      () => document.getElementById('username') || document.querySelector('input[type="email"]'),
+      2000, 200
+    );
+    if (usernameField) {
+      await handleSignIn(profile);
+      return;
+    }
+
+    // Cas 2 : lien "Please sign in" qui ouvre une modal de connexion
+    const signInLink = await waitFor(
+      () => document.querySelector('a[onclick*="openSignInModal"]') ||
+            Array.from(document.querySelectorAll('a')).find(a =>
+              /please sign in|sign in/i.test(a.textContent.trim())
+            ),
+      8000, 200
+    );
+
+    if (!signInLink) {
+      log('⚠️ Ni champ email ni lien "Please sign in" trouvé sur le portail SF');
+      showBanner('Connexion requise — cliquez manuellement sur "Please sign in"', 'warn');
+      activateTab();
+      return;
+    }
+
+    signInLink.click();
+    log('✅ Clic "Please sign in" → attente modal connexion…');
+    await sleep(800);
+    await handleSignIn(profile);
+    // Après connexion, background.js re-injecte le filler sur la navigation suivante (formulaire)
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 11b. Clic sur "Apply now" sur la page offre Nomura
   // ══════════════════════════════════════════════════════════════════════════════
   async function handleListingPage(profile) {
     log('Page offre Nomura — attente bouton "Apply now"…');
@@ -768,27 +808,10 @@
     }
 
     applyBtn.click();
-    log('✅ Clic "Apply now" → attente modal Sign In ou formulaire');
-
-    // Attendre modal "Please sign in" (si l'utilisateur n'est pas encore connecté)
-    // Réduit à 400ms : si l'utilisateur est connecté, la page navigue vers career4
-    // dès le clic et ce sleep est interrompu par la navigation.
-    await sleep(400);
-    const signInLink = await waitFor(
-      () => document.querySelector('a[onclick*="openSignInModal"]')
-        || Array.from(document.querySelectorAll('a')).find(a =>
-             /please sign in|connexion/i.test(a.textContent.trim())
-           ),
-      3000, 150
-    );
-
-    if (signInLink) {
-      signInLink.click();
-      log('✅ Clic "Please sign in" → ouverture modal connexion');
-      await sleep(600);
-      await handleSignIn(profile);
-    }
-    // Après connexion, background.js re-injecte le filler sur la prochaine navigation SF
+    log('✅ Clic "Apply now" → navigation vers portail SF en cours…');
+    // Si l'utilisateur n'est pas connecté, SF redirige vers careers?company=nomurahold
+    // et le filler est re-injecté là-bas (handleSFPortalLogin).
+    // Si l'utilisateur est connecté, SF redirige directement vers le formulaire (isApplicationForm).
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -820,10 +843,13 @@
     !url.includes('talentcommunity') &&
     (url.includes('/job/') || url.includes('/jobs/') || url.includes('/Nomura/'));
 
-  // ── Page listing SF (career4, ni formulaire ni connexion) ─────────────────────
-  const isListingPage =
-    isNomuraJobPage ||
-    (url.includes('career4.successfactors.com') && !isApplicationForm);
+  // ── Portail SF sans offre spécifique (redirect depuis talentcommunity sans session) ──
+  // career4.successfactors.com/careers?company=nomurahold — pas encore sur le formulaire,
+  // l'utilisateur n'est pas connecté → il faut cliquer "Please sign in" puis se connecter.
+  const isSFPortalLogin =
+    url.includes('career4.successfactors.com') &&
+    !isApplicationForm &&
+    !isNomuraJobPage;
 
   if (isApplicationForm) {
     // Vérifier si on est sur la page de connexion SF (loginFlowRequired)
@@ -833,8 +859,10 @@
     } else {
       await fillApplicationForm(profile);
     }
-  } else if (isListingPage) {
+  } else if (isNomuraJobPage) {
     await handleListingPage(profile);
+  } else if (isSFPortalLogin) {
+    await handleSFPortalLogin(profile);
   } else {
     log(`URL non reconnue : ${url} — filler inactif`);
   }
