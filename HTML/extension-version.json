@@ -1,7 +1,7 @@
 {
   "version": "1.2.159",
   "version_name": "1.2.159-nomura-signin-mouseevent",
-  "published_at": "2026-05-30T00:00:00Z",
+  "published_at": "2026-05-30T08:16:04Z",
   "release_notes": "Fix Nomura connexion : le bouton #fbqa_signin est maintenant cliqué via dispatchEvent(MouseEvent) au lieu de .click() natif — le handler JUIC juic.fire() reçoit un événement complet. Ajout waitFor(5s) pour trouver le bouton après ouverture du modal. activateTab() si bouton introuvable.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.159.zip"
 }
