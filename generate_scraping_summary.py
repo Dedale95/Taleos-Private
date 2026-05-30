@@ -34,6 +34,11 @@ DB_BY_GROUP = {
     "La Banque Postale": PYTHON_DIR / "la_banque_postale_jobs.db",
     "Bank of America": PYTHON_DIR / "bank_of_america_jobs.db",
     "Citi": PYTHON_DIR / "citi_jobs.db",
+    "Barclays": PYTHON_DIR / "barclays_jobs.db",
+    "Lloyds Banking Group": PYTHON_DIR / "lloyds_jobs.db",
+    "ING": PYTHON_DIR / "ing_jobs.db",
+    "Standard Chartered": PYTHON_DIR / "standard_chartered_jobs.db",
+    "Revolut": PYTHON_DIR / "revolut_jobs.db",
 }
 
 

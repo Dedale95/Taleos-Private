@@ -175,6 +175,36 @@ jobs:
             db_file: citi_jobs.db
             timeout_minutes: 90
             playwright_browser: ""
+          - name: Barclays
+            key: barclays
+            script: barclays_scraper.py
+            db_file: barclays_jobs.db
+            timeout_minutes: 45
+            playwright_browser: ""
+          - name: Lloyds
+            key: lloyds
+            script: lloyds_scraper.py
+            db_file: lloyds_jobs.db
+            timeout_minutes: 15
+            playwright_browser: ""
+          - name: ING
+            key: ing
+            script: ing_scraper.py
+            db_file: ing_jobs.db
+            timeout_minutes: 30
+            playwright_browser: ""
+          - name: Standard Chartered
+            key: standard_chartered
+            script: standard_chartered_scraper.py
+            db_file: standard_chartered_jobs.db
+            timeout_minutes: 90
+            playwright_browser: "chromium"
+          - name: Revolut
+            key: revolut
+            script: revolut_scraper.py
+            db_file: revolut_jobs.db
+            timeout_minutes: 90
+            playwright_browser: "chromium"
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
