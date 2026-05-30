@@ -305,7 +305,7 @@
    * @param {string} filename       - nom de fichier exact
    * @param {string} label          - libellé pour les logs
    */
-  async function uploadFile(actionBtn, storagePath, filename, label = 'Fichier') {
+  async function uploadFile(actionBtn, storagePath, filename, label = 'Fichier', cvOrLm = 'cv') {
     if (!storagePath) { log(`   ⚠️ ${label} : storagePath absent → skip`); return false; }
     if (!actionBtn)   { log(`   ⚠️ ${label} : bouton d'upload introuvable`); return false; }
 
@@ -358,20 +358,27 @@
         log(`   ${label} : pas de popup de confirmation détecté — suppression directe supposée`);
       }
 
-      // Attendre que le bouton redevienne addAttachments (slot libéré)
+      // Attendre que le slot soit libéré — chercher par label (aria) ET par ID original.
+      // SF peut recréer le nœud DOM avec un nouvel ID après suppression, donc on ne
+      // s'accroche PAS uniquement à btnId mais on re-cherche via findAttachButton.
       const addBtn = await waitFor(
         () => {
-          const el = document.getElementById(btnId);
-          return el?.classList.contains('addAttachments') ? el : null;
+          // Priorité 1 : même nœud, classe changée
+          const byId = document.getElementById(btnId);
+          if (byId?.classList.contains('addAttachments')) return byId;
+          // Priorité 2 : nouveau nœud trouvé par label aria (SF a recréé le widget)
+          const byLabel = findAttachButton(cvOrLm);
+          if (byLabel?.classList.contains('addAttachments')) return byLabel;
+          return null;
         },
-        8000, 200
+        12000, 300
       );
       if (!addBtn) {
         log(`   ⚠️ ${label} : addAttachments non apparu après suppression — abandon`);
         return false;
       }
       uploadBtn = addBtn;
-      log(`   ${label} : slot libéré — passage en mode upload`);
+      log(`   ${label} : slot libéré (btn=${addBtn.id}) — passage en mode upload`);
     }
 
     // ── Étape 1 : cliquer le bouton d'upload (addAttachments) ────────────────
@@ -578,7 +585,7 @@
     }
 
     if (profile.cv_storage_path) {
-      await uploadFile(findAttachButton('cv'), profile.cv_storage_path, profile.cv_filename, 'CV');
+      await uploadFile(findAttachButton('cv'), profile.cv_storage_path, profile.cv_filename, 'CV', 'cv');
     } else {
       log('⚠️ cv_storage_path absent — uploadez le CV manuellement');
     }
@@ -594,7 +601,7 @@
         ).length >= 2,
         5000, 200
       );
-      await uploadFile(findAttachButton('lm'), profile.lm_storage_path, profile.lm_filename, 'LM');
+      await uploadFile(findAttachButton('lm'), profile.lm_storage_path, profile.lm_filename, 'LM', 'lm');
     } else {
       log('ℹ️ lm_storage_path absent — pas de lettre de motivation uploadée');
     }
