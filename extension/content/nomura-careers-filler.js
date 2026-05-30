@@ -684,72 +684,97 @@
     log('Page/modal Sign In SF Nomura — connexion avec identifiants enregistrés…');
     showBanner('Connexion à votre compte Nomura…');
 
+    // Attendre que le champ email soit VISIBLE (offsetParent !== null = rendu dans le flux).
+    // Important : #username peut exister dans le DOM avant que la modal s'ouvre.
     const emailInput = await waitFor(
-      () => document.getElementById('username') || document.querySelector('input[type="email"]'),
-      8000
+      () => {
+        const el = document.getElementById('username') || document.querySelector('input[type="email"]');
+        return (el && el.offsetParent !== null) ? el : null;
+      },
+      10000, 200
     );
     const pwdInput = await waitFor(
-      () => document.getElementById('password') || document.querySelector('input[type="password"]'),
-      8000
-    );
-
-    if (!emailInput || !pwdInput) {
-      log('⚠️ Champs email/mot de passe introuvables sur la page Sign In');
-      showBanner('Champs de connexion non trouvés — remplissez manuellement', 'warn');
-      return;
-    }
-
-    setNativeValue(emailInput, profile.auth_email || '');
-    await sleep(300);
-    setNativeValue(pwdInput, profile.auth_password || '');
-    await sleep(500);
-
-    // Bouton "Sign In" — waitFor car le bouton peut apparaître après le chargement du modal
-    const submitBtn = await waitFor(
-      () => document.getElementById('fbqa_signin') ||
-            Array.from(document.querySelectorAll('button')).find(b =>
-              /^sign in$/i.test(b.textContent.trim())
-            ),
+      () => {
+        const el = document.getElementById('password') || document.querySelector('input[type="password"]');
+        return (el && el.offsetParent !== null) ? el : null;
+      },
       5000, 200
     );
 
-    if (!submitBtn) {
-      log('⚠️ Bouton Sign In (#fbqa_signin) introuvable');
-      showBanner('Bouton Sign In non trouvé — cliquez manuellement', 'warn');
+    if (!emailInput || !pwdInput) {
+      log('⚠️ Champs email/mot de passe introuvables ou non visibles');
+      showBanner('Champs de connexion non trouvés — remplissez manuellement', 'warn');
       activateTab();
       return;
     }
 
-    log(`   → Bouton trouvé : #${submitBtn.id || '?'} "${submitBtn.textContent.trim()}"`);
+    log(`   Champs visibles — email: #${emailInput.id || '?'} | pwd: #${pwdInput.id || '?'}`);
+    setNativeValue(emailInput, profile.auth_email || '');
+    await sleep(400);
+    setNativeValue(pwdInput, profile.auth_password || '');
+    await sleep(600);
 
-    // JUIC utilise l'event passé à juic.fire() — dispatchEvent avec MouseEvent complet
-    // pour que l'objet event soit correctement rempli (contrairement à .click() natif).
-    submitBtn.dispatchEvent(new MouseEvent('click', {
-      bubbles: true, cancelable: true, view: window
-    }));
-    log('✅ Clic Sign In (MouseEvent) → attente connexion');
-    showBanner('Connexion en cours…');
+    // Attendre que le bouton Sign In soit VISIBLE et initialisé par JUIC.
+    // Le texte du bouton ("Sign In") n'est rendu par JUIC qu'une fois la modal prête.
+    const submitBtn = await waitFor(
+      () => {
+        const btn = document.getElementById('fbqa_signin');
+        // Visible ET texte non vide → JUIC a fini d'initialiser le bouton
+        if (btn && btn.offsetParent !== null && btn.textContent.trim()) return btn;
+        // Fallback : chercher un bouton "Sign In" visible avec texte
+        return Array.from(document.querySelectorAll('button')).find(b =>
+          /^sign in$/i.test(b.textContent.trim()) && b.offsetParent !== null
+        ) || null;
+      },
+      8000, 200
+    );
 
-    // Attendre la fin de la connexion (formulaire ou erreur)
-    const loginResult = await waitFor(() => {
-      const errorEl = document.querySelector('#errorMsg_1, #uiErrorMsg, #uiErrorContainer_2');
-      if (errorEl && errorEl.offsetParent !== null) {
-        return { error: errorEl.innerText?.trim() || 'Identifiants incorrects' };
-      }
-      const loginForm = document.getElementById('username');
-      if (!loginForm || loginForm.offsetParent === null) {
-        return { success: true };
-      }
-      return null;
-    }, 12000, 400);
-
-    if (loginResult?.error) {
-      log(`❌ Connexion échouée : ${loginResult.error}`);
-      showBanner(`Connexion Nomura échouée : ${loginResult.error}`, 'error');
+    if (!submitBtn) {
+      log('⚠️ Bouton Sign In (#fbqa_signin) non visible / non initialisé par JUIC');
+      showBanner('Bouton Sign In non prêt — cliquez manuellement', 'warn');
+      activateTab();
       return;
     }
 
-    log('✅ Connexion Nomura réussie');
+    log(`   → Bouton prêt : #${submitBtn.id || '?'} "${submitBtn.textContent.trim()}"`);
+
+    // JUIC passe l'objet event à juic.fire() → MouseEvent complet obligatoire.
+    submitBtn.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true, view: window
+    }));
+    log('✅ Clic Sign In (MouseEvent) → attente résultat connexion…');
+    showBanner('Connexion en cours…');
+
+    // Attendre que le bouton Sign In disparaisse (modal fermée) OU qu'une erreur s'affiche.
+    // Ne pas tester #username.offsetParent : il peut être caché dès le début et donner
+    // un faux positif "succès" avant même que le clic ait eu lieu.
+    const loginResult = await waitFor(() => {
+      const errorEl = document.querySelector('#errorMsg_1, #uiErrorMsg, #uiErrorContainer_2');
+      if (errorEl && errorEl.offsetParent !== null && errorEl.textContent.trim()) {
+        return { error: errorEl.textContent.trim() };
+      }
+      // La modal est fermée quand le bouton Sign In n'est plus visible
+      const btn = document.getElementById('fbqa_signin');
+      if (!btn || btn.offsetParent === null) {
+        return { success: true };
+      }
+      return null;
+    }, 15000, 400);
+
+    if (!loginResult) {
+      log('⚠️ Timeout connexion — aucune réponse du formulaire SF');
+      showBanner('Connexion timeout — vérifiez manuellement', 'warn');
+      activateTab();
+      return;
+    }
+    if (loginResult.error) {
+      log(`❌ Connexion échouée : ${loginResult.error}`);
+      showBanner(`Connexion Nomura échouée : ${loginResult.error}`, 'error');
+      activateTab();
+      return;
+    }
+
+    log('✅ Connexion Nomura réussie — SF va rediriger vers le formulaire');
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
