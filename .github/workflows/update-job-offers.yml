@@ -145,6 +145,30 @@ jobs:
             db_file: la_banque_postale_jobs.db
             timeout_minutes: 60
             playwright_browser: ""
+          - name: Nomura
+            key: nomura
+            script: nomura_scraper.py
+            db_file: nomura_jobs.db
+            timeout_minutes: 60
+            playwright_browser: ""
+          - name: MUFG
+            key: mufg
+            script: mufg_scraper.py
+            db_file: mufg_jobs.db
+            timeout_minutes: 30
+            playwright_browser: ""
+          - name: Mizuho
+            key: mizuho
+            script: mizuho_scraper.py
+            db_file: mizuho_jobs.db
+            timeout_minutes: 30
+            playwright_browser: ""
+          - name: Bank of America
+            key: bank_of_america
+            script: bank_of_america_scraper.py
+            db_file: bank_of_america_jobs.db
+            timeout_minutes: 60
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
