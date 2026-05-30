@@ -1,7 +1,7 @@
 {
   "version": "1.2.162",
   "version_name": "1.2.162-nomura-upload-after-delete",
-  "published_at": "2026-05-30T00:00:00Z",
+  "published_at": "2026-05-30T09:18:15Z",
   "release_notes": "Fix Nomura upload LM après suppression : après clic OK sur le popup de confirmation, SF peut recréer le nœud DOM du bouton avec un nouvel ID. Le waitFor cherche maintenant par ID original (priorité 1) ET via findAttachButton(cvOrLm) par label aria (priorité 2). Timeout porté à 12s. uploadFile reçoit cvOrLm en 5ème paramètre.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.162.zip"
 }
