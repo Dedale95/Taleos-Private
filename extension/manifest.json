@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.162",
-  "version_name": "1.2.162-nomura-upload-after-delete",
+  "version": "1.2.163",
+  "version_name": "1.2.163-nomura-queue-fix",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
