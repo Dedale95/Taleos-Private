@@ -2155,7 +2155,8 @@ const CONNECTION_TEST_URLS = {
   allianz: 'https://career5.successfactors.eu/career?company=AZGROUPPROD&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=vGbBbLMSiPxDaedOIn8tTt8WApNMjWQcgDbELe1OyzA%253d',
   axa: 'https://careers.axa.com/careers-home/auth/1/verify-login-type',
   hsbc: 'https://career2.successfactors.eu/career?company=hsbcholdin&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=OupXiSPpV6NVVB92Trb%252fkx9KHywNEecoMl55nAmzpZM%253d',
-  nomura: 'https://career4.successfactors.com/career?company=nomurahold&site=VjItclVPaDlpTTV6elVtOTVzYklhTW5Vdz09&lang=en_US&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=Nomura&_s.crb=SNrcB9xhcLpoddiSLBSDMfAXxCyTprMuQj5mKg81yaA%253d'
+  nomura: 'https://career4.successfactors.com/career?company=nomurahold&site=VjItclVPaDlpTTV6elVtOTVzYklhTW5Vdz09&lang=en_US&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=Nomura&_s.crb=SNrcB9xhcLpoddiSLBSDMfAXxCyTprMuQj5mKg81yaA%253d',
+  bank_of_america: 'https://ghr.wd1.myworkdayjobs.com/en-US/Lateral-US/login'
 };
 
 async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, email, passwordEncoded) {
@@ -2576,6 +2577,12 @@ async function runTestConnection(msg) {
         for (const t of caTabs) idsToClose.add(t.id);
       } catch (_) {}
     }
+    if (bankId === 'bank_of_america') {
+      try {
+        const bofaTabs = await chrome.tabs.query({ windowId: testWindowId, url: ['https://ghr.wd1.myworkdayjobs.com/*'] });
+        for (const t of bofaTabs) idsToClose.add(t.id);
+      } catch (_) {}
+    }
 
     for (const id of idsToClose) {
       try {
@@ -2698,6 +2705,35 @@ async function runTestConnection(msg) {
         });
       } catch (_) {}
       fillRes = await runFill(0);
+    }
+    // Bank of America (Workday) : si déjà connecté → sign out en 2 étapes puis retry
+    if (bankId === 'bank_of_america' && fillRes?.[0]?.result?.needRetry) {
+      const phase = fillRes[0].result.phase;
+      if (phase === 'signout_step2') {
+        // Étape 2 du sign-out (clic Sign Out dans le dropdown)
+        await new Promise(r => setTimeout(r, 700));
+        try {
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/connection-test-runner.js'] });
+        } catch (_) {}
+        fillRes = await runFill(0);
+        // Si sign-out effectué → attendre la page de login puis retry
+        if (fillRes?.[0]?.result?.needRetry && fillRes[0].result.phase === 'signout') {
+          await waitForLoad();
+          await new Promise(r => setTimeout(r, 2500));
+          try {
+            await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/connection-test-runner.js'] });
+          } catch (_) {}
+          fillRes = await runFill(0);
+        }
+      } else if (phase === 'signout') {
+        // Sign out déjà effectué → attendre la page de login
+        await waitForLoad();
+        await new Promise(r => setTimeout(r, 2500));
+        try {
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/connection-test-runner.js'] });
+        } catch (_) {}
+        fillRes = await runFill(0);
+      }
     }
     if (fillRes?.[0]?.result?.error && !fillRes[0].result?.submitted) {
       await closeConnectionTestTabs();
