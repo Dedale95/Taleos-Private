@@ -422,8 +422,57 @@
         signOutEl.click();
         return { done: false, needRetry: true, phase: 'signout', retryDelayMs: 2500 };
       }
-      // Formulaire présent → remplir normalement
-      return fillAndSubmit(bankId, email, password);
+      // Formulaire présent → remplissage React-compatible (Workday utilise des <div role="button">
+      // et le native setter React pour que les champs soient reconnus par la validation)
+      try {
+        const emailEl  = document.querySelector('input[data-automation-id="email"]');
+        const passEl   = document.querySelector('input[data-automation-id="password"]');
+        // Le bouton Sign In est un <div data-automation-id="click_filter" aria-label="Sign In">
+        // → simple .click() ignoré par React ; il faut mousedown+mouseup+click
+        const submitEl = document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                      || document.querySelector('[aria-label="Sign In"][role="button"]')
+                      || document.querySelector('[data-automation-id="signInSubmitButton"]');
+
+        if (!emailEl || !passEl) {
+          return { done: false, error: 'Champs email/mot de passe BofA introuvables' };
+        }
+        if (!submitEl) {
+          return { done: false, error: 'Bouton Sign In BofA introuvable' };
+        }
+
+        // Remplir via le native setter React (sinon React ignore la valeur)
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+
+        nativeSetter.call(emailEl, email);
+        emailEl.dispatchEvent(new Event('input',  { bubbles: true }));
+        emailEl.dispatchEvent(new Event('change', { bubbles: true }));
+
+        nativeSetter.call(passEl, password);
+        passEl.dispatchEvent(new Event('input',  { bubbles: true }));
+        passEl.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Clic React-compatible immédiat : mousedown → mouseup → click sur le <div>
+        // (simple .click() ignoré par Workday React sur les <div role="button">)
+        ['mousedown', 'mouseup', 'click'].forEach(type => {
+          submitEl.dispatchEvent(
+            new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window })
+          );
+        });
+        // Fallback : si React n'a pas encore réactivé le bouton, 2e tentative 300ms plus tard
+        setTimeout(() => {
+          const btn = document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                   || document.querySelector('[aria-label="Sign In"][role="button"]');
+          if (btn) {
+            ['mousedown', 'mouseup', 'click'].forEach(type =>
+              btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window }))
+            );
+          }
+        }, 300);
+
+        return { done: true, submitted: true };
+      } catch (e) {
+        return { done: false, error: e.message };
+      }
     }
     if (bankId === 'nomura') {
       // Si déjà connecté (formulaire de connexion absent)

@@ -1,5 +1,11 @@
 [
   {
+    "version": "1.2.167",
+    "date": "2026-05-31",
+    "emoji": "🖱️",
+    "text": "Bank of America : les identifiants étaient saisis mais le bouton de connexion ne se cliquait pas — corrigé."
+  },
+  {
     "version": "1.2.166",
     "date": "2026-05-31",
     "emoji": "🔧",
