@@ -328,32 +328,32 @@
     );
 
     if (noItems) {
-      log(`  ⚠️ École "${school}" introuvable dans la base Workday`);
-      schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
-      await sleep(200);
-      // Supprimer l'entrée Education vide pour éviter les erreurs de validation
-      const deleteBtn = Array.from(document.querySelectorAll('button')).find(b =>
-        /delete/i.test((b.innerText || '').trim()) && b.offsetWidth > 0
-      );
-      if (deleteBtn) { await clickEl(deleteBtn); await sleep(500); log('  🗑️ Entrée Education supprimée'); }
-      setBanner('⚠️ École non trouvée dans Workday — remplissez Education manuellement', '#e65100');
-      await sleep(2000);
-      return;
-    }
-
-    // Sélectionner la première suggestion qui correspond
-    const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="menuItem"], [data-automation-id="promptLeafNode"]')).find(el =>
-      el.offsetWidth > 0 && (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
-    );
-    if (opt) {
-      opt.click();
-      await sleep(300);
-      // Confirmer avec Enter (pattern Deloitte)
-      schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-      log(`  ✓ Firebase: establishment="${school}" → School`);
-      await sleep(400);
+      // Même pattern que JP Morgan : aucune suggestion → texte libre confirmé par blur()
+      // Workday accepte la saisie libre pour le champ school si aucun résultat
+      log(`  ℹ️ "${school}" non trouvé dans la base Workday → valeur libre confirmée par blur`);
+      schoolInput.dispatchEvent(new Event('change', { bubbles: true }));
+      schoolInput.blur();
+      await sleep(500);
+      log(`  ✓ Firebase: establishment="${school}" → School (texte libre)`);
     } else {
-      log(`  ⚠️ Suggestion "${school}" non trouvée dans le dropdown`);
+      // Sélectionner la première suggestion qui correspond
+      const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="menuItem"], [data-automation-id="promptLeafNode"]')).find(el =>
+        el.offsetWidth > 0 && (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
+      );
+      if (opt) {
+        opt.click();
+        await sleep(300);
+        schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+        log(`  ✓ Firebase: establishment="${school}" → School (suggestion sélectionnée)`);
+        await sleep(400);
+      } else {
+        // Pas de "No Items" mais pas de suggestion non plus → blur comme fallback
+        log(`  ℹ️ Aucune suggestion visible → valeur libre confirmée par blur`);
+        schoolInput.dispatchEvent(new Event('change', { bubbles: true }));
+        schoolInput.blur();
+        await sleep(400);
+        log(`  ✓ Firebase: establishment="${school}" → School (blur fallback)`);
+      }
     }
 
     // Degree → mapping education_level → label Workday
