@@ -289,15 +289,133 @@
     log('✅ My Information complétée');
   }
 
+  // ─── Sélectionner une option dans un listbox Workday ──────────────────────
+  // Pattern DOM vérifié : button[aria-haspopup="listbox"] → click → [role="option"] li
+
+  async function selectListboxOption(btn, optionText) {
+    if (!btn) return false;
+    btn.click();
+    await sleep(700);
+    const option = Array.from(document.querySelectorAll('[role="option"]')).find(
+      el => (el.innerText || el.textContent || '').trim().toLowerCase() === optionText.toLowerCase()
+    );
+    if (option) {
+      option.click();
+      await sleep(300);
+      return true;
+    }
+    // Fermer si pas trouvé
+    btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+    await sleep(200);
+    return false;
+  }
+
   // ─── Étape 2 : My Experience ───────────────────────────────────────────────
+  // Sélecteurs DOM vérifiés :
+  //   Language btn   : button[aria-label="Language Select One Required"]
+  //   Fluent checkbox: input[name="native"]
+  //   W&S btn        : button[aria-label="Written and Spoken Select One Required"]
+  //   Add Another    : [data-automation-id="add-button"] texte "Add Another"
 
   async function fillMyExperience(p) {
     log('📝 Step 2 — My Experience');
-    setBanner('📝 Vérification de votre expérience...');
-    // Workday pré-remplit les sections Work Experience / Education depuis le profil.
-    // On vérifie juste et on avance.
-    log('  ℹ️ Sections Work Experience / Education / Languages : vérification en cours');
-    log('✅ My Experience (pré-remplie par Workday)');
+    setBanner('📝 Remplissage des langues...');
+
+    const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.language || l.name) : [];
+
+    if (langs.length === 0) {
+      log('  ℹ️ Aucune langue dans Firebase — section Languages ignorée');
+    } else {
+      for (let i = 0; i < langs.length; i++) {
+        const lang = langs[i];
+        const langName = lang.language || lang.name || '';
+        const proficiency = (lang.proficiency || '').toLowerCase();
+        const isFluent = ['native', 'bilingual', 'fluent'].includes(proficiency);
+        const wsLevel = isFluent ? 'Fluent'
+          : ['intermediate', 'conversational', 'professional'].includes(proficiency) ? 'Intermediate'
+          : 'Basic';
+
+        // Si pas la 1ère langue → cliquer "Add Another" pour créer une nouvelle ligne
+        if (i > 0) {
+          const addBtn = Array.from(document.querySelectorAll('[data-automation-id="add-button"]'))
+            .find(b => b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim()));
+          if (addBtn) {
+            addBtn.click();
+            await sleep(900);
+            log(`  + Add Another (langue ${i + 1})`);
+          } else {
+            log(`  ⚠️ Bouton Add Another introuvable pour langue ${i + 1}`);
+            break;
+          }
+        }
+
+        // Bouton Language pour la ligne i (index dans tous les boutons language vides)
+        const langBtns = Array.from(document.querySelectorAll('button[aria-label="Language Select One Required"]'));
+        const langBtn = langBtns[i] || langBtns[langBtns.length - 1];
+        const selected = await selectListboxOption(langBtn, langName);
+        if (selected) {
+          log(`  ✓ Firebase: languages[${i}].language="${langName}" → Language`);
+        } else {
+          log(`  ⚠️ Langue "${langName}" introuvable dans la liste Workday`);
+          continue;
+        }
+
+        // Fluent checkbox (index i parmi tous les input[name="native"])
+        const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
+        const nativeCheckbox = nativeInputs[i] || nativeInputs[nativeInputs.length - 1];
+        if (nativeCheckbox) {
+          const shouldBeChecked = isFluent;
+          const isChecked = nativeCheckbox.checked || nativeCheckbox.getAttribute('aria-checked') === 'true';
+          if (shouldBeChecked && !isChecked) {
+            nativeCheckbox.click();
+            log(`  ✓ Firebase: proficiency="${proficiency}" → Fluent: checked`);
+          } else if (shouldBeChecked) {
+            log(`  ✓ Fluent: déjà coché`);
+          } else {
+            log(`  ✓ Firebase: proficiency="${proficiency}" → Fluent: non coché`);
+          }
+          await sleep(200);
+        }
+
+        // Written and Spoken (index i parmi tous les boutons W&S)
+        const wsBtns = Array.from(document.querySelectorAll('button[aria-label="Written and Spoken Select One Required"]'));
+        const wsBtn = wsBtns[i] || wsBtns[wsBtns.length - 1];
+        const wsSelected = await selectListboxOption(wsBtn, wsLevel);
+        if (wsSelected) {
+          log(`  ✓ Firebase: proficiency="${proficiency}" → Written & Spoken: ${wsLevel}`);
+        } else {
+          log(`  ⚠️ Niveau "${wsLevel}" non trouvé`);
+        }
+      }
+    }
+
+    // CV upload — tenter via fetch + DataTransfer (peut être bloqué par Workday React)
+    const cvUrl = p.cv_url || p.cv_download_url || '';
+    const fileInput = document.querySelector('input[type="file"]');
+    if (fileInput && cvUrl) {
+      try {
+        const resp = await fetch(cvUrl);
+        const blob = await resp.blob();
+        const filename = p.cv_filename || 'cv.pdf';
+        const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+        log(`  ✓ Firebase: cv_url → CV uploadé (${filename})`);
+      } catch (e) {
+        log(`  ⚠️ CV upload échoué (${e.message}) — upload manuel requis`);
+        setBanner('⚠️ Uploadez votre CV manuellement puis attendez la suite', '#e65100');
+        await sleep(3000); // Laisser du temps pour l'upload manuel
+      }
+    } else if (fileInput && !cvUrl) {
+      log('  ⚠️ Pas de cv_url dans Firebase — CV à uploader manuellement');
+      setBanner('⚠️ Uploadez votre CV manuellement puis attendez la suite', '#e65100');
+      await sleep(3000);
+    }
+
+    log('✅ My Experience complétée');
   }
 
   // ─── Étape 3 : Application Questions ──────────────────────────────────────
