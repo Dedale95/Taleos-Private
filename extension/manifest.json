@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.172",
-  "version_name": "1.2.172-bofa-fix-signout-test",
+  "version": "1.2.173",
+  "version_name": "1.2.173-bofa-fix-signout-selector",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

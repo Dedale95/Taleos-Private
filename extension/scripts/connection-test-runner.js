@@ -402,20 +402,30 @@
       return fillAndSubmit(bankId, email, password);
     }
     if (bankId === 'bank_of_america') {
-      // Si déjà connecté sur Workday BofA : le span.css-1xtbc5b (email utilisateur) est visible.
-      // Il faut cliquer dessus pour ouvrir le dropdown, puis cliquer "Sign Out" (span.css-1kj610j).
-      const userEmailEl = document.querySelector('span.css-1xtbc5b');
+      // Si déjà connecté sur Workday BofA : un élément contenant l'adresse email (@) est visible
+      // dans la barre de navigation. Les classes CSS (css-1xtbc5b, css-1kj610j) sont génériques
+      // et s'appliquent aussi à "Settings", "Change Email", etc. — on identifie par contenu textuel.
       const loginFormVisible = !!document.querySelector('input[data-automation-id="email"]');
+
+      // Trouver l'élément contenant l'email de l'utilisateur (contient "@")
+      const userEmailEl = !loginFormVisible && Array.from(
+        document.querySelectorAll('button, [role="button"], a, span, div')
+      ).find(el => {
+        const txt = (el.textContent || '').trim();
+        return el.offsetWidth > 0 && /@/.test(txt) && txt.length < 80 && !el.closest('input');
+      });
+
       if (userEmailEl && !loginFormVisible) {
-        // Étape 1 : ouvrir le menu utilisateur
+        // Étape 1 : ouvrir le menu utilisateur en cliquant sur l'email
         if (phase !== 'signout_step2') {
           userEmailEl.click();
-          return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 600 };
+          return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 900 };
         }
-        // Étape 2 : cliquer Sign Out
-        const signOutEl =
-          document.querySelector('span.css-1kj610j') ||
-          findVisibleByText('span, a, button, [role="menuitem"]', /sign out|log out|déconnexion/i);
+        // Étape 2 : cliquer Sign Out — identifier par texte exact, pas par classe CSS
+        const signOutEl = findVisibleByText(
+          'span, a, button, li, [role="menuitem"], [role="option"], div',
+          /^sign\s*out$/i
+        );
         if (!signOutEl) {
           return { done: false, error: 'Menu Sign Out BofA introuvable. Déconnectez-vous manuellement puis relancez le test.' };
         }
