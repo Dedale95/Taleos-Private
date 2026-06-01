@@ -114,8 +114,16 @@
   async function fillField(automationId, value, label) {
     if (!value) return;
     const wrapper = document.querySelector(`[data-automation-id="${automationId}"]`);
-    const inp = wrapper?.querySelector('input:not([type="hidden"]):not([type="file"])');
-    if (!inp) { log(`  ⚠️ Champ ${automationId} introuvable`); return; }
+    if (!wrapper) { log(`  ⚠️ Wrapper ${automationId} introuvable`); return; }
+
+    // Vérifier si la valeur est déjà affichée (chip/pill Workday pour champs pré-remplis)
+    const wrapperText = (wrapper.innerText || '').toLowerCase();
+    if (wrapperText.includes(String(value).toLowerCase())) {
+      log(`  ✓ ${label}: déjà renseigné`); return;
+    }
+
+    const inp = wrapper.querySelector('input:not([type="hidden"]):not([type="file"])');
+    if (!inp) { log(`  ℹ️ ${label}: champ non éditable (déjà rempli par Workday)`); return; }
     const current = inp.value?.trim();
     if (current === String(value).trim()) { log(`  ✓ ${label}: déjà "${current}"`); return; }
     inp.focus();
@@ -370,60 +378,106 @@
   }
 
   // ── 2b. Languages ───────────────────────────────────────────────────────────
-  // Sélecteurs vérifiés sur DOM réel :
-  //   button[aria-label="Language Select One Required"] → listbox 112 langues
-  //   input[name="native"] → fluent checkbox
-  //   button[aria-label="Written and Spoken Select One Required"] → listbox Basic/Intermediate/Fluent
-  //   [data-automation-id="add-button"] texte "Add Another" → nouvelle ligne langue
+  // Profile Firebase : lang.name (ex: "Français") + lang.level (ex: "native")
+  // Workday attend des noms EN ANGLAIS → mapping FR/autres → EN
+
+  const LANG_NAME_MAP = {
+    'français': 'French', 'french': 'French', 'francais': 'French',
+    'anglais': 'English', 'english': 'English',
+    'espagnol': 'Spanish', 'spanish': 'Spanish',
+    'allemand': 'German', 'german': 'German',
+    'italien': 'Italian', 'italian': 'Italian',
+    'portugais': 'Portuguese', 'portuguese': 'Portuguese',
+    'arabe': 'Arabic', 'arabic': 'Arabic',
+    'chinois': 'Chinese (Mandarin)', 'mandarin': 'Chinese (Mandarin)',
+    'japonais': 'Japanese', 'japanese': 'Japanese',
+    'russe': 'Russian', 'russian': 'Russian',
+    'néerlandais': 'Dutch', 'dutch': 'Dutch',
+    'polonais': 'Polish', 'polish': 'Polish',
+  };
+
+  function normalizeLanguageName(raw) {
+    const lower = (raw || '').toLowerCase().trim();
+    return LANG_NAME_MAP[lower] || raw; // si pas dans la map, utiliser tel quel
+  }
+
+  function getWSLevel(level) {
+    const l = (level || '').toLowerCase();
+    if (['native', 'bilingual', 'fluent', 'courant', 'maternelle', 'bilingue'].some(k => l.includes(k))) return 'Fluent';
+    if (['intermediate', 'intermédiaire', 'conversational', 'professional', 'working'].some(k => l.includes(k))) return 'Intermediate';
+    return 'Basic';
+  }
 
   async function fillLanguages(p) {
-    const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.language || l.name) : [];
+    const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.name || l.language) : [];
     if (!langs.length) { log('  ℹ️ Aucune langue dans Firebase'); return; }
 
-    log(`  🌐 Langues à renseigner: ${langs.map(l => l.language).join(', ')}`);
+    const displayNames = langs.map(l => normalizeLanguageName(l.name || l.language)).join(', ');
+    log(`  🌐 Langues à renseigner: ${displayNames}`);
+
+    // Compter les lignes de langue déjà présentes (avec bouton Select One OU déjà remplies)
+    const existingRows = document.querySelectorAll('input[name="native"]');
+    const nbExisting = existingRows.length; // nb de lignes langue déjà dans le DOM
+    log(`  ℹ️ Lignes langue existantes dans Workday: ${nbExisting}`);
 
     for (let i = 0; i < langs.length; i++) {
       const lang = langs[i];
-      const langName = lang.language || lang.name || '';
-      const prof = (lang.proficiency || '').toLowerCase();
-      const isFluent = ['native', 'bilingual', 'fluent'].includes(prof);
-      const wsLevel = isFluent ? 'Fluent'
-        : ['intermediate', 'conversational', 'professional'].includes(prof) ? 'Intermediate'
-        : 'Basic';
+      const langName = normalizeLanguageName(lang.name || lang.language || '');
+      const level = lang.level || lang.proficiency || '';
+      const isFluent = getWSLevel(level) === 'Fluent';
+      const wsLevel = getWSLevel(level);
 
-      // Ajouter une nouvelle ligne si pas la première
-      if (i > 0) {
+      if (!langName) { log(`  ⚠️ Langue ${i+1} : nom vide dans Firebase`); continue; }
+
+      // Si cette ligne existe déjà dans Workday (i < nbExisting), vérifier si déjà remplie
+      if (i < nbExisting) {
+        // Vérifier si la ligne i a déjà une langue sélectionnée
+        const allNatives = Array.from(document.querySelectorAll('input[name="native"]'));
+        const nativeForRow = allNatives[i];
+        // Trouver le bouton langue pour cette ligne spécifique
+        const langBtns = Array.from(document.querySelectorAll('button[aria-label="Language Select One Required"]'));
+        if (langBtns.length === 0 && i === 0) {
+          // Toutes les lignes existantes ont déjà des langues → logger et skip
+          log(`  ✓ Langue 1 : déjà sélectionnée par Workday (lignes pré-remplies)`);
+          continue;
+        }
+        // Sinon, prendre le 1er bouton vide disponible
+      } else {
+        // Ajouter une nouvelle ligne
         const addAnother = Array.from(document.querySelectorAll('button')).find(b =>
           b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
         );
-        if (addAnother) { await clickEl(addAnother); await sleep(800); log(`  + Add Another`); }
+        if (addAnother) { await clickEl(addAnother); await sleep(900); log(`  + Add Another (langue ${i+1})`); }
         else { log('  ⚠️ Add Another introuvable'); break; }
       }
 
-      // Bouton Language vide (le premier avec "Select One Required")
+      // Bouton Language vide disponible
       const langBtn = document.querySelector('button[aria-label="Language Select One Required"]');
-      if (!langBtn) { log(`  ⚠️ Bouton Language introuvable (langue ${i+1})`); continue; }
+      if (!langBtn) {
+        log(`  ✓ Langue ${i+1} "${langName}" : déjà remplie par Workday`);
+        continue;
+      }
 
       const ok = await selectListbox(langBtn, langName);
-      if (ok) log(`  ✓ Firebase: languages[${i}]="${langName}" → Language`);
-      else { log(`  ⚠️ Langue "${langName}" introuvable dans la liste`); continue; }
+      if (ok) log(`  ✓ Firebase: lang.name="${lang.name}" → "${langName}" sélectionné`);
+      else { log(`  ⚠️ Langue "${langName}" introuvable dans la liste Workday`); continue; }
 
-      // Fluent checkbox — prendre le dernier (celui de la ligne qu'on vient d'ajouter)
+      // Fluent checkbox (dernier input[name="native"] dans le DOM = celui de la ligne courante)
       const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
       const nativeChk = nativeInputs[nativeInputs.length - 1];
       if (nativeChk) {
         const isChecked = nativeChk.checked || nativeChk.getAttribute('aria-checked') === 'true';
-        if (isFluent && !isChecked) { nativeChk.click(); log(`  ✓ Fluent: checked`); }
+        if (isFluent && !isChecked) { nativeChk.click(); log(`  ✓ level="${level}" → Fluent: checked`); }
         else if (isFluent) { log(`  ✓ Fluent: déjà coché`); }
-        else { log(`  ✓ Fluent: non coché (${prof})`); }
+        else { log(`  ✓ level="${level}" → Fluent: non coché`); }
         await sleep(200);
       }
 
-      // Written and Spoken — prendre le dernier bouton vide
+      // Written and Spoken (dernier bouton vide)
       const wsBtn = document.querySelector('button[aria-label="Written and Spoken Select One Required"]');
       if (wsBtn) {
         const wsOk = await selectListbox(wsBtn, wsLevel);
-        if (wsOk) log(`  ✓ Firebase: proficiency="${prof}" → W&S: ${wsLevel}`);
+        if (wsOk) log(`  ✓ level="${level}" → W&S: ${wsLevel}`);
       }
 
       await sleep(300);
