@@ -402,38 +402,23 @@
       return fillAndSubmit(bankId, email, password);
     }
     if (bankId === 'bank_of_america') {
-      // Si déjà connecté sur Workday BofA : un élément contenant l'adresse email (@) est visible
-      // dans la barre de navigation. Les classes CSS (css-1xtbc5b, css-1kj610j) sont génériques
-      // et s'appliquent aussi à "Settings", "Change Email", etc. — on identifie par contenu textuel.
+      // DOM Workday BofA (vérifié en direct) :
+      // - Bouton compte : <button id="accountSettingsButton" data-automation-id="utilityMenuButton">
+      // - Après clic → menu : <ul role="menu" aria-labelledby="accountSettingsButton">
+      //     <li><button aria-label="Sign Out" role="menuitem">...</button></li>
+      // Sélecteurs stables : id="accountSettingsButton" et aria-label="Sign Out"
       const loginFormVisible = !!document.querySelector('input[data-automation-id="email"]');
+      const accountBtn = document.getElementById('accountSettingsButton');
+      const isLoggedIn = accountBtn && !loginFormVisible;
 
-      // Trouver l'élément contenant l'email de l'utilisateur (contient "@")
-      const userEmailEl = !loginFormVisible && Array.from(
-        document.querySelectorAll('button, [role="button"], a, span, div')
-      ).find(el => {
-        const txt = (el.textContent || '').trim();
-        return el.offsetWidth > 0 && /@/.test(txt) && txt.length < 80 && !el.closest('input');
-      });
-
-      if (userEmailEl && !loginFormVisible) {
-        // Étape 1 : ouvrir le menu utilisateur en cliquant sur l'email
+      if (isLoggedIn) {
+        // Étape 1 : ouvrir le menu utilisateur
         if (phase !== 'signout_step2') {
-          userEmailEl.click();
+          accountBtn.click();
           return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 900 };
         }
-        // Étape 2 : cliquer Sign Out
-        // findVisibleByText rate les menus Workday en position:fixed (offsetParent===null)
-        // → utiliser getBoundingClientRect() + innerText + regex souple
-        const signOutEl = Array.from(
-          document.querySelectorAll('span, a, button, li, [role="menuitem"], [role="option"], div, p')
-        ).find(el => {
-          const rect = el.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0) return false;
-          // innerText ignore les enfants cachés (icônes SVG, etc.)
-          const txt = ((el.innerText !== undefined ? el.innerText : el.textContent) || '').trim();
-          // "Sign Out" exact (longueur < 20 pour éviter les parents qui contiennent d'autres textes)
-          return /sign\s*out/i.test(txt) && txt.length < 20;
-        });
+        // Étape 2 : cliquer Sign Out via aria-label (stable, indépendant des classes CSS)
+        const signOutEl = document.querySelector('button[aria-label="Sign Out"], [role="menuitem"][aria-label="Sign Out"]');
         if (!signOutEl) {
           return { done: false, error: 'Menu Sign Out BofA introuvable. Déconnectez-vous manuellement puis relancez le test.' };
         }
