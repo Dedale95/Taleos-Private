@@ -93,7 +93,8 @@ const BANK_SCRIPT_MAP = {
   goldman_sachs: 'content/goldman-sachs-careers-filler.js',
   axa: 'content/axa-careers-filler.js',
   hsbc: 'content/hsbc-careers-filler.js',
-  nomura: 'content/nomura-careers-filler.js'
+  nomura: 'content/nomura-careers-filler.js',
+  bank_of_america_workday: 'content/bank-of-america-workday-filler.js'
 };
 
 function hasBankAutomation(bankId) {
@@ -2832,6 +2833,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'goldman_sachs' || url.includes('higher.gs.com') || url.includes('hdpc.fa.us2.oraclecloud.com')) return 'goldman_sachs';
   if (bid === 'hsbc' || url.includes('portal.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
   if (bid === 'nomura' || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
+  if (bid === 'bank_of_america_workday' || url.includes('ghr.wd1.myworkdayjobs.com')) return 'bank_of_america_workday';
   return 'other';
 }
 
@@ -3026,7 +3028,7 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       if (!_tabOpen) {
         // Onglet fermé → nettoyer le pending et laisser le nouveau clic passer normalement
         console.log(`[Taleos] ${bankId} : pending orphelin (onglet #${_pendingTabId} fermé) → nettoyage avant relance`);
-        const _tabIdKey = bankId === 'hsbc' ? 'taleos_hsbc_tab_id' : bankId === 'nomura' ? 'taleos_nomura_tab_id' : null;
+        const _tabIdKey = bankId === 'hsbc' ? 'taleos_hsbc_tab_id' : bankId === 'nomura' ? 'taleos_nomura_tab_id' : bankId === 'bank_of_america_workday' ? 'taleos_bank_of_america_workday_tab_id' : null;
         const _keysToRemove = _tabIdKey ? [_pendingKey, _tabIdKey] : [_pendingKey];
         await chrome.storage.local.remove(_keysToRemove).catch(() => {});
       } else {
@@ -3617,6 +3619,86 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }
     };
     chrome.tabs.onUpdated.addListener(_nomuraInitListener);
+    await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'bank_of_america_workday') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    // Fermer un onglet BofA mort s'il en existe un.
+    try {
+      const { taleos_bank_of_america_workday_tab_id: existingBofATabId } = await chrome.storage.local.get(['taleos_bank_of_america_workday_tab_id']);
+      if (existingBofATabId) {
+        const existingTab = await chrome.tabs.get(existingBofATabId).catch(() => null);
+        if (existingTab) {
+          console.log(`[Taleos] BofA Workday : fermeture onglet mort #${existingBofATabId} avant relance`);
+          await chrome.tabs.remove(existingBofATabId).catch(() => {});
+        }
+        await chrome.storage.local.remove(['taleos_bank_of_america_workday_tab_id', 'taleos_pending_bank_of_america_workday']).catch(() => {});
+      }
+    } catch (_) {}
+
+    const bofaCreateOpts = { url: offerUrl, active: true };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) bofaCreateOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const bofaPendingBase = {
+      profile: { ...profile, auth_email: profile.auth_email || profile.email, auth_password: profile.auth_password },
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName: companyName || 'Bank of America',
+      location: offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId: null,
+      timestamp: Date.now()
+    };
+    // Écrire l'état pending AVANT de créer l'onglet pour résister à un crash du service worker.
+    await chrome.storage.local.set({ taleos_pending_bank_of_america_workday: bofaPendingBase });
+    const tab = await chrome.tabs.create(bofaCreateOpts);
+    await registerApplyRunForTab(tab.id, runMeta);
+    bofaPendingBase.tabId = tab.id;
+    await chrome.storage.local.set({
+      taleos_pending_bank_of_america_workday: bofaPendingBase,
+      taleos_bank_of_america_workday_tab_id: tab.id
+    });
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      [100, 300, 600].forEach((ms) => setTimeout(() => {
+        chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+      }, ms));
+    }
+    // Listener d'injection : attend que la page BofA Workday soit chargée
+    const _bofaTabId = tab.id;
+    const _bofaDeadline = Date.now() + 5 * 60 * 1000;
+    const _bofaInitListener = async (tid, info, updatedTab) => {
+      if (tid !== _bofaTabId || info.status !== 'complete') return;
+      if (Date.now() > _bofaDeadline) {
+        chrome.tabs.onUpdated.removeListener(_bofaInitListener);
+        return;
+      }
+      const tabUrl = (updatedTab?.url || '').toLowerCase();
+      if (!tabUrl.includes('ghr.wd1.myworkdayjobs.com')) return;
+      chrome.tabs.onUpdated.removeListener(_bofaInitListener);
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const guardCheck = await chrome.scripting.executeScript({
+          target: { tabId: _bofaTabId },
+          func: () => globalThis.__TALEOS_BOFA_FILLER_RUNNING__
+        });
+        if (guardCheck?.[0]?.result === true) {
+          console.log(`[Taleos BofA] Guard actif — filler déjà en cours`);
+          return;
+        }
+        await chrome.scripting.executeScript({ target: { tabId: _bofaTabId }, files: ['scripts/taleos-automation-banner.js'] });
+        await chrome.scripting.executeScript({ target: { tabId: _bofaTabId }, files: ['content/bank-of-america-workday-filler.js'] });
+        console.log(`[Taleos BofA] Injection initiale OK (tabId=${_bofaTabId})`);
+      } catch (e) {
+        console.error('[Taleos BofA] Injection initiale échouée:', e);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(_bofaInitListener);
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos

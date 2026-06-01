@@ -22,10 +22,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # ⚠️  Les JSON de données (scraped_jobs_*.json) sont générés exclusivement
-          # par le CI public (update-job-offers.yml) et incluent toutes les sources
-          # (JP Morgan, Goldman Sachs…). On les PRÉSERVE depuis le dépôt public,
-          # sans jamais les écraser avec la version incomplète du dépôt privé.
+          # ⚠️  Les gros JSON de données brutes (scraped_jobs_live.json, full.json,
+          # fichiers individuels par source) sont générés exclusivement par le CI public
+          # (update-job-offers.yml). On les PRÉSERVE depuis le dépôt public pour éviter
+          # de les écraser avec une version incomplète du dépôt privé.
+          # Le summary (scraped_jobs_summary.json) est maintenu manuellement dans le dépôt
+          # privé et doit TOUJOURS être propagé — il n'est PAS protégé.
           # On utilise des noms de backup basés sur le chemin complet (/ → _) pour
           # éviter les collisions entre HTML/scraped_jobs_live.json et scraped_jobs_live.json.
           mkdir -p /tmp/public-data
@@ -33,10 +35,8 @@ jobs:
             HTML/scraped_jobs_live.json \
             HTML/scraped_jobs.json \
             HTML/scraped_jobs_full.json \
-            HTML/scraped_jobs_summary.json \
             scraped_jobs_live.json \
             scraped_jobs.json \
-            scraped_jobs_summary.json \
             scraped_jobs.csv; do
             bak_name="$(echo "$f" | tr '/' '_')"
             [ -f "public-repo/$f" ] && cp "public-repo/$f" "/tmp/public-data/${bak_name}.bak" && echo "💾 Sauvegardé: $f" || true
@@ -56,10 +56,8 @@ jobs:
             HTML/scraped_jobs_live.json \
             HTML/scraped_jobs.json \
             HTML/scraped_jobs_full.json \
-            HTML/scraped_jobs_summary.json \
             scraped_jobs_live.json \
             scraped_jobs.json \
-            scraped_jobs_summary.json \
             scraped_jobs.csv; do
             bak_name="$(echo "$f" | tr '/' '_')"
             bak="/tmp/public-data/${bak_name}.bak"
