@@ -172,6 +172,20 @@
     await fillField('formField-postalCode',           p.postal_code,'postal_code');
     await fillField('formField-phoneNumber',          p.phone,      'phone');
 
+    // "How Did You Hear About Us?" → Bank of America Careers Site
+    // formField-source est un listbox Workday — toujours forcer la bonne valeur
+    const sourceBtn = document.querySelector('[data-automation-id="formField-source"] button[aria-haspopup]');
+    if (sourceBtn) {
+      const currentSource = (sourceBtn.innerText || '').trim();
+      if (!/bank of america careers site/i.test(currentSource)) {
+        const ok = await selectListbox(sourceBtn, 'Bank of America Careers Site');
+        if (ok) log('  ✓ How Did You Hear: Bank of America Careers Site');
+        else log('  ⚠️ "Bank of America Careers Site" introuvable dans la liste');
+      } else {
+        log('  ✓ How Did You Hear: déjà Bank of America Careers Site');
+      }
+    }
+
     // Country (dropdown) — pré-sélectionné par Workday, vérifier seulement
     const countryBtn = document.querySelector('[data-automation-id="formField-country"] button[aria-haspopup]');
     if (countryBtn && !/france/i.test(countryBtn.innerText)) {
