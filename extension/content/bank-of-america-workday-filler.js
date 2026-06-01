@@ -133,16 +133,16 @@
   }
 
   // Select an option from a Workday listbox
-  // Clicks the trigger button → waits for [role="option"] → clicks matching option
+  // Workday utilise [role="option"] OU [data-automation-id="promptOption"] selon le contexte
   async function selectListbox(triggerBtn, optionText, timeout = 3000) {
     if (!triggerBtn) return false;
     triggerBtn.click();
     await sleep(600);
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
-      const opt = Array.from(document.querySelectorAll('[role="option"]')).find(
-        el => (el.innerText || el.textContent || '').trim().toLowerCase() === optionText.toLowerCase()
-      );
+      const opt = Array.from(document.querySelectorAll(
+        '[role="option"], [data-automation-id="promptOption"], [data-automation-id="menuItem"]'
+      )).find(el => (el.innerText || el.textContent || '').trim().toLowerCase() === optionText.toLowerCase());
       if (opt) { opt.click(); await sleep(300); return true; }
       await sleep(200);
     }
@@ -327,33 +327,30 @@
       el.offsetWidth > 0 && /^no items/i.test((el.innerText || '').trim())
     );
 
-    if (noItems) {
-      // Même pattern que JP Morgan : aucune suggestion → texte libre confirmé par blur()
-      // Workday accepte la saisie libre pour le champ school si aucun résultat
-      log(`  ℹ️ "${school}" non trouvé dans la base Workday → valeur libre confirmée par blur`);
+    // Confirmer la saisie : suggestion cliquée OU texte libre avec double Enter + blur
+    // (double Enter = pattern JP Morgan pour confirmer les typeaheads Workday)
+    const opt = !noItems && Array.from(document.querySelectorAll(
+      '[role="option"], [data-automation-id="promptOption"], [data-automation-id="menuItem"], [data-automation-id="promptLeafNode"]'
+    )).find(el => el.offsetWidth > 0 && (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase()));
+
+    if (opt) {
+      opt.click();
+      await sleep(300);
+      ['keydown', 'keyup'].forEach(t => schoolInput.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', keyCode: 13, bubbles: true })));
+      log(`  ✓ Firebase: establishment="${school}" → School (suggestion)`);
+      await sleep(400);
+    } else {
+      // Texte libre : double Enter + blur (JP Morgan pattern)
+      if (noItems) log(`  ℹ️ "${school}" non trouvé dans Workday → texte libre`);
+      else log(`  ℹ️ Aucune suggestion visible → texte libre`);
+      ['keydown', 'keyup'].forEach(t => schoolInput.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', keyCode: 13, bubbles: true })));
+      await sleep(200);
+      ['keydown', 'keyup'].forEach(t => schoolInput.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', keyCode: 13, bubbles: true })));
+      await sleep(200);
       schoolInput.dispatchEvent(new Event('change', { bubbles: true }));
       schoolInput.blur();
       await sleep(500);
-      log(`  ✓ Firebase: establishment="${school}" → School (texte libre)`);
-    } else {
-      // Sélectionner la première suggestion qui correspond
-      const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="menuItem"], [data-automation-id="promptLeafNode"]')).find(el =>
-        el.offsetWidth > 0 && (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
-      );
-      if (opt) {
-        opt.click();
-        await sleep(300);
-        schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-        log(`  ✓ Firebase: establishment="${school}" → School (suggestion sélectionnée)`);
-        await sleep(400);
-      } else {
-        // Pas de "No Items" mais pas de suggestion non plus → blur comme fallback
-        log(`  ℹ️ Aucune suggestion visible → valeur libre confirmée par blur`);
-        schoolInput.dispatchEvent(new Event('change', { bubbles: true }));
-        schoolInput.blur();
-        await sleep(400);
-        log(`  ✓ Firebase: establishment="${school}" → School (blur fallback)`);
-      }
+      log(`  ✓ Firebase: establishment="${school}" → School (texte libre confirmé)`);
     }
 
     // Degree → mapping education_level → label Workday
@@ -375,6 +372,44 @@
     if (diplYear) await fillField('formField-lastYearAttended', diplYear, 'diploma_year');
 
     log('  ℹ️ Field of Study et From year non disponibles dans Firebase → à compléter manuellement');
+  }
+
+  // Trouver le bouton "Add Another" de la section Languages spécifiquement.
+  // Stratégie : remonter depuis input[name="native"] jusqu'au parent de la section
+  // puis trouver le bouton "Add Another" dans ce scope — évite de confondre
+  // avec le bouton "Add Another" de la section Education.
+  function findLanguageAddAnotherBtn() {
+    // 1. Chercher via proximity : le bouton "Add Another" le plus proche du dernier input[name="native"]
+    const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
+    if (nativeInputs.length > 0) {
+      const lastNative = nativeInputs[nativeInputs.length - 1];
+      // Remonter jusqu'à trouver un ancêtre contenant "Add Another"
+      let el = lastNative.parentElement;
+      for (let depth = 0; depth < 10 && el; depth++) {
+        const btn = Array.from(el.querySelectorAll('button')).find(b =>
+          b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
+        );
+        if (btn) return btn;
+        el = el.parentElement;
+      }
+    }
+    // 2. Fallback : H4 "Languages" → chercher "Add Another" dans le bloc suivant
+    const langH4 = Array.from(document.querySelectorAll('h4')).find(h => /^languages$/i.test(h.textContent.trim()));
+    if (langH4) {
+      let el = langH4.parentElement;
+      for (let depth = 0; depth < 6 && el; depth++) {
+        const btn = Array.from(el.querySelectorAll('button')).find(b =>
+          b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
+        );
+        if (btn) return btn;
+        el = el.parentElement;
+      }
+    }
+    // 3. Dernier recours : prendre le dernier "Add Another" de la page (Languages est après Education)
+    const allAddAnother = Array.from(document.querySelectorAll('button')).filter(b =>
+      b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
+    );
+    return allAddAnother[allAddAnother.length - 1] || null;
   }
 
   // ── 2b. Languages ───────────────────────────────────────────────────────────
@@ -443,12 +478,11 @@
         }
         // Sinon, prendre le 1er bouton vide disponible
       } else {
-        // Ajouter une nouvelle ligne
-        const addAnother = Array.from(document.querySelectorAll('button')).find(b =>
-          b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
-        );
-        if (addAnother) { await clickEl(addAnother); await sleep(900); log(`  + Add Another (langue ${i+1})`); }
-        else { log('  ⚠️ Add Another introuvable'); break; }
+        // Ajouter une nouvelle ligne — trouver "Add Another" dans la section Languages
+        // (pas celui d'Education ou d'une autre section)
+        const langAddAnother = findLanguageAddAnotherBtn();
+        if (langAddAnother) { await clickEl(langAddAnother); await sleep(900); log(`  + Add Another (langue ${i+1})`); }
+        else { log('  ⚠️ Add Another Languages introuvable'); break; }
       }
 
       // Bouton Language vide disponible
