@@ -44,12 +44,62 @@
     el.textContent = text;
   }
 
-  // React-compatible value setter
+  // React-compatible value setter (bulk — pour champs texte simples)
   function reactSet(el, value) {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     if (setter) setter.call(el, value); else el.value = value;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Frappe caractère par caractère pour déclencher l'API debounce Workday
+  // (même technique que Deloitte filler — requis pour les typeaheads)
+  function simulateTyping(el, text) {
+    return new Promise(resolve => {
+      if (!el || !text) { resolve(); return; }
+      const str = String(text).trim();
+      const nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      el.focus(); el.click();
+      try { el.select(); } catch (_) {}
+      const tracker = el._valueTracker;
+      if (tracker) tracker.setValue(el.value || '');
+      if (nativeSet) nativeSet.call(el, ''); else el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      let i = 0;
+      function next() {
+        if (i >= str.length) { setTimeout(resolve, 100); return; }
+        const ch = str[i++];
+        const cur = el.value || '';
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+        const trk = el._valueTracker;
+        if (trk) trk.setValue(cur);
+        if (nativeSet) nativeSet.call(el, cur + ch); else el.value = cur + ch;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+        setTimeout(next, 60);
+      }
+      setTimeout(next, 200);
+    });
+  }
+
+  // Récupérer un fichier depuis Firebase Storage et l'assigner à un input[type=file]
+  // (même technique que Deloitte/Nomura — fonctionne sur Workday)
+  async function setFileFromStorage(fileInput, storagePath, filename) {
+    if (!fileInput || !storagePath) return false;
+    const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
+    if (!r || r.error || !r.base64) { log(`  ❌ fetch_storage_file: ${r?.error || 'pas de base64'}`); return false; }
+    const bin = atob(r.base64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const blob = new Blob([arr], { type: r.type || 'application/pdf' });
+    const file = new File([blob], filename || r.filename || 'cv.pdf', { type: blob.type });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(500);
+    return true;
   }
 
   // Click with scroll
@@ -255,14 +305,14 @@
     await clickEl(eduAddBtn);
     await sleep(1000);
 
-    // Typeahead School
+    // Typeahead School — frappe caractère par caractère (déclenche l'API Workday)
     const schoolInput = document.querySelector('[data-automation-id="formField-school"] input')
       || document.querySelector('input[id*="--school"]');
     if (!schoolInput) { log('  ⚠️ Champ School introuvable'); return; }
 
-    schoolInput.focus();
-    reactSet(schoolInput, school);
-    await sleep(1500); // délai pour l'API typeahead
+    log(`  ⌨️ Frappe école "${school}"...`);
+    await simulateTyping(schoolInput, school);
+    await sleep(1500); // délai API Workday
 
     // Vérifier les suggestions
     const noItems = Array.from(document.querySelectorAll('*')).find(el =>
@@ -270,26 +320,32 @@
     );
 
     if (noItems) {
-      // École introuvable → supprimer l'entrée, informer l'utilisateur
-      log(`  ⚠️ École "${school}" introuvable dans Workday → suppression + manuel requis`);
+      log(`  ⚠️ École "${school}" introuvable dans la base Workday`);
       schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
       await sleep(200);
-      const deleteBtn = document.querySelector('button[aria-label*="Delete"], button:has(span:contains("Delete"))')
-        || Array.from(document.querySelectorAll('button')).find(b => /delete/i.test((b.innerText || '').trim()) && b.offsetWidth > 0);
-      if (deleteBtn) { await clickEl(deleteBtn); await sleep(500); }
+      // Supprimer l'entrée Education vide pour éviter les erreurs de validation
+      const deleteBtn = Array.from(document.querySelectorAll('button')).find(b =>
+        /delete/i.test((b.innerText || '').trim()) && b.offsetWidth > 0
+      );
+      if (deleteBtn) { await clickEl(deleteBtn); await sleep(500); log('  🗑️ Entrée Education supprimée'); }
       setBanner('⚠️ École non trouvée dans Workday — remplissez Education manuellement', '#e65100');
       await sleep(2000);
       return;
     }
 
-    // Sélectionner la suggestion
-    const opt = Array.from(document.querySelectorAll('[role="option"]')).find(el =>
-      (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
+    // Sélectionner la première suggestion qui correspond
+    const opt = Array.from(document.querySelectorAll('[role="option"], [data-automation-id="menuItem"], [data-automation-id="promptLeafNode"]')).find(el =>
+      el.offsetWidth > 0 && (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
     );
     if (opt) {
       opt.click();
+      await sleep(300);
+      // Confirmer avec Enter (pattern Deloitte)
+      schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
       log(`  ✓ Firebase: establishment="${school}" → School`);
       await sleep(400);
+    } else {
+      log(`  ⚠️ Suggestion "${school}" non trouvée dans le dropdown`);
     }
 
     // Degree → mapping education_level → label Workday
@@ -375,43 +431,48 @@
   }
 
   // ── 2c. CV Upload ───────────────────────────────────────────────────────────
-  // Workday React bloque l'injection JS native (DataTransfer ignoré).
-  // Stratégie : essayer fetch+DataTransfer, puis pause manuelle avec reprise auto.
+  // Même pattern que Deloitte/Nomura : fetch_storage_file (background) → DataTransfer
+  // Fonctionne sur Workday car le background a le token Firebase Storage.
 
   async function uploadCV(p) {
     const fileInput = document.querySelector('input[type="file"]');
     if (!fileInput) { log('  ℹ️ Pas d\'input file visible'); return; }
 
-    // Vérifier si déjà uploadé
+    // Vérifier si déjà uploadé (Workday peut l'avoir pré-rempli)
     if (fileInput.files?.length > 0) { log('  ✓ CV déjà uploadé'); return; }
 
-    const cvUrl = p.cv_url || p.cv_download_url || '';
-    if (cvUrl) {
-      // Tentative via fetch + DataTransfer
-      try {
-        const resp = await fetch(cvUrl);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const blob = await resp.blob();
-        const filename = p.cv_filename || 'cv.pdf';
-        const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        fileInput.files = dt.files;
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-        fileInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(800);
-
-        if (fileInput.files?.length > 0) {
-          log(`  ✓ CV uploadé via fetch+DataTransfer (${filename})`);
-          return;
-        }
-      } catch (e) {
-        log(`  ℹ️ DataTransfer: ${e.message} (Workday bloque l'injection JS)`);
+    // Vérifier si un CV est déjà affiché dans la section (nom visible)
+    const cvFilename = (p.cv_filename || '').toLowerCase();
+    if (cvFilename) {
+      const pageText = document.body.innerText.toLowerCase();
+      if (pageText.includes(cvFilename.replace('.pdf', ''))) {
+        log(`  ✓ CV "${p.cv_filename}" déjà présent`);
+        return;
       }
     }
 
-    // Pause manuelle — attendre que l'utilisateur uploade le CV (max 3 min)
-    log('  ⏸️ CV : upload manuel requis — en attente...');
+    const storagePath = p.cv_storage_path || '';
+    const filename = p.cv_filename || (storagePath ? storagePath.split('/').pop() : 'cv.pdf');
+
+    if (!storagePath) {
+      log('  ⚠️ cv_storage_path manquant dans le profil Firebase');
+      // Fallback : pause manuelle
+      await waitForManualCV(fileInput);
+      return;
+    }
+
+    log(`  ⏳ Téléchargement CV depuis Firebase Storage...`);
+    const ok = await setFileFromStorage(fileInput, storagePath, filename);
+
+    if (ok) {
+      log(`  ✓ Firebase: cv_storage_path → CV "${filename}" uploadé`);
+    } else {
+      log('  ⚠️ Échec upload CV via storage — attente upload manuel');
+      await waitForManualCV(fileInput);
+    }
+  }
+
+  async function waitForManualCV(fileInput) {
     setBanner('⏸️ ÉTAPE MANUELLE : Uploadez votre CV, l\'automatisation reprend automatiquement', '#c47900');
     let waited = 0;
     while (waited < 180000) {
@@ -423,7 +484,7 @@
       await sleep(1000);
       waited += 1000;
     }
-    log('  ⚠️ Timeout CV upload (3 min) — on continue sans CV');
+    log('  ⚠️ Timeout CV (3 min)');
   }
 
   // ─── STEP 3 : Application Questions ─────────────────────────────────────────
