@@ -2733,11 +2733,14 @@ async function runTestConnection(msg) {
       const phase = fillRes[0].result.phase;
       if (phase === 'signout_step2') {
         // Étape 2 du sign-out (clic Sign Out dans le dropdown)
-        await new Promise(r => setTimeout(r, 700));
+        // Attendre que le dropdown s'ouvre avant de cliquer Sign Out
+        await new Promise(r => setTimeout(r, 900));
         try {
           await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/connection-test-runner.js'] });
         } catch (_) {}
-        fillRes = await runFill(0);
+        // Passer phase='signout_step2' pour que le runner clique "Sign Out" (étape 2)
+        // et non l'email (étape 1) à nouveau
+        fillRes = await runFill('signout_step2');
         // Si sign-out effectué → attendre la page de login puis retry
         if (fillRes?.[0]?.result?.needRetry && fillRes[0].result.phase === 'signout') {
           await waitForLoad();
