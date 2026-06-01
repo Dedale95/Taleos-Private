@@ -374,16 +374,43 @@
     log('  ℹ️ Field of Study et From year non disponibles dans Firebase → à compléter manuellement');
   }
 
+  // Trouver le bloc de section Languages dans le DOM
+  // Retourne l'élément racine le plus proche qui contient "Languages" comme heading
+  function findLanguageSectionRoot() {
+    const heading = Array.from(document.querySelectorAll('h3, h4, [data-automation-id*="languageSection"], legend, [role="heading"]'))
+      .find(el => /^languages?$/i.test((el.textContent || '').trim()) && el.offsetWidth > 0);
+    if (!heading) return null;
+    // Remonter jusqu'à trouver un conteneur significatif
+    let el = heading.parentElement;
+    for (let i = 0; i < 8 && el; i++) {
+      if (el.querySelectorAll('button').length >= 1) return el;
+      el = el.parentElement;
+    }
+    return heading.parentElement;
+  }
+
+  // Bouton "Add" initial de la section Languages (quand 0 lignes existent)
+  function findLanguageAddBtn() {
+    const root = findLanguageSectionRoot();
+    if (root) {
+      const btn = Array.from(root.querySelectorAll('button')).find(b =>
+        b.offsetWidth > 0 && /^add$/i.test((b.innerText || '').trim())
+      );
+      if (btn) return btn;
+    }
+    // Fallback : dernier bouton "Add" de la page (Languages est la dernière section)
+    const allAdds = Array.from(document.querySelectorAll('button')).filter(b =>
+      b.offsetWidth > 0 && /^add$/i.test((b.innerText || '').trim())
+    );
+    return allAdds[allAdds.length - 1] || null;
+  }
+
   // Trouver le bouton "Add Another" de la section Languages spécifiquement.
-  // Stratégie : remonter depuis input[name="native"] jusqu'au parent de la section
-  // puis trouver le bouton "Add Another" dans ce scope — évite de confondre
-  // avec le bouton "Add Another" de la section Education.
   function findLanguageAddAnotherBtn() {
     // 1. Chercher via proximity : le bouton "Add Another" le plus proche du dernier input[name="native"]
     const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
     if (nativeInputs.length > 0) {
       const lastNative = nativeInputs[nativeInputs.length - 1];
-      // Remonter jusqu'à trouver un ancêtre contenant "Add Another"
       let el = lastNative.parentElement;
       for (let depth = 0; depth < 10 && el; depth++) {
         const btn = Array.from(el.querySelectorAll('button')).find(b =>
@@ -393,19 +420,15 @@
         el = el.parentElement;
       }
     }
-    // 2. Fallback : H4 "Languages" → chercher "Add Another" dans le bloc suivant
-    const langH4 = Array.from(document.querySelectorAll('h4')).find(h => /^languages$/i.test(h.textContent.trim()));
-    if (langH4) {
-      let el = langH4.parentElement;
-      for (let depth = 0; depth < 6 && el; depth++) {
-        const btn = Array.from(el.querySelectorAll('button')).find(b =>
-          b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
-        );
-        if (btn) return btn;
-        el = el.parentElement;
-      }
+    // 2. Section Languages → chercher "Add Another"
+    const root = findLanguageSectionRoot();
+    if (root) {
+      const btn = Array.from(root.querySelectorAll('button')).find(b =>
+        b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
+      );
+      if (btn) return btn;
     }
-    // 3. Dernier recours : prendre le dernier "Add Another" de la page (Languages est après Education)
+    // 3. Dernier recours : dernier "Add Another" de la page
     const allAddAnother = Array.from(document.querySelectorAll('button')).filter(b =>
       b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
     );
@@ -464,22 +487,23 @@
 
       if (!langName) { log(`  ⚠️ Langue ${i+1} : nom vide dans Firebase`); continue; }
 
-      // Si cette ligne existe déjà dans Workday (i < nbExisting), vérifier si déjà remplie
-      if (i < nbExisting) {
-        // Vérifier si la ligne i a déjà une langue sélectionnée
-        const allNatives = Array.from(document.querySelectorAll('input[name="native"]'));
-        const nativeForRow = allNatives[i];
-        // Trouver le bouton langue pour cette ligne spécifique
+      const currentRows = document.querySelectorAll('input[name="native"]').length;
+
+      if (i < currentRows) {
+        // Ligne déjà présente — vérifier si elle a déjà une langue sélectionnée
         const langBtns = Array.from(document.querySelectorAll('button[aria-label="Language Select One Required"]'));
-        if (langBtns.length === 0 && i === 0) {
-          // Toutes les lignes existantes ont déjà des langues → logger et skip
-          log(`  ✓ Langue 1 : déjà sélectionnée par Workday (lignes pré-remplies)`);
+        if (langBtns.length === 0) {
+          log(`  ✓ Langue ${i+1} : déjà sélectionnée par Workday`);
           continue;
         }
-        // Sinon, prendre le 1er bouton vide disponible
+        // Sinon, prendre le 1er bouton vide disponible (traité plus bas)
+      } else if (i === 0 && currentRows === 0) {
+        // Première langue et aucune ligne n'existe encore → clic sur "Add" de la section
+        const addBtn = findLanguageAddBtn();
+        if (addBtn) { await clickEl(addBtn); await sleep(900); log(`  + Add Languages (langue 1)`); }
+        else { log('  ⚠️ Bouton Add Languages introuvable'); break; }
       } else {
-        // Ajouter une nouvelle ligne — trouver "Add Another" dans la section Languages
-        // (pas celui d'Education ou d'une autre section)
+        // Langues supplémentaires → "Add Another"
         const langAddAnother = findLanguageAddAnotherBtn();
         if (langAddAnother) { await clickEl(langAddAnother); await sleep(900); log(`  + Add Another (langue ${i+1})`); }
         else { log('  ⚠️ Add Another Languages introuvable'); break; }
@@ -576,28 +600,146 @@
   }
 
   // ─── STEP 3 : Application Questions ─────────────────────────────────────────
-  // Structure job-spécifique. Stratégie conservative : répondre "No" aux booléens.
+  // Questions Yes/No (dropdown Workday) + champs texte (employeur, salaire, dates…)
+  // Stratégie : "Yes" pour right-to-work, "No" pour tout le reste.
+
+  // Formater une date ISO (YYYY-MM-DD) en MM/DD/YYYY pour Workday
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[2]}/${m[3]}/${m[1]}` : String(iso);
+  }
+
+  // Vérifie si un bouton dropdown a déjà une valeur sélectionnée (pas "Select One")
+  function dropdownIsFilled(btn) {
+    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+    return txt !== '' && txt !== 'select one' && txt !== 'select';
+  }
+
+  // Ouvre le listbox, inspecte les options disponibles, retourne la liste
+  async function getDropdownOptions(btn, timeout = 2000) {
+    btn.click();
+    await sleep(500);
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const opts = Array.from(document.querySelectorAll(
+        '[role="option"], [data-automation-id="promptOption"], [data-automation-id="menuItem"]'
+      )).filter(el => el.offsetWidth > 0);
+      if (opts.length > 0) return opts.map(o => (o.innerText || o.textContent || '').trim());
+      await sleep(200);
+    }
+    return [];
+  }
+
+  // Sélectionne la meilleure option d'un dropdown selon une liste de préférences
+  async function selectBestOption(btn, preferences) {
+    const opts = await getDropdownOptions(btn);
+    if (!opts.length) { btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); return null; }
+    // Fermer le dropdown ouvert
+    btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+    await sleep(200);
+    for (const pref of preferences) {
+      const match = opts.find(o => o.toLowerCase() === pref.toLowerCase())
+        || opts.find(o => o.toLowerCase().includes(pref.toLowerCase()));
+      if (match) {
+        const ok = await selectListbox(btn, match);
+        if (ok) return match;
+      }
+    }
+    return null;
+  }
 
   async function fillApplicationQuestions(p) {
     log('📝 Step 3 — Application Questions');
     setBanner('📝 Application Questions...');
+    await sleep(800);
 
-    // Récupérer toutes les questions visibles
-    const formFields = document.querySelectorAll('[data-automation-id^="formField-"]');
     let answered = 0;
+    const formFields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'))
+      .filter(f => f.offsetParent !== null); // visibles uniquement
 
     for (const field of formFields) {
-      // Radio Yes/No → sélectionner "No" (false)
-      const radioNo = field.querySelector('input[type="radio"][value="false"]:not(:checked), input[type="radio"][value="No"]:not(:checked)');
-      if (radioNo) {
-        const q = field.querySelector('label')?.textContent?.trim()?.slice(0, 60) || 'question';
-        radioNo.click();
-        log(`  ✓ "${q}" → No`);
-        answered++;
+      // Récupérer le texte de la question (label visible)
+      const labelEl = field.querySelector('label');
+      const labelText = (labelEl?.textContent || '').replace(/\*/g, '').trim();
+      const lowerLabel = labelText.toLowerCase();
+
+      // ── 1. Radio Yes/No (fallback pour certains formulaires)
+      const radioNo  = field.querySelector('input[type="radio"][value="false"]:not(:checked), input[type="radio"][value="No"]:not(:checked)');
+      const radioYes = field.querySelector('input[type="radio"][value="true"]:not(:checked),  input[type="radio"][value="Yes"]:not(:checked)');
+      if (radioNo || radioYes) {
+        const wantsYes = /right.to.work|authorized|eligible/i.test(lowerLabel);
+        const target = wantsYes ? radioYes : radioNo;
+        if (target && !target.checked) { target.click(); log(`  ✓ "${labelText.slice(0,60)}" → ${wantsYes ? 'Yes' : 'No'}`); answered++; }
+        continue;
+      }
+
+      // ── 2. Dropdown Workday (listbox)
+      const dropBtn = field.querySelector('button[aria-haspopup="listbox"], button[aria-haspopup="true"]');
+      if (dropBtn && !dropdownIsFilled(dropBtn)) {
+        let chosen = null;
+
+        if (/right.to.work|authorized.to.work|eligible.to.work/i.test(lowerLabel)) {
+          chosen = await selectBestOption(dropBtn, ['Yes']);
+        } else if (/notice.period/i.test(lowerLabel)) {
+          // Essayer de lire le profil, sinon défaut 4 semaines
+          const noticeWeeks = p.notice_period_weeks || p.notice_period || '';
+          const weekPrefs = noticeWeeks ? [`${noticeWeeks}`, `${noticeWeeks} week`, `${noticeWeeks} weeks`] : [];
+          chosen = await selectBestOption(dropBtn, [...weekPrefs, '4 Weeks', '4 weeks', '1 Month', '1 month', '2 Weeks', '2 weeks', '1 Week', '1 week']);
+        } else if (/relatives|close personal relationship/i.test(lowerLabel)
+            || /referred.*bank of america/i.test(lowerLabel)
+            || /pricewaterhouse|pwc/i.test(lowerLabel)
+            || /finra.*license/i.test(lowerLabel)
+            || /vendor.worker/i.test(lowerLabel)
+            || /previously applied/i.test(lowerLabel)
+            || /armed forces/i.test(lowerLabel)
+            || /other business.*proprietor|engaged.*other business/i.test(lowerLabel)
+            || /medical condition|special.*educational|disability/i.test(lowerLabel)
+            || /additional information.*disclose/i.test(lowerLabel)) {
+          chosen = await selectBestOption(dropBtn, ['No']);
+        }
+
+        if (chosen) { log(`  ✓ "${labelText.slice(0,60)}" → ${chosen}`); answered++; }
+        else if (chosen === null && !/right.to.work/i.test(lowerLabel)) {
+          // Question non reconnue → tenter "No" par défaut
+          const opts = await getDropdownOptions(dropBtn);
+          dropBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+          await sleep(200);
+          const hasNo = opts.some(o => /^no$/i.test(o.trim()));
+          if (hasNo) {
+            const ok = await selectListbox(dropBtn, opts.find(o => /^no$/i.test(o.trim())));
+            if (ok) { log(`  ✓ "${labelText.slice(0,60)}" → No (défaut)`); answered++; }
+          } else if (opts.length) {
+            log(`  ⚠️ "${labelText.slice(0,60)}" — options: ${opts.slice(0,4).join(' | ')}`);
+          }
+        }
+        continue;
+      }
+
+      // ── 3. Champs texte / date
+      const inp = field.querySelector('input[type="text"], input[type="date"], input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]):not([type="file"]):not([type="search"])');
+      if (inp && !inp.value?.trim()) {
+        let val = '';
+        if (/most recent.*employer|current.*employer|confirm.*employer/i.test(lowerLabel)) {
+          val = p.current_employer || p.employer || '';
+        } else if (/start.date.*employer/i.test(lowerLabel)) {
+          val = fmtDate(p.employment_start_date || p.employer_start_date || p.start_date || '');
+        } else if (/start.date.*role/i.test(lowerLabel)) {
+          val = fmtDate(p.role_start_date || p.current_role_start_date || p.employment_start_date || '');
+        } else if (/base.salary|current.*salary/i.test(lowerLabel)) {
+          val = String(p.current_salary || p.salary || '');
+        } else if (/minimum.*salary|salary requirement/i.test(lowerLabel)) {
+          val = String(p.min_salary || p.salary_expectation || p.expected_salary || '');
+        } else if (/incentive|bonus/i.test(lowerLabel)) {
+          val = String(p.current_bonus || p.bonus || '0');
+        }
+        if (val) { reactSet(inp, val); log(`  ✓ "${labelText.slice(0,60)}" → "${val}"`); answered++; }
+        else if (lowerLabel) { log(`  ⚠️ "${labelText.slice(0,60)}" — valeur manquante dans le profil`); }
       }
     }
 
-    if (!answered) log('  ℹ️ Aucune question auto-détectée (formulaire vide ou non standard)');
+    if (!answered) log('  ℹ️ Aucune question remplie (formulaire vide, déjà rempli, ou non standard)');
+    else log(`  ✓ ${answered} question(s) répondue(s)`);
     log('✅ Application Questions');
   }
 
