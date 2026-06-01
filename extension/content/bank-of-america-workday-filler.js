@@ -389,6 +389,17 @@
       }
     }
 
+    // ── Education ────────────────────────────────────────────────────────────
+    // Sélecteurs DOM vérifiés :
+    //   School typeahead : input[id*="--school"] (placeholder="Search")
+    //   Degree dropdown  : button[aria-label*="Degree"]
+    //   Field of Study   : input[id*="--fieldOfStudy"]
+    //   GPA              : input[id*="--gradeAverage"]
+    //   From year        : input[id*="--firstYearAttended-dateSectionYear-input"]
+    //   To year          : input[id*="--lastYearAttended-dateSectionYear-input"]
+    await fillEducation(p);
+    await sleep(400);
+
     // CV upload — tenter via fetch + DataTransfer (peut être bloqué par Workday React)
     const cvUrl = p.cv_url || p.cv_download_url || '';
     const fileInput = document.querySelector('input[type="file"]');
@@ -416,6 +427,99 @@
     }
 
     log('✅ My Experience complétée');
+  }
+
+  // ─── Education ─────────────────────────────────────────────────────────────
+  // Mapping niveau Firebase → libellé Workday (dropdown Degree)
+
+  async function fillEducation(p) {
+    const school = (p.establishment || p.institution_name || '').trim();
+    const diplYear = String(p.diploma_year || p.graduation_year || '').trim();
+    const eduLevel = (p.education_level || '').toLowerCase().trim();
+
+    // Mapping education_level → Workday degree label
+    const degreeLabel = (() => {
+      if (/bac\+5|master|m\.?sc|m2|grande.?école/i.test(eduLevel)) return "Master's Degree";
+      if (/bac\+3|bachelor|licence|bsc|b\.?a\b/i.test(eduLevel)) return "Bachelor's Degree";
+      if (/bac\+8|phd|doctorat|doctorate/i.test(eduLevel)) return 'Doctorate';
+      if (/bac\+4|maîtrise/i.test(eduLevel)) return "Master's Degree";
+      if (/bac\+2|bts|dut/i.test(eduLevel)) return "Associate's Degree";
+      return null;
+    })();
+
+    if (!school && !diplYear) {
+      log('  ℹ️ Aucune donnée Education dans Firebase — section ignorée');
+      return;
+    }
+
+    log('📚 Education — remplissage...');
+
+    // Chercher si un bloc Education existe déjà (form ouvert)
+    let schoolInput = document.querySelector('input[id*="--school"]');
+
+    if (!schoolInput) {
+      // Cliquer le bouton "Add" de la section Education
+      // L'Education est la 2ème section (Work Exp = 1ère, Education = 2ème)
+      const addBtns = Array.from(document.querySelectorAll('button')).filter(b =>
+        /^add$/i.test((b.innerText || '').trim()) && b.offsetWidth > 0
+      );
+      const eduAddBtn = addBtns[1]; // 2ème "Add" = Education
+      if (!eduAddBtn) { log('  ⚠️ Bouton Add Education introuvable'); return; }
+      await clickEl(eduAddBtn);
+      await sleep(1200);
+      schoolInput = document.querySelector('input[id*="--school"]');
+    }
+
+    if (!schoolInput) { log('  ⚠️ Champ School introuvable après Add'); return; }
+
+    // School — typeahead : taper le nom → attendre suggestions → cliquer
+    if (school) {
+      schoolInput.focus();
+      reactSet(schoolInput, school);
+      await sleep(1200); // attendre que Workday charge les suggestions
+
+      const schoolOption = Array.from(document.querySelectorAll('[role="option"]')).find(el =>
+        (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
+      );
+      if (schoolOption) {
+        schoolOption.click();
+        log(`  ✓ Firebase: establishment="${school}" → School`);
+        await sleep(400);
+      } else {
+        log(`  ⚠️ École "${school}" non trouvée dans Workday — à remplir manuellement`);
+      }
+    }
+
+    // Degree — dropdown listbox
+    if (degreeLabel) {
+      const degreeBtn = document.querySelector('button[aria-label*="Degree"]');
+      if (degreeBtn) {
+        const ok = await selectListboxOption(degreeBtn, degreeLabel);
+        if (ok) log(`  ✓ Firebase: education_level="${eduLevel}" → Degree: ${degreeLabel}`);
+        else log(`  ⚠️ Degree "${degreeLabel}" non trouvé dans la liste`);
+      }
+    } else {
+      log(`  ℹ️ education_level="${eduLevel}" non mappé → Degree à remplir manuellement`);
+    }
+
+    // Field of Study — pas dans le profil Firebase actuel, skip
+    log('  ℹ️ field_of_study non disponible dans Firebase — à remplir manuellement');
+
+    // GPA — skip (non disponible)
+
+    // To year (diploma_year)
+    if (diplYear) {
+      const toInput = document.querySelector('input[id*="--lastYearAttended-dateSectionYear-input"]');
+      if (toInput) {
+        toInput.focus();
+        reactSet(toInput, diplYear);
+        toInput.blur();
+        log(`  ✓ Firebase: diploma_year="${diplYear}" → To year`);
+      }
+    }
+
+    // From year — non disponible dans Firebase, skip
+    log(`  ℹ️ start_year non disponible dans Firebase — From year à remplir manuellement`);
   }
 
   // ─── Étape 3 : Application Questions ──────────────────────────────────────
