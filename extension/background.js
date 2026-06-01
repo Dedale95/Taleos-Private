@@ -2706,6 +2706,15 @@ async function runTestConnection(msg) {
       } catch (_) {}
       fillRes = await runFill(0);
     }
+    // Bank of America : formulaire pas encore rendu par React → attendre et relancer (max 3 fois)
+    if (bankId === 'bank_of_america' && fillRes?.[0]?.result?.needRetry && fillRes[0].result.phase === 'wait_form') {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try { await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/connection-test-runner.js'] }); } catch (_) {}
+        fillRes = await runFill(0);
+        if (!fillRes?.[0]?.result?.needRetry || fillRes[0].result.phase !== 'wait_form') break;
+      }
+    }
     // Bank of America (Workday) : si déjà connecté → sign out en 2 étapes puis retry
     if (bankId === 'bank_of_america' && fillRes?.[0]?.result?.needRetry) {
       const phase = fillRes[0].result.phase;

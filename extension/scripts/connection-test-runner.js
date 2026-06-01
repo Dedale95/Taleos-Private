@@ -434,10 +434,11 @@
                       || document.querySelector('[data-automation-id="signInSubmitButton"]');
 
         if (!emailEl || !passEl) {
-          return { done: false, error: 'Champs email/mot de passe BofA introuvables' };
+          // Workday React n'a pas encore rendu le formulaire → signaler un retry sans erreur
+          return { done: false, needRetry: true, phase: 'wait_form' };
         }
         if (!submitEl) {
-          return { done: false, error: 'Bouton Sign In BofA introuvable' };
+          return { done: false, needRetry: true, phase: 'wait_form' };
         }
 
         // Remplir via le native setter React (sinon React ignore la valeur)
