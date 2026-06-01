@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.175",
-  "version_name": "1.2.175-bofa-fix-signout-ariaid",
+  "version": "1.2.176",
+  "version_name": "1.2.176-bofa-fix-creds-alias",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

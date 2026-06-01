@@ -4061,17 +4061,27 @@ async function fetchProfile(uid, bankId, token) {
   const sgEuWorkAuthorization = deriveEuWorkAuthorizationFromProfile(profile);
 
   let creds = null;
-  const directRes = await fetch(`${base}/profiles/${uid}/career_connections/${bankId}`, { headers });
-  if (directRes.ok) {
-    creds = parseFirestoreDoc(await directRes.json());
-  } else {
+  // Pour bank_of_america_workday, les identifiants peuvent être stockés sous bank_of_america
+  // (l'ancien bankId utilisé par la page Connexions) — on essaie les deux.
+  const bankIdAliases = normalizedBankId === 'bank_of_america_workday'
+    ? ['bank_of_america_workday', 'bank_of_america']
+    : [bankId];
+  for (const alias of bankIdAliases) {
+    const directRes = await fetch(`${base}/profiles/${uid}/career_connections/${alias}`, { headers });
+    if (directRes.ok) {
+      creds = parseFirestoreDoc(await directRes.json());
+      if (creds && creds.email) break;
+    }
+  }
+  if (!creds || !creds.email) {
     const listRes = await fetch(`${base}/profiles/${uid}/career_connections`, { headers });
     if (listRes.ok) {
       const listJson = await listRes.json();
       const docs = listJson.documents || [];
       for (const d of docs) {
         const data = parseFirestoreDoc(d);
-        if ((data.bankId || '').toLowerCase() === bankId.toLowerCase()) {
+        const storedId = (data.bankId || '').toLowerCase();
+        if (bankIdAliases.some(a => a.toLowerCase() === storedId)) {
           creds = data;
           break;
         }
