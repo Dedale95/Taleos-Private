@@ -181,6 +181,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'bpifrance') return 'taleos_pending_bpifrance';
   if (bid === 'hsbc') return 'taleos_pending_hsbc';
   if (bid === 'nomura') return 'taleos_pending_nomura';
+  if (bid === 'bank_of_america_workday') return 'taleos_pending_bank_of_america_workday';
   return null;
 }
 
@@ -219,6 +220,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'bpifrance') keys.push('taleos_pending_bpifrance', 'taleos_bpifrance_tab_id');
   if (bid === 'hsbc') keys.push('taleos_pending_hsbc', 'taleos_hsbc_tab_id');
   if (bid === 'nomura') keys.push('taleos_pending_nomura', 'taleos_nomura_tab_id');
+  if (bid === 'bank_of_america_workday') keys.push('taleos_pending_bank_of_america_workday', 'taleos_bank_of_america_workday_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -952,6 +954,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       'taleos_deloitte_did_login_click',
       'taleos_nomura_tab_id',
       'taleos_pending_nomura',
+      'taleos_bank_of_america_workday_tab_id',
+      'taleos_pending_bank_of_america_workday',
     ]);
     const keysToRemove = new Set();
     if (state.taleos_sg_tab_id === tabId) {
@@ -998,11 +1002,19 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       keysToRemove.add('taleos_pending_nomura');
       keysToRemove.add('taleos_nomura_tab_id');
     }
+    if (state.taleos_bank_of_america_workday_tab_id === tabId || state.taleos_pending_bank_of_america_workday?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_bank_of_america_workday');
+      keysToRemove.add('taleos_bank_of_america_workday_tab_id');
+    }
     if (keysToRemove.size) {
       await chrome.storage.local.remove(Array.from(keysToRemove));
       // Si l'onglet Nomura fermé avait une queue en attente, démarrer la suivante
       if (keysToRemove.has('taleos_pending_nomura')) {
         dequeueAndStartNext('nomura').catch(() => {});
+      }
+      // Si l'onglet Bank of America fermé avait une queue en attente, démarrer la suivante
+      if (keysToRemove.has('taleos_pending_bank_of_america_workday')) {
+        dequeueAndStartNext('bank_of_america_workday').catch(() => {});
       }
     }
   } catch (_) {}

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.169",
-  "version_name": "1.2.169-bofa-enter-submit",
+  "version": "1.2.170",
+  "version_name": "1.2.170-bofa-complete-filler",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -204,6 +204,16 @@
         "scripts/taleos-automation-banner.js",
         "scripts/credit_agricole_blueprint.js",
         "content/ca-connexion-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://ghr.wd1.myworkdayjobs.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/bank-of-america-workday-filler.js"
       ],
       "run_at": "document_idle"
     },

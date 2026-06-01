@@ -259,6 +259,7 @@
     if (lowerUrl.includes('careers.axa.com') || lowerUrl.includes('axa.com/careers-home') || lowerUrl.includes('icims.com/jobs/') || lowerUrl.includes('icims.eu/jobs/')) return 'axa';
     if (lowerUrl.includes('portal.careers.hsbc.com') || lowerUrl.includes('apply.careers.hsbc.com') || (lowerUrl.includes('career2.successfactors.eu') && lowerUrl.includes('hsbcholdin'))) return 'hsbc';
     if (lowerUrl.includes('career4.successfactors.com') && lowerUrl.includes('nomurahold')) return 'nomura';
+    if (lowerUrl.includes('ghr.wd1.myworkdayjobs.com') && (lowerUrl.includes('lateral-emea') || lowerUrl.includes('lateral-us'))) return 'bank_of_america_workday';
     return null;
   }
 
@@ -291,6 +292,7 @@
     if (normalized.startsWith('axa') || normalized.includes(' groupe axa') || normalized.includes(' gie axa') || normalized.includes('direct assurance')) return 'axa';
     if (normalized.includes('hsbc')) return 'hsbc';
     if (normalized.includes('nomura') || normalized.includes('instinet')) return 'nomura';
+    if (normalized.includes('bank of america') || normalized.includes('bofa')) return 'bank_of_america_workday';
     return null;
   }
 
