@@ -444,31 +444,62 @@
         // Remplir via le native setter React (sinon React ignore la valeur)
         const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
+        // Email : focus → fill → blur (simule la navigation utilisateur)
+        emailEl.focus();
         nativeSetter.call(emailEl, email);
         emailEl.dispatchEvent(new Event('input',  { bubbles: true }));
         emailEl.dispatchEvent(new Event('change', { bubbles: true }));
+        emailEl.dispatchEvent(new Event('blur',   { bubbles: true }));
 
+        // Password : focus → fill
+        passEl.focus();
         nativeSetter.call(passEl, password);
         passEl.dispatchEvent(new Event('input',  { bubbles: true }));
         passEl.dispatchEvent(new Event('change', { bubbles: true }));
 
-        // Clic React-compatible immédiat : mousedown → mouseup → click sur le <div>
-        // (simple .click() ignoré par Workday React sur les <div role="button">)
-        ['mousedown', 'mouseup', 'click'].forEach(type => {
-          submitEl.dispatchEvent(
-            new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window })
-          );
-        });
-        // Fallback : si React n'a pas encore réactivé le bouton, 2e tentative 300ms plus tard
+        // Méthode 1 (la plus fiable sur Workday) : Entrée sur le champ password
+        // → déclenche le submit React comme un vrai utilisateur
+        ['keydown', 'keypress', 'keyup'].forEach(type =>
+          passEl.dispatchEvent(new KeyboardEvent(type, {
+            bubbles: true, cancelable: true, composed: true,
+            key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+          }))
+        );
+
+        // Méthode 2 : focus + PointerEvents + MouseEvents + click() sur le bouton
+        submitEl.focus();
+        ['pointerdown', 'pointerup'].forEach(type =>
+          submitEl.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, cancelable: true, composed: true, view: window, isPrimary: true
+          }))
+        );
+        ['mousedown', 'mouseup', 'click'].forEach(type =>
+          submitEl.dispatchEvent(new MouseEvent(type, {
+            bubbles: true, cancelable: true, composed: true, view: window
+          }))
+        );
+        submitEl.click();
+
+        // Méthode 3 (fallback 600ms) : si React a besoin de temps pour valider,
+        // retente Entrée sur password + clic sur bouton
         setTimeout(() => {
-          const btn = document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
-                   || document.querySelector('[aria-label="Sign In"][role="button"]');
-          if (btn) {
-            ['mousedown', 'mouseup', 'click'].forEach(type =>
-              btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window }))
+          const pass = document.querySelector('input[data-automation-id="password"]');
+          const btn  = document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                    || document.querySelector('[aria-label="Sign In"][role="button"]');
+          if (pass) {
+            ['keydown', 'keypress', 'keyup'].forEach(type =>
+              pass.dispatchEvent(new KeyboardEvent(type, {
+                bubbles: true, cancelable: true, composed: true,
+                key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+              }))
             );
           }
-        }, 300);
+          if (btn) {
+            btn.focus();
+            btn.click();
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window }));
+          }
+        }, 600);
 
         return { done: true, submitted: true };
       } catch (e) {
