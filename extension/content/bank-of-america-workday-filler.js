@@ -5,15 +5,16 @@
   if (globalThis.__TALEOS_BOFA_FILLER_RUNNING__) return;
   globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = true;
 
-  const BANNER_ID = 'taleos-bofa-banner';
+  // ─── Constants ─────────────────────────────────────────────────────────────
   const PENDING_KEY = 'taleos_pending_bank_of_america_workday';
-  const TAB_KEY = 'taleos_bank_of_america_workday_tab_id';
-  const LOG_PREFIX = '[Taleos BofA]';
-  let logged = new Set();
+  const TAB_KEY     = 'taleos_bank_of_america_workday_tab_id';
+  const BANNER_ID   = 'taleos-bofa-banner';
+  const LOG_PREFIX  = '[Taleos BofA]';
+  const logged      = new Set();
 
-  // ─── Utilitaires ───────────────────────────────────────────────────────────
+  // ─── Utilities ─────────────────────────────────────────────────────────────
 
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   function log(msg) {
     const txt = `${LOG_PREFIX} ${msg}`;
@@ -21,9 +22,7 @@
     logged.add(txt);
     console.log(txt);
     const level = /❌/.test(txt) ? 'error' : /⚠️/.test(txt) ? 'warn' : 'info';
-    try {
-      chrome.runtime.sendMessage({ action: 'extension_run_log', source: 'bank-of-america-workday-filler', level, message: txt, ts: new Date().toISOString() }).catch(() => {});
-    } catch (_) {}
+    try { chrome.runtime.sendMessage({ action: 'extension_run_log', source: 'bank-of-america-workday-filler', level, message: txt, ts: new Date().toISOString() }).catch(() => {}); } catch (_) {}
   }
 
   function setBanner(text, color) {
@@ -32,380 +31,352 @@
       el = document.createElement('div');
       el.id = BANNER_ID;
       const api = globalThis.__TALEOS_AUTOMATION_BANNER__;
-      if (api) { api.applyStyle(el); }
-      else {
-        Object.assign(el.style, {
-          position: 'fixed', top: '0', left: '0', width: '100%', zIndex: '2147483647',
-          background: '#012169', color: '#fff', padding: '10px 16px',
-          fontSize: '14px', fontWeight: '600', textAlign: 'center',
-          boxShadow: '0 2px 6px rgba(0,0,0,0.3)', fontFamily: 'sans-serif'
-        });
-      }
+      if (api) api.applyStyle(el);
+      else Object.assign(el.style, {
+        position: 'fixed', top: '0', left: '0', width: '100%', zIndex: '2147483647',
+        background: '#012169', color: '#fff', padding: '10px 16px',
+        fontSize: '14px', fontWeight: '600', textAlign: 'center',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.3)', fontFamily: 'sans-serif'
+      });
       document.documentElement.appendChild(el);
     }
     if (color) el.style.background = color;
     el.textContent = text;
   }
 
-  // Remplissage React-compatible
+  // React-compatible value setter
   function reactSet(el, value) {
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    if (nativeSetter) nativeSetter.call(el, value);
-    else el.value = value;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (setter) setter.call(el, value); else el.value = value;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // Trouver le premier input visible dans un formField
-  function fieldInput(automationId) {
-    const wrapper = document.querySelector(`[data-automation-id="${automationId}"]`);
-    if (!wrapper) return null;
-    const inp = wrapper.querySelector('input:not([type="hidden"]), textarea');
-    if (!inp) return null;
-    const rect = inp.getBoundingClientRect();
-    return rect.width > 0 ? inp : null;
-  }
-
-  async function waitForField(automationId, timeout = 10000) {
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      const el = fieldInput(automationId);
-      if (el) return el;
-      await sleep(300);
-    }
-    return null;
-  }
-
-  async function fillField(automationId, value, label) {
-    if (!value) return;
-    const inp = await waitForField(automationId, 5000);
-    if (!inp) { log(`  ⚠️ Champ ${automationId} introuvable`); return; }
-    const current = inp.value?.trim();
-    if (current === String(value).trim()) {
-      log(`  ✓ ${label}: déjà renseigné ("${current}")`);
-      return;
-    }
-    inp.focus();
-    reactSet(inp, String(value));
-    inp.blur();
-    log(`  ✓ Firebase: ${label}="${value}" → ${automationId}`);
-  }
-
+  // Click with scroll
   async function clickEl(el) {
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await sleep(250);
+    await sleep(200);
     el.click();
   }
 
-  // ─── Récupérer le pending state ────────────────────────────────────────────
-
-  async function getPending() {
-    let currentTabId = null;
-    try {
-      const res = await chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' });
-      currentTabId = res?.tabId || null;
-    } catch (_) {}
-
-    const local = await chrome.storage.local.get([PENDING_KEY, TAB_KEY]);
-    const pending = local[PENDING_KEY];
-    if (!pending) { log('⚠️ Pas de candidature BofA en attente'); return null; }
-
-    const expectedTabId = pending?.tabId || local[TAB_KEY] || null;
-    if (currentTabId && expectedTabId && currentTabId !== expectedTabId) {
-      log(`⚠️ TabId mismatch (this=${currentTabId} expected=${expectedTabId})`);
-      return null;
-    }
-    return pending;
+  // Fill a formField-* field's inner input
+  async function fillField(automationId, value, label) {
+    if (!value) return;
+    const wrapper = document.querySelector(`[data-automation-id="${automationId}"]`);
+    const inp = wrapper?.querySelector('input:not([type="hidden"]):not([type="file"])');
+    if (!inp) { log(`  ⚠️ Champ ${automationId} introuvable`); return; }
+    const current = inp.value?.trim();
+    if (current === String(value).trim()) { log(`  ✓ ${label}: déjà "${current}"`); return; }
+    inp.focus();
+    reactSet(inp, String(value));
+    inp.blur();
+    log(`  ✓ Firebase: ${label}="${value}"`);
   }
 
-  // ─── Connexion ─────────────────────────────────────────────────────────────
-
-  async function handleSignIn(authEmail, authPassword) {
-    // Vérifier si déjà connecté : accountSettingsButton présent + pas de formulaire login
-    const accountBtn = document.getElementById('accountSettingsButton');
-    const loginForm = document.querySelector('input[data-automation-id="email"]');
-    if (accountBtn && !loginForm) {
-      log('  ✓ Déjà connecté sur BofA Workday');
-      return true;
-    }
-
-    if (!loginForm) {
-      log('  ℹ️ Formulaire de connexion non détecté — on continue');
-      return true;
-    }
-
-    if (!authEmail || !authPassword) {
-      log('❌ Identifiants BofA manquants — configurez-les dans Connexions');
-      setBanner('❌ Identifiants Bank of America manquants — ajoutez-les dans Connexions', '#c62828');
-      return false;
-    }
-
-    log('🔐 Connexion BofA...');
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-
-    loginForm.focus();
-    if (nativeSetter) nativeSetter.call(loginForm, authEmail);
-    loginForm.dispatchEvent(new Event('input', { bubbles: true }));
-    loginForm.dispatchEvent(new Event('change', { bubbles: true }));
-    loginForm.blur();
-    log(`  ✓ Email: ${authEmail}`);
-    await sleep(400);
-
-    const passEl = document.querySelector('input[data-automation-id="password"]') || document.querySelector('input[type="password"]');
-    if (passEl) {
-      passEl.focus();
-      if (nativeSetter) nativeSetter.call(passEl, authPassword);
-      passEl.dispatchEvent(new Event('input', { bubbles: true }));
-      passEl.dispatchEvent(new Event('change', { bubbles: true }));
-      log('  ✓ Mot de passe renseigné');
-      await sleep(300);
-      // Entrée sur le mot de passe
-      ['keydown', 'keypress', 'keyup'].forEach(type =>
-        passEl.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13 }))
+  // Select an option from a Workday listbox
+  // Clicks the trigger button → waits for [role="option"] → clicks matching option
+  async function selectListbox(triggerBtn, optionText, timeout = 3000) {
+    if (!triggerBtn) return false;
+    triggerBtn.click();
+    await sleep(600);
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const opt = Array.from(document.querySelectorAll('[role="option"]')).find(
+        el => (el.innerText || el.textContent || '').trim().toLowerCase() === optionText.toLowerCase()
       );
+      if (opt) { opt.click(); await sleep(300); return true; }
+      await sleep(200);
     }
-
-    // Attendre que le formulaire disparaisse (connexion réussie)
-    let waited = 0;
-    while (waited < 12000) {
-      await sleep(500);
-      waited += 500;
-      if (!document.querySelector('input[data-automation-id="email"]')) break;
-    }
-    log('  ✓ Connexion terminée');
-    return true;
-  }
-
-  // ─── Détecter l'étape courante via progressBar ─────────────────────────────
-  // DOM vérifié : <li data-automation-id="progressBarActiveStep">
-  //   <label>current step 1 of 5</label>
-  //   <label>My Information</label>
-  // </li>
-
-  function getCurrentStep() {
-    const activeStep = document.querySelector('[data-automation-id="progressBarActiveStep"]');
-    if (activeStep) {
-      const labels = activeStep.querySelectorAll('label');
-      // Le 2ème label contient le nom de l'étape
-      const stepName = (labels[1]?.textContent || labels[0]?.textContent || '').toLowerCase().trim();
-      if (stepName.includes('my information')) return 'my_information';
-      if (stepName.includes('my experience')) return 'my_experience';
-      if (stepName.includes('application questions')) return 'application_questions';
-      if (stepName.includes('voluntary')) return 'voluntary_disclosures';
-      if (stepName.includes('review')) return 'review';
-    }
-
-    // Fallback : chercher un H3 visible
-    const h3 = Array.from(document.querySelectorAll('h3')).find(el => el.offsetWidth > 0);
-    const h3Text = (h3?.textContent || '').toLowerCase();
-    if (h3Text.includes('my information')) return 'my_information';
-    if (h3Text.includes('my experience')) return 'my_experience';
-    if (h3Text.includes('application questions')) return 'application_questions';
-    if (h3Text.includes('voluntary')) return 'voluntary_disclosures';
-    if (h3Text.includes('review')) return 'review';
-
-    return 'unknown';
-  }
-
-  // ─── Cliquer Apply Now ou Continue Application ─────────────────────────────
-  // Sélecteurs DOM vérifiés :
-  //   Apply Now    : [data-automation-id="applyNow"] ou bouton avec texte "Apply"
-  //   Continue App : [data-automation-id="continueButton"]
-
-  async function clickApplyOrContinue() {
-    const url = location.href.toLowerCase();
-    if (url.includes('/apply/') || url.includes('/application/')) return true;
-
-    // Continue Application (candidature déjà initiée)
-    const continueBtn = document.querySelector('[data-automation-id="continueButton"]');
-    if (continueBtn && continueBtn.offsetWidth > 0) {
-      log('🔄 Clic sur Continue Application...');
-      await clickEl(continueBtn);
-      await sleep(2000);
-      return true;
-    }
-
-    // Apply Now
-    const applyBtn = document.querySelector('[data-automation-id="applyNow"]')
-      || Array.from(document.querySelectorAll('a[role="button"], button')).find(el =>
-          el.offsetWidth > 0 && /^apply(\s+now)?$/i.test((el.innerText || '').trim())
-        );
-    if (applyBtn) {
-      log('🚀 Clic sur Apply Now...');
-      await clickEl(applyBtn);
-      await sleep(2000);
-      return true;
-    }
-
+    // Fermer si pas trouvé
+    triggerBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
     return false;
   }
 
-  // ─── Bouton "Save and Continue" (= Next) ──────────────────────────────────
+  // ─── Pending state ──────────────────────────────────────────────────────────
+
+  async function getPending() {
+    let currentTabId = null;
+    try { const r = await chrome.runtime.sendMessage({ action: 'taleos_get_current_tab_id' }); currentTabId = r?.tabId || null; } catch (_) {}
+    const local = await chrome.storage.local.get([PENDING_KEY, TAB_KEY]);
+    const pending = local[PENDING_KEY];
+    if (!pending) { log('⚠️ Pas de candidature BofA en attente'); return null; }
+    const expectedTabId = pending?.tabId || local[TAB_KEY] || null;
+    if (currentTabId && expectedTabId && currentTabId !== expectedTabId) { log(`⚠️ TabId mismatch`); return null; }
+    return pending;
+  }
+
+  // ─── Step detection ─────────────────────────────────────────────────────────
+  // DOM vérifié : [data-automation-id="progressBarActiveStep"] → 2ème <label> = nom étape
+
+  function currentStep() {
+    const labels = document.querySelector('[data-automation-id="progressBarActiveStep"]')?.querySelectorAll('label');
+    const name = (labels?.[1]?.textContent || '').toLowerCase().trim();
+    if (name.includes('my information')) return 'my_information';
+    if (name.includes('my experience')) return 'my_experience';
+    if (name.includes('application questions')) return 'application_questions';
+    if (name.includes('voluntary')) return 'voluntary_disclosures';
+    if (name.includes('review')) return 'review';
+    return 'unknown';
+  }
+
+  // ─── Save and Continue ──────────────────────────────────────────────────────
   // DOM vérifié : button avec texte "Save and Continue"
 
-  async function clickSaveAndContinue() {
+  async function saveAndContinue() {
     await sleep(400);
     const btn = Array.from(document.querySelectorAll('button')).find(b =>
       b.offsetWidth > 0 && /save and continue/i.test((b.innerText || '').trim())
-    ) || document.querySelector('[data-automation-id="bottom-navigation-next-button"]');
-
-    if (btn) {
-      log('  → Clic Save and Continue');
-      await clickEl(btn);
-      await sleep(2000);
-      return true;
-    }
+    );
+    if (btn) { await clickEl(btn); await sleep(2000); return true; }
     log('⚠️ Bouton Save and Continue introuvable');
     return false;
   }
 
-  // ─── Étape 1 : My Information ──────────────────────────────────────────────
-  // Sélecteurs DOM vérifiés sur ghr.wd1.myworkdayjobs.com :
-  //   formField-legalName--firstName, formField-legalName--lastName
-  //   formField-addressLine1, formField-city, formField-postalCode
-  //   formField-phoneNumber, formField-candidateIsPreviousWorker (radio)
+  // Wait until form advances to a new step (or timeout)
+  async function waitForNextStep(expectedStep, timeout = 8000) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (currentStep() === expectedStep) return true;
+      await sleep(400);
+    }
+    return false;
+  }
+
+  // ─── Apply / Continue Application ──────────────────────────────────────────
+  // DOM vérifié : [data-automation-id="continueButton"] ou [data-automation-id="applyNow"]
+
+  async function clickApply() {
+    const url = location.href.toLowerCase();
+    if (url.includes('/apply/') || url.includes('/application/')) return true;
+    const btn = document.querySelector('[data-automation-id="continueButton"]')
+      || document.querySelector('[data-automation-id="applyNow"]')
+      || Array.from(document.querySelectorAll('a[role="button"],button')).find(el =>
+          el.offsetWidth > 0 && /^apply(\s+now)?$/i.test((el.innerText || '').trim())
+        );
+    if (btn) { log('🚀 Clic Apply/Continue...'); await clickEl(btn); await sleep(2000); return true; }
+    return false;
+  }
+
+  // ─── STEP 1 : My Information ────────────────────────────────────────────────
+  // Sélecteurs vérifiés sur DOM réel
 
   async function fillMyInformation(p) {
     log('📝 Step 1 — My Information');
-    setBanner('📝 Remplissage de vos informations personnelles...');
+    setBanner('📝 My Information en cours...');
 
     await fillField('formField-legalName--firstName', p.first_name, 'first_name');
-    await fillField('formField-legalName--lastName', p.last_name, 'last_name');
-    await fillField('formField-addressLine1', p.address, 'address');
-    await fillField('formField-city', p.city, 'city');
-    await fillField('formField-postalCode', p.postal_code, 'postal_code');
-    await fillField('formField-phoneNumber', p.phone, 'phone');
+    await fillField('formField-legalName--lastName',  p.last_name,  'last_name');
+    await fillField('formField-addressLine1',         p.address,    'address');
+    await fillField('formField-city',                 p.city,       'city');
+    await fillField('formField-postalCode',           p.postal_code,'postal_code');
+    await fillField('formField-phoneNumber',          p.phone,      'phone');
 
-    // Radio "Previously employed?" → No (value="false")
+    // Country (dropdown) — pré-sélectionné par Workday, vérifier seulement
+    const countryBtn = document.querySelector('[data-automation-id="formField-country"] button[aria-haspopup]');
+    if (countryBtn && !/france/i.test(countryBtn.innerText)) {
+      await selectListbox(countryBtn, p.country || 'France');
+      log(`  ✓ Country: ${p.country || 'France'}`);
+    } else { log('  ✓ Country: déjà France'); }
+
+    // "Previously employed?" → No
     const radioNo = document.querySelector('[data-automation-id="formField-candidateIsPreviousWorker"] input[value="false"]');
-    if (radioNo && !radioNo.checked) {
-      radioNo.click();
-      log('  ✓ Previously employed: No');
-    } else if (radioNo?.checked) {
-      log('  ✓ Previously employed: déjà No');
-    }
+    if (radioNo && !radioNo.checked) { radioNo.click(); log('  ✓ Previously employed: No'); }
+    else if (radioNo?.checked) { log('  ✓ Previously employed: déjà No'); }
 
     log('✅ My Information complétée');
   }
 
-  // ─── Sélectionner une option dans un listbox Workday ──────────────────────
-  // Pattern DOM vérifié : button[aria-haspopup="listbox"] → click → [role="option"] li
-
-  async function selectListboxOption(btn, optionText) {
-    if (!btn) return false;
-    btn.click();
-    await sleep(700);
-    const option = Array.from(document.querySelectorAll('[role="option"]')).find(
-      el => (el.innerText || el.textContent || '').trim().toLowerCase() === optionText.toLowerCase()
-    );
-    if (option) {
-      option.click();
-      await sleep(300);
-      return true;
-    }
-    // Fermer si pas trouvé
-    btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
-    await sleep(200);
-    return false;
-  }
-
-  // ─── Étape 2 : My Experience ───────────────────────────────────────────────
-  // Sélecteurs DOM vérifiés :
-  //   Language btn   : button[aria-label="Language Select One Required"]
-  //   Fluent checkbox: input[name="native"]
-  //   W&S btn        : button[aria-label="Written and Spoken Select One Required"]
-  //   Add Another    : [data-automation-id="add-button"] texte "Add Another"
+  // ─── STEP 2 : My Experience ─────────────────────────────────────────────────
 
   async function fillMyExperience(p) {
     log('📝 Step 2 — My Experience');
-    setBanner('📝 Remplissage des langues...');
+    setBanner('📝 My Experience en cours...');
 
-    const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.language || l.name) : [];
+    // 2a. Education
+    await fillEducation(p);
 
-    if (langs.length === 0) {
-      log('  ℹ️ Aucune langue dans Firebase — section Languages ignorée');
-    } else {
-      for (let i = 0; i < langs.length; i++) {
-        const lang = langs[i];
-        const langName = lang.language || lang.name || '';
-        const proficiency = (lang.proficiency || '').toLowerCase();
-        const isFluent = ['native', 'bilingual', 'fluent'].includes(proficiency);
-        const wsLevel = isFluent ? 'Fluent'
-          : ['intermediate', 'conversational', 'professional'].includes(proficiency) ? 'Intermediate'
-          : 'Basic';
+    // 2b. Languages
+    await fillLanguages(p);
 
-        // Si pas la 1ère langue → cliquer "Add Another" pour créer une nouvelle ligne
-        if (i > 0) {
-          const addBtn = Array.from(document.querySelectorAll('[data-automation-id="add-button"]'))
-            .find(b => b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim()));
-          if (addBtn) {
-            addBtn.click();
-            await sleep(900);
-            log(`  + Add Another (langue ${i + 1})`);
-          } else {
-            log(`  ⚠️ Bouton Add Another introuvable pour langue ${i + 1}`);
-            break;
-          }
-        }
+    // 2c. CV Upload
+    await uploadCV(p);
 
-        // Bouton Language pour la ligne i (index dans tous les boutons language vides)
-        const langBtns = Array.from(document.querySelectorAll('button[aria-label="Language Select One Required"]'));
-        const langBtn = langBtns[i] || langBtns[langBtns.length - 1];
-        const selected = await selectListboxOption(langBtn, langName);
-        if (selected) {
-          log(`  ✓ Firebase: languages[${i}].language="${langName}" → Language`);
-        } else {
-          log(`  ⚠️ Langue "${langName}" introuvable dans la liste Workday`);
-          continue;
-        }
+    log('✅ My Experience complétée');
+  }
 
-        // Fluent checkbox (index i parmi tous les input[name="native"])
-        const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
-        const nativeCheckbox = nativeInputs[i] || nativeInputs[nativeInputs.length - 1];
-        if (nativeCheckbox) {
-          const shouldBeChecked = isFluent;
-          const isChecked = nativeCheckbox.checked || nativeCheckbox.getAttribute('aria-checked') === 'true';
-          if (shouldBeChecked && !isChecked) {
-            nativeCheckbox.click();
-            log(`  ✓ Firebase: proficiency="${proficiency}" → Fluent: checked`);
-          } else if (shouldBeChecked) {
-            log(`  ✓ Fluent: déjà coché`);
-          } else {
-            log(`  ✓ Firebase: proficiency="${proficiency}" → Fluent: non coché`);
-          }
-          await sleep(200);
-        }
+  // ── 2a. Education ───────────────────────────────────────────────────────────
+  // Sélecteurs vérifiés :
+  //   [data-automation-id="formField-school"] input → typeahead school
+  //   [data-automation-id="formField-degree"] button → listbox degree
+  //   [data-automation-id="formField-firstYearAttended"] input → From year
+  //   [data-automation-id="formField-lastYearAttended"] input → To year
+  //
+  // ⚠️ ISC Paris ne figure PAS dans la base Workday BofA (retourne "No Items")
+  //    Le filler essaie l'ajout, et si l'école est introuvable, supprime l'entrée.
 
-        // Written and Spoken (index i parmi tous les boutons W&S)
-        const wsBtns = Array.from(document.querySelectorAll('button[aria-label="Written and Spoken Select One Required"]'));
-        const wsBtn = wsBtns[i] || wsBtns[wsBtns.length - 1];
-        const wsSelected = await selectListboxOption(wsBtn, wsLevel);
-        if (wsSelected) {
-          log(`  ✓ Firebase: proficiency="${proficiency}" → Written & Spoken: ${wsLevel}`);
-        } else {
-          log(`  ⚠️ Niveau "${wsLevel}" non trouvé`);
-        }
+  async function fillEducation(p) {
+    const school    = (p.establishment || p.institution_name || '').trim();
+    const diplYear  = String(p.diploma_year || p.graduation_year || '').trim();
+    const eduLevel  = (p.education_level || '').toLowerCase();
+
+    if (!school && !diplYear) { log('  ℹ️ Aucune donnée Education → section ignorée'); return; }
+
+    // Vérifier si Education a déjà des entrées remplies
+    const existingSchool = document.querySelector('[data-automation-id="formField-school"] input');
+    if (existingSchool?.value?.trim()) {
+      log(`  ✓ Education déjà remplie ("${existingSchool.value.trim()}")`);
+      if (diplYear) {
+        await fillField('formField-lastYearAttended', diplYear, 'diploma_year');
       }
+      return;
     }
 
-    // ── Education ────────────────────────────────────────────────────────────
-    // Sélecteurs DOM vérifiés :
-    //   School typeahead : input[id*="--school"] (placeholder="Search")
-    //   Degree dropdown  : button[aria-label*="Degree"]
-    //   Field of Study   : input[id*="--fieldOfStudy"]
-    //   GPA              : input[id*="--gradeAverage"]
-    //   From year        : input[id*="--firstYearAttended-dateSectionYear-input"]
-    //   To year          : input[id*="--lastYearAttended-dateSectionYear-input"]
-    await fillEducation(p);
-    await sleep(400);
+    // Cliquer Add Education (2ème bouton "Add" parmi les visibles)
+    const addBtns = Array.from(document.querySelectorAll('button')).filter(b =>
+      /^add$/i.test((b.innerText || '').trim()) && b.offsetWidth > 0
+    );
+    const eduAddBtn = addBtns[1]; // 0=Work Exp, 1=Education
+    if (!eduAddBtn) { log('  ⚠️ Bouton Add Education introuvable'); return; }
+    await clickEl(eduAddBtn);
+    await sleep(1000);
 
-    // CV upload — tenter via fetch + DataTransfer (peut être bloqué par Workday React)
-    const cvUrl = p.cv_url || p.cv_download_url || '';
+    // Typeahead School
+    const schoolInput = document.querySelector('[data-automation-id="formField-school"] input')
+      || document.querySelector('input[id*="--school"]');
+    if (!schoolInput) { log('  ⚠️ Champ School introuvable'); return; }
+
+    schoolInput.focus();
+    reactSet(schoolInput, school);
+    await sleep(1500); // délai pour l'API typeahead
+
+    // Vérifier les suggestions
+    const noItems = Array.from(document.querySelectorAll('*')).find(el =>
+      el.offsetWidth > 0 && /^no items/i.test((el.innerText || '').trim())
+    );
+
+    if (noItems) {
+      // École introuvable → supprimer l'entrée, informer l'utilisateur
+      log(`  ⚠️ École "${school}" introuvable dans Workday → suppression + manuel requis`);
+      schoolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      await sleep(200);
+      const deleteBtn = document.querySelector('button[aria-label*="Delete"], button:has(span:contains("Delete"))')
+        || Array.from(document.querySelectorAll('button')).find(b => /delete/i.test((b.innerText || '').trim()) && b.offsetWidth > 0);
+      if (deleteBtn) { await clickEl(deleteBtn); await sleep(500); }
+      setBanner('⚠️ École non trouvée dans Workday — remplissez Education manuellement', '#e65100');
+      await sleep(2000);
+      return;
+    }
+
+    // Sélectionner la suggestion
+    const opt = Array.from(document.querySelectorAll('[role="option"]')).find(el =>
+      (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
+    );
+    if (opt) {
+      opt.click();
+      log(`  ✓ Firebase: establishment="${school}" → School`);
+      await sleep(400);
+    }
+
+    // Degree → mapping education_level → label Workday
+    const degreeLabel = (() => {
+      if (/bac\+5|m\.?sc|master|m2|grande.?école/i.test(eduLevel)) return "Master's Degree";
+      if (/bac\+3|bachelor|licence|bsc|b\.?a\b/i.test(eduLevel)) return "Bachelor's Degree";
+      if (/phd|doctorat|doctorate|bac\+8/i.test(eduLevel)) return 'Doctorate';
+      if (/bac\+4|maîtrise/i.test(eduLevel)) return "Master's Degree";
+      if (/bac\+2|bts|dut/i.test(eduLevel)) return "Associate's Degree";
+      return null;
+    })();
+    const degreeBtn = document.querySelector('[data-automation-id="formField-degree"] button[aria-haspopup]');
+    if (degreeBtn && degreeLabel) {
+      const ok = await selectListbox(degreeBtn, degreeLabel);
+      if (ok) log(`  ✓ Firebase: education_level="${eduLevel}" → Degree: ${degreeLabel}`);
+    }
+
+    // To year
+    if (diplYear) await fillField('formField-lastYearAttended', diplYear, 'diploma_year');
+
+    log('  ℹ️ Field of Study et From year non disponibles dans Firebase → à compléter manuellement');
+  }
+
+  // ── 2b. Languages ───────────────────────────────────────────────────────────
+  // Sélecteurs vérifiés sur DOM réel :
+  //   button[aria-label="Language Select One Required"] → listbox 112 langues
+  //   input[name="native"] → fluent checkbox
+  //   button[aria-label="Written and Spoken Select One Required"] → listbox Basic/Intermediate/Fluent
+  //   [data-automation-id="add-button"] texte "Add Another" → nouvelle ligne langue
+
+  async function fillLanguages(p) {
+    const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.language || l.name) : [];
+    if (!langs.length) { log('  ℹ️ Aucune langue dans Firebase'); return; }
+
+    log(`  🌐 Langues à renseigner: ${langs.map(l => l.language).join(', ')}`);
+
+    for (let i = 0; i < langs.length; i++) {
+      const lang = langs[i];
+      const langName = lang.language || lang.name || '';
+      const prof = (lang.proficiency || '').toLowerCase();
+      const isFluent = ['native', 'bilingual', 'fluent'].includes(prof);
+      const wsLevel = isFluent ? 'Fluent'
+        : ['intermediate', 'conversational', 'professional'].includes(prof) ? 'Intermediate'
+        : 'Basic';
+
+      // Ajouter une nouvelle ligne si pas la première
+      if (i > 0) {
+        const addAnother = Array.from(document.querySelectorAll('button')).find(b =>
+          b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
+        );
+        if (addAnother) { await clickEl(addAnother); await sleep(800); log(`  + Add Another`); }
+        else { log('  ⚠️ Add Another introuvable'); break; }
+      }
+
+      // Bouton Language vide (le premier avec "Select One Required")
+      const langBtn = document.querySelector('button[aria-label="Language Select One Required"]');
+      if (!langBtn) { log(`  ⚠️ Bouton Language introuvable (langue ${i+1})`); continue; }
+
+      const ok = await selectListbox(langBtn, langName);
+      if (ok) log(`  ✓ Firebase: languages[${i}]="${langName}" → Language`);
+      else { log(`  ⚠️ Langue "${langName}" introuvable dans la liste`); continue; }
+
+      // Fluent checkbox — prendre le dernier (celui de la ligne qu'on vient d'ajouter)
+      const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
+      const nativeChk = nativeInputs[nativeInputs.length - 1];
+      if (nativeChk) {
+        const isChecked = nativeChk.checked || nativeChk.getAttribute('aria-checked') === 'true';
+        if (isFluent && !isChecked) { nativeChk.click(); log(`  ✓ Fluent: checked`); }
+        else if (isFluent) { log(`  ✓ Fluent: déjà coché`); }
+        else { log(`  ✓ Fluent: non coché (${prof})`); }
+        await sleep(200);
+      }
+
+      // Written and Spoken — prendre le dernier bouton vide
+      const wsBtn = document.querySelector('button[aria-label="Written and Spoken Select One Required"]');
+      if (wsBtn) {
+        const wsOk = await selectListbox(wsBtn, wsLevel);
+        if (wsOk) log(`  ✓ Firebase: proficiency="${prof}" → W&S: ${wsLevel}`);
+      }
+
+      await sleep(300);
+    }
+  }
+
+  // ── 2c. CV Upload ───────────────────────────────────────────────────────────
+  // Workday React bloque l'injection JS native (DataTransfer ignoré).
+  // Stratégie : essayer fetch+DataTransfer, puis pause manuelle avec reprise auto.
+
+  async function uploadCV(p) {
     const fileInput = document.querySelector('input[type="file"]');
-    if (fileInput && cvUrl) {
+    if (!fileInput) { log('  ℹ️ Pas d\'input file visible'); return; }
+
+    // Vérifier si déjà uploadé
+    if (fileInput.files?.length > 0) { log('  ✓ CV déjà uploadé'); return; }
+
+    const cvUrl = p.cv_url || p.cv_download_url || '';
+    if (cvUrl) {
+      // Tentative via fetch + DataTransfer
       try {
         const resp = await fetch(cvUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const blob = await resp.blob();
         const filename = p.cv_filename || 'cv.pdf';
         const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
@@ -414,158 +385,82 @@
         fileInput.files = dt.files;
         fileInput.dispatchEvent(new Event('change', { bubbles: true }));
         fileInput.dispatchEvent(new Event('input', { bubbles: true }));
-        log(`  ✓ Firebase: cv_url → CV uploadé (${filename})`);
+        await sleep(800);
+
+        if (fileInput.files?.length > 0) {
+          log(`  ✓ CV uploadé via fetch+DataTransfer (${filename})`);
+          return;
+        }
       } catch (e) {
-        log(`  ⚠️ CV upload échoué (${e.message}) — upload manuel requis`);
-        setBanner('⚠️ Uploadez votre CV manuellement puis attendez la suite', '#e65100');
-        await sleep(3000); // Laisser du temps pour l'upload manuel
+        log(`  ℹ️ DataTransfer: ${e.message} (Workday bloque l'injection JS)`);
       }
-    } else if (fileInput && !cvUrl) {
-      log('  ⚠️ Pas de cv_url dans Firebase — CV à uploader manuellement');
-      setBanner('⚠️ Uploadez votre CV manuellement puis attendez la suite', '#e65100');
-      await sleep(3000);
     }
 
-    log('✅ My Experience complétée');
+    // Pause manuelle — attendre que l'utilisateur uploade le CV (max 3 min)
+    log('  ⏸️ CV : upload manuel requis — en attente...');
+    setBanner('⏸️ ÉTAPE MANUELLE : Uploadez votre CV, l\'automatisation reprend automatiquement', '#c47900');
+    let waited = 0;
+    while (waited < 180000) {
+      if (fileInput.files?.length > 0) {
+        log('  ✓ CV uploadé manuellement');
+        setBanner('📝 My Experience en cours...');
+        return;
+      }
+      await sleep(1000);
+      waited += 1000;
+    }
+    log('  ⚠️ Timeout CV upload (3 min) — on continue sans CV');
   }
 
-  // ─── Education ─────────────────────────────────────────────────────────────
-  // Mapping niveau Firebase → libellé Workday (dropdown Degree)
-
-  async function fillEducation(p) {
-    const school = (p.establishment || p.institution_name || '').trim();
-    const diplYear = String(p.diploma_year || p.graduation_year || '').trim();
-    const eduLevel = (p.education_level || '').toLowerCase().trim();
-
-    // Mapping education_level → Workday degree label
-    const degreeLabel = (() => {
-      if (/bac\+5|master|m\.?sc|m2|grande.?école/i.test(eduLevel)) return "Master's Degree";
-      if (/bac\+3|bachelor|licence|bsc|b\.?a\b/i.test(eduLevel)) return "Bachelor's Degree";
-      if (/bac\+8|phd|doctorat|doctorate/i.test(eduLevel)) return 'Doctorate';
-      if (/bac\+4|maîtrise/i.test(eduLevel)) return "Master's Degree";
-      if (/bac\+2|bts|dut/i.test(eduLevel)) return "Associate's Degree";
-      return null;
-    })();
-
-    if (!school && !diplYear) {
-      log('  ℹ️ Aucune donnée Education dans Firebase — section ignorée');
-      return;
-    }
-
-    log('📚 Education — remplissage...');
-
-    // Chercher si un bloc Education existe déjà (form ouvert)
-    let schoolInput = document.querySelector('input[id*="--school"]');
-
-    if (!schoolInput) {
-      // Cliquer le bouton "Add" de la section Education
-      // L'Education est la 2ème section (Work Exp = 1ère, Education = 2ème)
-      const addBtns = Array.from(document.querySelectorAll('button')).filter(b =>
-        /^add$/i.test((b.innerText || '').trim()) && b.offsetWidth > 0
-      );
-      const eduAddBtn = addBtns[1]; // 2ème "Add" = Education
-      if (!eduAddBtn) { log('  ⚠️ Bouton Add Education introuvable'); return; }
-      await clickEl(eduAddBtn);
-      await sleep(1200);
-      schoolInput = document.querySelector('input[id*="--school"]');
-    }
-
-    if (!schoolInput) { log('  ⚠️ Champ School introuvable après Add'); return; }
-
-    // School — typeahead : taper le nom → attendre suggestions → cliquer
-    if (school) {
-      schoolInput.focus();
-      reactSet(schoolInput, school);
-      await sleep(1200); // attendre que Workday charge les suggestions
-
-      const schoolOption = Array.from(document.querySelectorAll('[role="option"]')).find(el =>
-        (el.innerText || el.textContent || '').toLowerCase().includes(school.toLowerCase())
-      );
-      if (schoolOption) {
-        schoolOption.click();
-        log(`  ✓ Firebase: establishment="${school}" → School`);
-        await sleep(400);
-      } else {
-        log(`  ⚠️ École "${school}" non trouvée dans Workday — à remplir manuellement`);
-      }
-    }
-
-    // Degree — dropdown listbox
-    if (degreeLabel) {
-      const degreeBtn = document.querySelector('button[aria-label*="Degree"]');
-      if (degreeBtn) {
-        const ok = await selectListboxOption(degreeBtn, degreeLabel);
-        if (ok) log(`  ✓ Firebase: education_level="${eduLevel}" → Degree: ${degreeLabel}`);
-        else log(`  ⚠️ Degree "${degreeLabel}" non trouvé dans la liste`);
-      }
-    } else {
-      log(`  ℹ️ education_level="${eduLevel}" non mappé → Degree à remplir manuellement`);
-    }
-
-    // Field of Study — pas dans le profil Firebase actuel, skip
-    log('  ℹ️ field_of_study non disponible dans Firebase — à remplir manuellement');
-
-    // GPA — skip (non disponible)
-
-    // To year (diploma_year)
-    if (diplYear) {
-      const toInput = document.querySelector('input[id*="--lastYearAttended-dateSectionYear-input"]');
-      if (toInput) {
-        toInput.focus();
-        reactSet(toInput, diplYear);
-        toInput.blur();
-        log(`  ✓ Firebase: diploma_year="${diplYear}" → To year`);
-      }
-    }
-
-    // From year — non disponible dans Firebase, skip
-    log(`  ℹ️ start_year non disponible dans Firebase — From year à remplir manuellement`);
-  }
-
-  // ─── Étape 3 : Application Questions ──────────────────────────────────────
+  // ─── STEP 3 : Application Questions ─────────────────────────────────────────
+  // Structure job-spécifique. Stratégie conservative : répondre "No" aux booléens.
 
   async function fillApplicationQuestions(p) {
     log('📝 Step 3 — Application Questions');
-    setBanner('📝 Questions de candidature...');
+    setBanner('📝 Application Questions...');
 
-    // Répondre "No" aux questions booléennes non encore répondues
-    const radiosNo = document.querySelectorAll('input[type="radio"][value="false"]:not(:checked), input[type="radio"][value="No"]:not(:checked)');
-    for (const radio of radiosNo) {
-      const fieldWrapper = radio.closest('[data-automation-id^="formField-"]');
-      if (fieldWrapper) {
-        radio.click();
-        const label = fieldWrapper.querySelector('label, [class*="label"]');
-        if (label) log(`  ✓ Question: "${label.textContent.trim().slice(0,50)}" → No`);
+    // Récupérer toutes les questions visibles
+    const formFields = document.querySelectorAll('[data-automation-id^="formField-"]');
+    let answered = 0;
+
+    for (const field of formFields) {
+      // Radio Yes/No → sélectionner "No" (false)
+      const radioNo = field.querySelector('input[type="radio"][value="false"]:not(:checked), input[type="radio"][value="No"]:not(:checked)');
+      if (radioNo) {
+        const q = field.querySelector('label')?.textContent?.trim()?.slice(0, 60) || 'question';
+        radioNo.click();
+        log(`  ✓ "${q}" → No`);
+        answered++;
       }
     }
 
+    if (!answered) log('  ℹ️ Aucune question auto-détectée (formulaire vide ou non standard)');
     log('✅ Application Questions');
   }
 
-  // ─── Étape 4 : Voluntary Disclosures ──────────────────────────────────────
+  // ─── STEP 4 : Voluntary Disclosures ──────────────────────────────────────────
 
   async function fillVoluntaryDisclosures(p) {
     log('📝 Step 4 — Voluntary Disclosures');
-    setBanner('📝 Déclarations volontaires (EEO)...');
-    // On ne répond pas aux questions de diversité — Workday accepte de passer sans répondre.
-    log('✅ Voluntary Disclosures (non renseignées)');
+    setBanner('📝 Voluntary Disclosures (EEO)...');
+    // Workday autorise de passer sans répondre (pas de champ requis en général)
+    log('✅ Voluntary Disclosures (laissées vides — optionnel)');
   }
 
-  // ─── Étape 5 : Review & Submit ─────────────────────────────────────────────
+  // ─── STEP 5 : Review & Submit ─────────────────────────────────────────────
 
   async function reviewAndSubmit(pending) {
     log('📝 Step 5 — Review');
     setBanner('📋 Vérification finale avant soumission...');
     await sleep(2000);
 
-    // Sur la page Review, le bouton final s'appelle "Submit"
     const submitBtn = Array.from(document.querySelectorAll('button')).find(b =>
       b.offsetWidth > 0 && /^submit$/i.test((b.innerText || '').trim())
     ) || document.querySelector('[data-automation-id*="submit"]');
 
     if (!submitBtn) {
-      log('⚠️ Bouton Submit introuvable — vérification manuelle requise');
-      setBanner('⚠️ Cliquez Submit pour finaliser la candidature', '#e65100');
+      log('⚠️ Bouton Submit introuvable');
+      setBanner('⚠️ Cliquez Submit pour finaliser', '#e65100');
       return false;
     }
 
@@ -574,129 +469,149 @@
     await clickEl(submitBtn);
     await sleep(3000);
 
-    // Détecter la confirmation
-    const bodyText = document.body.innerText.toLowerCase();
-    if (/thank you|application submitted|candidature/i.test(bodyText)) {
-      log('✅ Candidature soumise avec succès !');
+    if (/thank you|application submitted|candidature/i.test(document.body.innerText)) {
+      log('✅ Candidature soumise !');
       setBanner('✅ Candidature Bank of America soumise ! Fermeture dans 3s...', '#2e7d32');
-
       try {
         await chrome.runtime.sendMessage({
-          action: 'candidature_success',
-          bankId: 'bank_of_america_workday',
-          jobTitle: pending.jobTitle || '',
-          jobId: pending.jobId || '',
-          offerUrl: pending.offerUrl || '',
-          timestamp: new Date().toISOString()
+          action: 'candidature_success', bankId: 'bank_of_america_workday',
+          jobTitle: pending.jobTitle || '', jobId: pending.jobId || '',
+          offerUrl: pending.offerUrl || '', timestamp: new Date().toISOString()
         }).catch(() => {});
       } catch (_) {}
-
       await sleep(3000);
       if (pending.tabId) chrome.tabs.remove(pending.tabId).catch(() => {});
       await chrome.storage.local.remove([PENDING_KEY, TAB_KEY]).catch(() => {});
       return true;
     }
 
-    log('⚠️ Confirmation non détectée — vérifiez manuellement');
-    setBanner('⚠️ Soumission peut-être réussie — vérifiez manuellement', '#e65100');
+    log('⚠️ Confirmation non détectée');
+    setBanner('⚠️ Vérifiez manuellement si la candidature a été soumise', '#e65100');
     return false;
   }
 
-  // ─── Boucle principale ─────────────────────────────────────────────────────
+  // ─── Sign In ────────────────────────────────────────────────────────────────
+
+  async function handleSignIn(authEmail, authPassword) {
+    // Vérifier si déjà connecté (id="accountSettingsButton" présent + pas de formulaire login)
+    if (document.getElementById('accountSettingsButton') && !document.querySelector('input[data-automation-id="email"]')) {
+      log('  ✓ Déjà connecté');
+      return true;
+    }
+    const loginEl = document.querySelector('input[data-automation-id="email"]');
+    if (!loginEl) { log('  ✓ Pas de formulaire de connexion visible'); return true; }
+    if (!authEmail || !authPassword) {
+      log('❌ Identifiants BofA manquants — ajoutez-les dans Connexions');
+      setBanner('❌ Identifiants Bank of America manquants — ajoutez-les dans Connexions', '#c62828');
+      return false;
+    }
+    log('🔐 Connexion...');
+    const ns = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    loginEl.focus();
+    if (ns) ns.call(loginEl, authEmail); else loginEl.value = authEmail;
+    loginEl.dispatchEvent(new Event('input', { bubbles: true }));
+    loginEl.dispatchEvent(new Event('change', { bubbles: true }));
+    loginEl.blur();
+    log(`  ✓ Email: ${authEmail}`);
+    await sleep(400);
+    const passEl = document.querySelector('input[data-automation-id="password"]') || document.querySelector('input[type="password"]');
+    if (passEl) {
+      passEl.focus();
+      if (ns) ns.call(passEl, authPassword); else passEl.value = authPassword;
+      passEl.dispatchEvent(new Event('input', { bubbles: true }));
+      passEl.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(300);
+      ['keydown', 'keypress', 'keyup'].forEach(t => passEl.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true })));
+    }
+    let w = 0;
+    while (w < 12000) { await sleep(500); w += 500; if (!document.querySelector('input[data-automation-id="email"]')) break; }
+    log('  ✓ Connexion terminée');
+    return true;
+  }
+
+  // ─── Main loop ──────────────────────────────────────────────────────────────
 
   async function run() {
     await sleep(1500);
-    setBanner('🔄 Taleos — Automatisation Bank of America en cours...');
-    log('🚀 Démarrage filler Bank of America');
+    setBanner('🔄 Taleos — Bank of America en cours...');
+    log('🚀 Démarrage filler BofA');
 
     const pending = await getPending();
     if (!pending) { globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false; return; }
 
     const p = pending.profile || {};
-    const authEmail = p.auth_email || p.email || '';
-    const authPassword = p.auth_password || '';
+    log(`  Firebase: email="${p.auth_email || p.email}" | job="${pending.jobTitle}"`);
 
-    log(`  Firebase: email="${authEmail}" | jobTitle="${pending.jobTitle || '(unknown)'}"`);
-
-    // ── Connexion ────────────────────────────────────────────────────────────
-    const signInOk = await handleSignIn(authEmail, authPassword);
-    if (!signInOk) { globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false; return; }
+    // Connexion
+    const ok = await handleSignIn(p.auth_email || p.email, p.auth_password);
+    if (!ok) { globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false; return; }
     await sleep(1000);
 
-    // ── Clic Apply Now / Continue Application ────────────────────────────────
-    await clickApplyOrContinue();
+    // Apply Now / Continue Application
+    await clickApply();
 
-    // Attendre que le formulaire soit chargé
-    let loadWait = 0;
-    while (loadWait < 8000 && !document.querySelector('[data-automation-id="progressBarActiveStep"]')) {
-      await sleep(500);
-      loadWait += 500;
+    // Attendre que le formulaire charge (progressBar visible)
+    let loadW = 0;
+    while (loadW < 10000 && !document.querySelector('[data-automation-id="progressBarActiveStep"]')) {
+      await sleep(500); loadW += 500;
     }
 
-    // ── Boucle multi-steps ──────────────────────────────────────────────────
-    let maxSteps = 10;
-    const stepsDone = new Set();
+    // Boucle multi-steps
+    const done = new Set();
     let submitted = false;
+    let maxIter = 12;
 
-    while (maxSteps-- > 0 && !submitted) {
-      const step = getCurrentStep();
-      log(`  → Étape: ${step}`);
+    while (maxIter-- > 0 && !submitted) {
+      const step = currentStep();
+      log(`  → Step: ${step}`);
 
-      if (step === 'my_information' && !stepsDone.has(step)) {
-        await fillMyInformation(p);
-        stepsDone.add(step);
-        await clickSaveAndContinue();
-      } else if (step === 'my_experience' && !stepsDone.has(step)) {
-        await fillMyExperience(p);
-        stepsDone.add(step);
-        await clickSaveAndContinue();
-      } else if (step === 'application_questions' && !stepsDone.has(step)) {
-        await fillApplicationQuestions(p);
-        stepsDone.add(step);
-        await clickSaveAndContinue();
-      } else if (step === 'voluntary_disclosures' && !stepsDone.has(step)) {
-        await fillVoluntaryDisclosures(p);
-        stepsDone.add(step);
-        await clickSaveAndContinue();
+      if (step === 'my_information' && !done.has(step)) {
+        await fillMyInformation(p); done.add(step);
+        await saveAndContinue();
+        await waitForNextStep('my_experience');
+      } else if (step === 'my_experience' && !done.has(step)) {
+        await fillMyExperience(p); done.add(step);
+        await saveAndContinue();
+        await waitForNextStep('application_questions');
+      } else if (step === 'application_questions' && !done.has(step)) {
+        await fillApplicationQuestions(p); done.add(step);
+        await saveAndContinue();
+        await waitForNextStep('voluntary_disclosures');
+      } else if (step === 'voluntary_disclosures' && !done.has(step)) {
+        await fillVoluntaryDisclosures(p); done.add(step);
+        await saveAndContinue();
+        await waitForNextStep('review');
       } else if (step === 'review') {
-        submitted = await reviewAndSubmit(pending);
-        break;
+        submitted = await reviewAndSubmit(pending); break;
       } else if (step === 'unknown') {
-        // Tenter de cliquer Apply/Continue si on est encore sur la page offre
-        const clicked = await clickApplyOrContinue();
-        if (!clicked) {
-          // Essayer Save and Continue pour passer à l'étape suivante
-          const advanced = await clickSaveAndContinue();
-          if (!advanced) {
-            log('❌ Impossible de progresser — arrêt');
-            setBanner('⚠️ Vérification manuelle requise', '#e65100');
-            break;
-          }
+        // Peut-être sur la page offre, tenter Apply
+        const applied = await clickApply();
+        if (!applied) {
+          // Essayer de progresser
+          const advanced = await saveAndContinue();
+          if (!advanced) { log('❌ Impossible de progresser'); setBanner('⚠️ Vérification manuelle requise', '#e65100'); break; }
         }
         await sleep(1500);
       } else {
-        // Étape déjà traitée → avancer
-        await clickSaveAndContinue();
+        // Étape déjà faite, avancer
+        await saveAndContinue();
+        await sleep(1000);
       }
-      await sleep(800);
     }
 
-    if (!submitted) log('⚠️ Automatisation terminée sans soumission confirmée');
+    if (!submitted) log('⚠️ Fin sans soumission confirmée');
     globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false;
   }
 
-  // ─── Démarrage ──────────────────────────────────────────────────────────────
-
+  // ─── Start ───────────────────────────────────────────────────────────────────
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => run().catch(e => {
-      log(`❌ ${e.message}`);
-      setBanner(`❌ Erreur: ${e.message}`, '#c62828');
+      log(`❌ ${e.message}`); setBanner(`❌ ${e.message}`, '#c62828');
       globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false;
     }));
   } else {
     run().catch(e => {
-      log(`❌ ${e.message}`);
-      setBanner(`❌ Erreur: ${e.message}`, '#c62828');
+      log(`❌ ${e.message}`); setBanner(`❌ ${e.message}`, '#c62828');
       globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false;
     });
   }
