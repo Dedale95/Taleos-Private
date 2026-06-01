@@ -421,11 +421,19 @@
           userEmailEl.click();
           return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 900 };
         }
-        // Étape 2 : cliquer Sign Out — identifier par texte exact, pas par classe CSS
-        const signOutEl = findVisibleByText(
-          'span, a, button, li, [role="menuitem"], [role="option"], div',
-          /^sign\s*out$/i
-        );
+        // Étape 2 : cliquer Sign Out
+        // findVisibleByText rate les menus Workday en position:fixed (offsetParent===null)
+        // → utiliser getBoundingClientRect() + innerText + regex souple
+        const signOutEl = Array.from(
+          document.querySelectorAll('span, a, button, li, [role="menuitem"], [role="option"], div, p')
+        ).find(el => {
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) return false;
+          // innerText ignore les enfants cachés (icônes SVG, etc.)
+          const txt = ((el.innerText !== undefined ? el.innerText : el.textContent) || '').trim();
+          // "Sign Out" exact (longueur < 20 pour éviter les parents qui contiennent d'autres textes)
+          return /sign\s*out/i.test(txt) && txt.length < 20;
+        });
         if (!signOutEl) {
           return { done: false, error: 'Menu Sign Out BofA introuvable. Déconnectez-vous manuellement puis relancez le test.' };
         }
