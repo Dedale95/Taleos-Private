@@ -797,12 +797,42 @@
     return null;
   }
 
+  // Convertit le préavis Firebase (ex. "1_month", "3_months") vers les tranches BofA
+  function noticePeriodToBofa(val) {
+    const v = (val || '').toLowerCase();
+    if (!v || v === 'none') return ['Up to 4 weeks'];
+    if (v === '1_month' || v === '4_weeks') return ['Up to 4 weeks'];
+    if (v === '2_months') return ['5 to 8 weeks'];
+    if (v === '3_months') return ['9 to 12 weeks'];
+    if (v === 'more_than_3_months') return ['12 weeks+'];
+    // Cas numérique en semaines
+    const weeks = parseInt(v);
+    if (!isNaN(weeks)) {
+      if (weeks <= 4)  return ['Up to 4 weeks'];
+      if (weeks <= 8)  return ['5 to 8 weeks'];
+      if (weeks <= 12) return ['9 to 12 weeks'];
+      return ['12 weeks+'];
+    }
+    return ['Up to 4 weeks'];
+  }
+
+  // Déduire le droit au travail depuis jp_morgan_work_authorizations
+  function deriveRightToWork(p) {
+    const auths = Array.isArray(p.jp_morgan_work_authorizations) ? p.jp_morgan_work_authorizations : [];
+    const hasEU = auths.some(a => (a.country || '').toLowerCase().includes('union') || (a.country || '').toLowerCase().includes('france'));
+    return hasEU || auths.length > 0 ? 'Yes' : null;
+  }
+
   async function fillApplicationQuestions(p) {
     log('📝 Step 3 — Application Questions');
     setBanner('📝 Application Questions...');
     await sleep(800);
 
     let answered = 0;
+
+    // ─── Log du contexte Firebase ─────────────────────────────────────────────
+    log(`  Firebase: employer="${p.current_employer || '—'}" | salary="${p.current_salary || '—'} ${p.current_salary_currency || ''}" | notice="${p.sg_notice_period || '—'}" | relatives="${p.bofa_has_relatives || 'No'}" | referred="${p.bofa_referred || 'No'}" | pwc="${p.bofa_worked_at_pwc || 'No'}" | finra="${p.bofa_finra_license || '—'}"`);
+
     const formFields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'))
       .filter(f => f.offsetParent !== null);
 
@@ -825,37 +855,81 @@
         continue;
       }
 
+      // ── Textarea (champs conditionnels) ─────────────────────────────────────
+      const textarea = field.querySelector('textarea');
+      if (textarea) {
+        if (textarea.value.trim()) continue; // déjà rempli
+        let val = '';
+        if (/relatives|close personal relationship/i.test(lower)) val = p.bofa_relatives_details || '';
+        else if (/referrer|name.*refer/i.test(lower)) val = p.bofa_referrer_name || '';
+        else if (/other business|details.*business/i.test(lower)) val = p.bofa_other_business_details || '';
+        else if (/medical.*assistance|adjustments|disability.*details/i.test(lower)) val = p.bofa_medical_details || '';
+        else if (/additional.*details|disclose.*details/i.test(lower)) val = p.bofa_additional_info_details || '';
+        if (val) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+          if (setter) setter.call(textarea, val); else textarea.value = val;
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          textarea.dispatchEvent(new Event('change', { bubbles: true }));
+          logFieldAction(labelText.slice(0, 50), val, '(vide)', 'fill');
+          answered++;
+        }
+        continue;
+      }
+
       // ── Dropdown ────────────────────────────────────────────────────────────
       const dropBtn = field.querySelector('button[aria-haspopup="listbox"], button[aria-haspopup="true"]');
       if (dropBtn && !dropdownIsFilled(dropBtn)) {
         let chosen = null;
 
         if (/right.to.work|authorized.to.work|eligible.to.work/i.test(lower)) {
-          chosen = await selectBestOption(dropBtn, ['Yes']);
+          // Réponse Yes si on a des autorisations dans Firebase
+          const rightToWork = p.bofa_right_to_work || (p.jp_morgan_work_authorizations?.length > 0 ? 'Yes' : 'Yes');
+          chosen = await selectBestOption(dropBtn, [rightToWork || 'Yes']);
+        } else if (/which option.*right.to.work|please select.*right.*work/i.test(lower)) {
+          // Type de droit au travail (dropdown de suivi)
+          const rwType = p.bofa_right_to_work_type || 'Citizenship';
+          chosen = await selectBestOption(dropBtn, [rwType]);
+        } else if (/relatives|close personal relationship/i.test(lower)) {
+          const val = p.bofa_has_relatives || 'No';
+          chosen = await selectBestOption(dropBtn, [val]);
+        } else if (/referred.*bank|bank.*referred|refer.*employment/i.test(lower)) {
+          const ref = p.bofa_referred || 'No';
+          if (ref === 'Yes_employee') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America employee', 'Yes']);
+          else if (ref === 'Yes_client') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America client', 'Yes, by a client', 'Yes']);
+          else chosen = await selectBestOption(dropBtn, ['No']);
+        } else if (/pricewaterhouse|pwc/i.test(lower)) {
+          chosen = await selectBestOption(dropBtn, [p.bofa_worked_at_pwc || 'No']);
+        } else if (/finra.*license/i.test(lower)) {
+          const finra = p.bofa_finra_license || 'I do not hold a FINRA license';
+          chosen = await selectBestOption(dropBtn, [finra]);
+        } else if (/vendor.worker/i.test(lower)) {
+          chosen = await selectBestOption(dropBtn, [p.bofa_is_vendor_worker || 'No']);
+        } else if (/previously applied/i.test(lower)) {
+          chosen = await selectBestOption(dropBtn, [p.bofa_previously_applied || 'No']);
         } else if (/notice.period/i.test(lower)) {
-          const np = p.notice_period_weeks || p.notice_period || '';
-          const prefs = np ? [`${np}`, `${np} week`, `${np} weeks`] : [];
-          chosen = await selectBestOption(dropBtn, [...prefs, '4 Weeks', '4 weeks', '1 Month', '2 Weeks', '1 Week']);
-        } else if (
-          /relatives|close personal relationship/i.test(lower) ||
-          /referred.*bank|bank.*referr/i.test(lower) ||
-          /pricewaterhouse|pwc/i.test(lower) ||
-          /finra.*license/i.test(lower) ||
-          /vendor.worker/i.test(lower) ||
-          /previously applied/i.test(lower) ||
-          /armed forces/i.test(lower) ||
-          /other business.*proprietor|engaged.*other business/i.test(lower) ||
-          /medical condition|special.*educational|disability/i.test(lower) ||
-          /additional information.*disclose/i.test(lower)
-        ) {
-          chosen = await selectBestOption(dropBtn, ['No']);
+          const prefs = noticePeriodToBofa(p.sg_notice_period || p.notice_period_weeks || '');
+          log(`  ℹ️ Notice period Firebase="${p.sg_notice_period}" → BofA preferences: ${prefs.join(' | ')}`);
+          chosen = await selectBestOption(dropBtn, prefs);
+        } else if (/other business.*proprietor|engaged.*other business/i.test(lower)) {
+          chosen = await selectBestOption(dropBtn, [p.bofa_other_business || 'No']);
+        } else if (/medical condition|special.*educational|disability.*adjust/i.test(lower)) {
+          chosen = await selectBestOption(dropBtn, [p.bofa_medical_condition || 'No']);
+        } else if (/additional information.*disclose|additional info/i.test(lower)) {
+          chosen = await selectBestOption(dropBtn, [p.bofa_additional_info || 'No']);
+        } else if (/armed forces/i.test(lower)) {
+          // jp_morgan_military_service : "No" ou valeur "Yes..."
+          const military = p.jp_morgan_military_service || 'No';
+          const wantsYes = /^yes/i.test(military);
+          chosen = await selectBestOption(dropBtn, wantsYes ? ['Yes'] : ['No']);
         }
 
         if (chosen) {
           log(`  ✓ "${labelText.slice(0, 60)}" → ${chosen}`);
           answered++;
+          // Après avoir répondu "Yes" à certaines questions → textarea suivant visible
+          await sleep(300);
         } else if (chosen === null) {
-          // Question non reconnue → essayer "No" par défaut
+          // Question non reconnue → essayer "No" par défaut si disponible
           const opts = await getDropdownOptions(dropBtn);
           dropBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
           await sleep(200);
@@ -864,31 +938,46 @@
             const ok = await selectListbox(dropBtn, noOpt);
             if (ok) { log(`  ✓ "${labelText.slice(0, 60)}" → No (défaut)`); answered++; }
           } else if (opts.length) {
-            log(`  ⚠️ "${labelText.slice(0, 60)}" — options: ${opts.slice(0, 4).join(' | ')}`);
+            log(`  ⚠️ "${labelText.slice(0, 60)}" — options disponibles: ${opts.slice(0, 5).join(' | ')}`);
           }
         }
         continue;
       }
 
-      // ── Champs texte ────────────────────────────────────────────────────────
+      // ── Champs texte / date ──────────────────────────────────────────────────
       const inp = field.querySelector(
         'input[type="text"], input[type="date"], input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]):not([type="file"]):not([type="search"])'
       );
       if (inp && !inp.value?.trim()) {
         let val = '';
-        if (/most recent.*employer|current.*employer|confirm.*employer/i.test(lower)) val = p.current_employer || p.employer || '';
-        else if (/start.date.*employer/i.test(lower)) val = fmtDate(p.employment_start_date || p.employer_start_date || p.start_date || '');
-        else if (/start.date.*role/i.test(lower)) val = fmtDate(p.role_start_date || p.current_role_start_date || p.employment_start_date || '');
-        else if (/base.salary|current.*salary/i.test(lower)) val = String(p.current_salary || p.salary || '');
-        else if (/minimum.*salary|salary requirement/i.test(lower)) val = String(p.min_salary || p.salary_expectation || p.expected_salary || '');
-        else if (/incentive|bonus/i.test(lower)) val = String(p.current_bonus || p.bonus || '0');
+        const fbLabel = labelText.slice(0, 50);
+        if (/most recent.*employer|current.*employer|confirm.*employer/i.test(lower)) {
+          val = p.current_employer || '';
+          logFieldAction(fbLabel, val || '(absent Firebase)', inp.value || '(vide)', val ? 'fill' : 'missing_firebase');
+        } else if (/start.date.*employer/i.test(lower)) {
+          val = fmtDate(p.employment_start_date || '');
+          logFieldAction(fbLabel, p.employment_start_date || '(absent)', inp.value || '(vide)', val ? 'fill' : 'missing_firebase');
+        } else if (/start.date.*role/i.test(lower)) {
+          val = fmtDate(p.current_role_start_date || p.employment_start_date || '');
+          logFieldAction(fbLabel, p.current_role_start_date || p.employment_start_date || '(absent)', inp.value || '(vide)', val ? 'fill' : 'missing_firebase');
+        } else if (/base.salary|current.*salary/i.test(lower)) {
+          const amt = p.current_salary || '';
+          const cur = p.current_salary_currency || '';
+          val = amt ? (cur ? `${amt} ${cur}` : String(amt)) : '';
+          logFieldAction(fbLabel, val || '(absent)', inp.value || '(vide)', val ? 'fill' : 'missing_firebase');
+        } else if (/minimum.*salary|salary requirement/i.test(lower)) {
+          const amt = p.salary_expectations || p.min_salary || '';
+          const cur = p.current_salary_currency || p.salary_currency || '';
+          val = amt ? (cur ? `${amt} ${cur}` : String(amt)) : '';
+          logFieldAction(fbLabel, val || '(absent)', inp.value || '(vide)', val ? 'fill' : 'missing_firebase');
+        } else if (/incentive|bonus/i.test(lower)) {
+          val = String(p.current_bonus || '0');
+          logFieldAction(fbLabel, val, inp.value || '(vide)', 'fill');
+        }
 
         if (val) {
           reactSet(inp, val);
-          logFieldAction(labelText.slice(0, 50), val, '(vide)', 'fill');
           answered++;
-        } else if (lower) {
-          log(`  ⚠️ "${labelText.slice(0, 50)}" — valeur absente dans Firebase`);
         }
       }
     }
