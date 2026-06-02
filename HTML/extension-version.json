@@ -1,7 +1,7 @@
 {
   "version": "1.2.187",
   "version_name": "1.2.187-bofa-signin-phone-cv-logs",
-  "published_at": "2026-06-02T16:09:00Z",
+  "published_at": "2026-06-02T16:10:10Z",
   "release_notes": "Bank of America — refonte complète : connexion Sign In détectée et automatisée, bannière déplacée en bas (ne masque plus le header), téléphone + indicatif +33 renseignés, suppression du CV existant avant upload, logs détaillés Firebase/Formulaire.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.187.zip"
 }
