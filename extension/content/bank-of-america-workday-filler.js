@@ -392,15 +392,16 @@
       }
     }
 
-    // ── Previously employed → No ─────────────────────────────────────────────
-    const prevWorkerNo = document.querySelector('[data-automation-id="formField-candidateIsPreviousWorker"] input[value="false"]');
-    if (prevWorkerNo) {
-      if (!prevWorkerNo.checked) {
-        prevWorkerNo.click();
-        log('  ✓ Previously employed by BofA: No → coché');
-      } else {
-        log('  ✓ Previously employed by BofA: déjà No');
-      }
+    // ── Previously employed by BofA? → lu depuis le profil ──────────────────
+    const prevEmployed = p.bofa_previously_employed || 'No';
+    const prevWorkerInput = document.querySelector(
+      `[data-automation-id="formField-candidateIsPreviousWorker"] input[value="${prevEmployed === 'Yes' ? 'true' : 'false'}"]`
+    );
+    if (prevWorkerInput && !prevWorkerInput.checked) {
+      prevWorkerInput.click();
+      log(`  ✓ Previously employed by BofA: Firebase="${prevEmployed}" → coché`);
+    } else if (prevWorkerInput?.checked) {
+      log(`  ✓ Previously employed by BofA: Firebase="${prevEmployed}" → déjà coché`);
     }
 
     // ── Phone Device Type → Mobile ────────────────────────────────────────────
