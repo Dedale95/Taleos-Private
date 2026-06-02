@@ -761,9 +761,7 @@
 
     log(`  ⏳ CV: téléchargement "${filename}" depuis Firebase Storage...`);
     const ok = await setFileFromStorage(fileInput, storagePath, filename);
-    if (ok) {
-      logFieldAction('CV', filename, '(aucun)', 'fill');
-    } else {
+    if (!ok) {
       log('  ⚠️ CV: échec upload Firebase — upload manuel requis');
       setBanner('⏸️ Uploadez votre CV manuellement', '#c47900');
       let waited = 0;
@@ -771,6 +769,24 @@
         await sleep(1000); waited += 1000;
       }
       setBanner('📝 My Experience en cours...');
+      return;
+    }
+
+    // Vérification : attendre que Workday affiche le nom du fichier dans l'UI
+    // (signe que le fichier a bien été accepté par React/Workday)
+    await sleep(2000);
+    const cvPageText = document.body.innerText || '';
+    // Workday affiche généralement le nom du fichier dans un span/div visible
+    const visibleFilename = Array.from(document.querySelectorAll('[class*="file"], [class*="resume"], [class*="attachment"], [data-automation-id*="file"]'))
+      .find(el => el.offsetWidth > 0 && el.innerText && el.innerText.toLowerCase().includes(cvBase));
+
+    if (visibleFilename || cvPageText.toLowerCase().includes(cvBase)) {
+      log(`  ✅ CV: "${filename}" confirmé visible dans l'interface Workday`);
+    } else if (fileInput.files?.length > 0) {
+      log(`  ✓ CV: "${filename}" assigné à l'input (${fileInput.files[0]?.name}) — non encore affiché par Workday (délai possible)`);
+    } else {
+      log(`  ⚠️ CV: fichier non trouvé dans l'input après upload — Workday n'a peut-être pas accepté le fichier`);
+      setBanner('⚠️ Vérifiez le CV manuellement sur cette page', '#e65100');
     }
   }
 
