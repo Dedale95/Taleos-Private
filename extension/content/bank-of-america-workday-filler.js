@@ -25,17 +25,17 @@
     try { chrome.runtime.sendMessage({ action: 'extension_run_log', source: 'bank-of-america-workday-filler', level, message: txt, ts: new Date().toISOString() }).catch(() => {}); } catch (_) {}
   }
 
-  // Bannière en bas de page — évite de masquer le header BofA (Sign In, menus)
+  // Bannière en haut de page, décalée sous le header BofA (~60px)
   function setBanner(text, color) {
     let el = document.getElementById(BANNER_ID);
     if (!el) {
       el = document.createElement('div');
       el.id = BANNER_ID;
       Object.assign(el.style, {
-        position: 'fixed', bottom: '0', left: '0', width: '100%', zIndex: '2147483647',
+        position: 'fixed', top: '60px', left: '0', width: '100%', zIndex: '2147483647',
         background: '#012169', color: '#fff', padding: '8px 16px',
         fontSize: '13px', fontWeight: '600', textAlign: 'center',
-        boxShadow: '0 -2px 6px rgba(0,0,0,0.3)', fontFamily: 'sans-serif'
+        boxShadow: '0 2px 6px rgba(0,0,0,0.3)', fontFamily: 'sans-serif'
       });
       document.documentElement.appendChild(el);
     }
@@ -595,15 +595,17 @@
     return allAddAnother[allAddAnother.length - 1] || null;
   }
 
-  // Bouton "Add" initial quand 0 lignes de langue existent
+  // Bouton "Add" ou "Add Another" initial quand 0 lignes de langue existent
+  // Sur BofA Workday, le bouton est toujours "Add Another" (data-automation-id="add-button")
   function findLanguageAddBtn() {
-    // Via data-automation-id="add-button" (peut aussi être le premier Add)
+    // Sur BofA : data-automation-id="add-button" avec texte "Add Another"
+    // C'est le même bouton pour la 1ère et les langues suivantes
     const byId = Array.from(document.querySelectorAll('[data-automation-id="add-button"]')).find(b =>
-      b.offsetWidth > 0 && /^add$/i.test((b.innerText || '').trim())
+      b.offsetWidth > 0 && /add/i.test((b.innerText || '').trim())
     );
     if (byId) return byId;
 
-    // Heading "Languages" → chercher le bouton Add dans la section
+    // Heading "Languages" → chercher le bouton Add/Add Another dans la section
     const langHeading = Array.from(document.querySelectorAll('h3,h4,legend,[role="heading"]')).find(el =>
       /^languages?$/i.test((el.textContent || '').trim()) && el.offsetWidth > 0
     );
@@ -611,15 +613,15 @@
       let el = langHeading;
       for (let i = 0; i < 8 && el; i++) {
         const btn = Array.from(el.querySelectorAll('button')).find(b =>
-          b.offsetWidth > 0 && /^add$/i.test((b.innerText || '').trim())
+          b.offsetWidth > 0 && /^add/i.test((b.innerText || '').trim())
         );
         if (btn) return btn;
         el = el.parentElement;
       }
     }
-    // Dernier bouton "Add" de la page (Languages est la dernière section)
+    // Dernier bouton "Add*" de la page
     const allAdds = Array.from(document.querySelectorAll('button')).filter(b =>
-      b.offsetWidth > 0 && /^add$/i.test((b.innerText || '').trim())
+      b.offsetWidth > 0 && /^add/i.test((b.innerText || '').trim())
     );
     return allAdds[allAdds.length - 1] || null;
   }
@@ -854,6 +856,36 @@
     return hasEU || auths.length > 0 ? 'Yes' : null;
   }
 
+  // Extraire le texte de la question pour un élément de formulaire (dropdown, textarea, input)
+  // BofA Step 3 n'utilise pas de <label> → on remonte dans le DOM pour trouver le texte
+  function getQuestionText(el) {
+    // 1. label directement parent ou ancêtre
+    let node = el.parentElement;
+    for (let depth = 0; depth < 6 && node; depth++) {
+      const lbl = node.querySelector('label');
+      if (lbl && lbl.offsetWidth > 0) return lbl.textContent.replace(/\*/g, '').trim();
+      node = node.parentElement;
+    }
+    // 2. Texte du nœud parent direct (ignore les enfants qui sont des boutons/inputs)
+    node = el.parentElement;
+    for (let depth = 0; depth < 6 && node; depth++) {
+      // Chercher un <p> ou <span> avec du texte de question
+      const textEl = node.querySelector('p:not(:empty), [class*="label"]:not(:empty), [class*="title"]:not(:empty)');
+      if (textEl && textEl.offsetWidth > 0 && textEl.textContent.trim().length > 10) {
+        return textEl.textContent.replace(/\*/g, '').trim();
+      }
+      // Texte direct du nœud (nœuds texte sans balises)
+      const directText = Array.from(node.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent.trim())
+        .join(' ').trim();
+      if (directText.length > 10) return directText.replace(/\*/g, '').trim();
+      node = node.parentElement;
+    }
+    // 3. aria-label du bouton (contient souvent la valeur actuelle "No Required" — peu utile)
+    return (el.getAttribute('aria-label') || '').replace(/required/i, '').trim();
+  }
+
   async function fillApplicationQuestions(p) {
     log('📝 Step 3 — Application Questions');
     setBanner('📝 Application Questions...');
@@ -864,6 +896,11 @@
     // ─── Log du contexte Firebase ─────────────────────────────────────────────
     log(`  Firebase: employer="${p.current_employer || '—'}" | salary="${p.current_salary || '—'} ${p.current_salary_currency || ''}" | notice="${p.sg_notice_period || '—'}" | relatives="${p.bofa_has_relatives || 'No'}" | referred="${p.bofa_referred || 'No'}" | pwc="${p.bofa_worked_at_pwc || 'No'}" | finra="${p.bofa_finra_license || '—'}"`);
 
+    // Scan ALL visible question containers (formField-* ET autres wrappers BofA Step 3)
+    // On cible directement les éléments interactifs visibles plutôt que leurs wrappers
+    const seen = new Set();
+
+    // Collecter les wrappers formField-* (Step 1/2 compatible)
     const formFields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'))
       .filter(f => f.offsetParent !== null);
 
@@ -1010,6 +1047,104 @@
           reactSet(inp, val);
           answered++;
         }
+      }
+    }
+
+    // ── Passage 2 : dropdowns BofA Step 3 hors formField-* ────────────────────
+    // Ces dropdowns ont id="primaryQuestionnaire--..." et sont dans des wrappers
+    // sans data-automation-id="formField-*". On les scanne directement.
+    const allDropBtns = Array.from(document.querySelectorAll(
+      'button[aria-haspopup="listbox"], button[aria-haspopup="true"]'
+    )).filter(b => {
+      if (!b.offsetParent || seen.has(b)) return false;
+      // Exclure ceux déjà traités dans les formField-*
+      if (b.closest('[data-automation-id^="formField-"]')) { seen.add(b); return false; }
+      return true;
+    });
+
+    for (const dropBtn of allDropBtns) {
+      if (dropdownIsFilled(dropBtn)) { seen.add(dropBtn); continue; }
+      seen.add(dropBtn);
+
+      const labelText = getQuestionText(dropBtn);
+      const lower     = labelText.toLowerCase();
+      log(`  🔍 Question détectée: "${labelText.slice(0, 70)}"`);
+
+      let chosen = null;
+      if (/right.to.work|authorized.to.work|eligible.to.work/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, ['Yes']);
+      } else if (/which option.*right.to.work|please select.*right.*work/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_right_to_work_type || 'Citizenship']);
+      } else if (/relatives|close personal relationship/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_has_relatives || 'No']);
+      } else if (/referred.*bank|bank.*referred|refer.*employment/i.test(lower)) {
+        const ref = p.bofa_referred || 'No';
+        if (ref === 'Yes_employee') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America employee', 'Yes']);
+        else if (ref === 'Yes_client') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America client', 'Yes, by a client', 'Yes']);
+        else chosen = await selectBestOption(dropBtn, ['No']);
+      } else if (/pricewaterhouse|pwc/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_worked_at_pwc || 'No']);
+      } else if (/finra/i.test(lower)) {
+        const finra = p.bofa_finra_license || 'I do not hold a FINRA license';
+        chosen = await selectBestOption(dropBtn, [finra]);
+      } else if (/vendor.worker|prestataire.*bank|bank.*prestataire/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_is_vendor_worker || 'No']);
+      } else if (/previously applied/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, ['Yes']);
+      } else if (/notice.period/i.test(lower)) {
+        const prefs = noticePeriodToBofa(p.sg_notice_period || p.notice_period_weeks || '');
+        log(`  ℹ️ Notice: Firebase="${p.sg_notice_period}" → ${prefs.join(' | ')}`);
+        chosen = await selectBestOption(dropBtn, prefs);
+      } else if (/other business.*proprietor|engaged.*other business/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_other_business || 'No']);
+      } else if (/medical condition|special.*educational|disability.*adjust/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_medical_condition || 'No']);
+      } else if (/additional information.*disclose|additional info/i.test(lower)) {
+        chosen = await selectBestOption(dropBtn, [p.bofa_additional_info || 'No']);
+      } else if (/armed forces/i.test(lower)) {
+        const military = p.jp_morgan_military_service || 'No';
+        chosen = await selectBestOption(dropBtn, /^yes/i.test(military) ? ['Yes'] : ['No']);
+      } else {
+        // Inconnu → lire les options disponibles, tenter "No" par défaut
+        const opts = await getDropdownOptions(dropBtn);
+        dropBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+        await sleep(200);
+        const noOpt = opts.find(o => /^no$/i.test(o.trim()));
+        if (noOpt) {
+          const ok = await selectListbox(dropBtn, noOpt);
+          if (ok) { log(`  ✓ "${labelText.slice(0, 60)}" → No (défaut) | options: ${opts.slice(0,4).join(' | ')}`); answered++; }
+        } else if (opts.length) {
+          log(`  ⚠️ "${labelText.slice(0, 60)}" — options: ${opts.slice(0,4).join(' | ')}`);
+        }
+        continue;
+      }
+
+      if (chosen) {
+        log(`  ✓ "${labelText.slice(0, 60)}" → ${chosen}`);
+        answered++;
+        await sleep(300);
+      }
+    }
+
+    // ── Passage 3 : textareas conditionnels visibles ───────────────────────────
+    const allTextareas = Array.from(document.querySelectorAll('textarea'))
+      .filter(t => t.offsetParent !== null && !t.value.trim() && !seen.has(t));
+    for (const ta of allTextareas) {
+      seen.add(ta);
+      const labelText = getQuestionText(ta);
+      const lower = labelText.toLowerCase();
+      let val = '';
+      if (/relatives|close personal.*relation|name.*describe.*relation/i.test(lower)) val = p.bofa_relatives_details || '';
+      else if (/referrer|name.*refer/i.test(lower)) val = p.bofa_referrer_name || '';
+      else if (/other business|details.*business/i.test(lower)) val = p.bofa_other_business_details || '';
+      else if (/medical.*assistance|adjustments|disability.*details/i.test(lower)) val = p.bofa_medical_details || '';
+      else if (/additional.*details|disclose.*details/i.test(lower)) val = p.bofa_additional_info_details || '';
+      if (val) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        if (setter) setter.call(ta, val); else ta.value = val;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        log(`  ✓ Textarea "${labelText.slice(0,50)}" → renseigné`);
+        answered++;
       }
     }
 
