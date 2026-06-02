@@ -1,7 +1,7 @@
 {
   "version": "1.2.194",
   "version_name": "1.2.194-bofa-no-edu-lang-proximity",
-  "published_at": "2026-06-02T18:30:00Z",
+  "published_at": "2026-06-02T18:31:46Z",
   "release_notes": "Bank of America — Education ignorée (Step 2), langues 2 et 3 corrigées (recherche par proximité, ne confond plus avec le bouton Education).",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.194.zip"
 }
