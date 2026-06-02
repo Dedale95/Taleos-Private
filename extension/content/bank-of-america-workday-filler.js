@@ -185,6 +185,7 @@
     if (name.includes('my experience')) return 'my_experience';
     if (name.includes('application questions')) return 'application_questions';
     if (name.includes('voluntary')) return 'voluntary_disclosures';
+    if (name.includes('self identify') || name.includes('self-identify')) return 'self_identify';
     if (name.includes('review')) return 'review';
     return 'unknown';
   }
@@ -367,15 +368,32 @@
     await fillField('formField-city',                 p.city,       'city');
     await fillField('formField-postalCode',           p.zipcode || p.postal_code, 'postal_code');
 
-    // ── "How Did You Hear About Us?" ─────────────────────────────────────────
-    const sourceBtn = document.querySelector('[data-automation-id="formField-source"] button[aria-haspopup]');
-    if (sourceBtn) {
-      const currentSource = (sourceBtn.innerText || '').trim();
-      if (!/bank of america careers site/i.test(currentSource)) {
-        const ok = await selectListbox(sourceBtn, 'Bank of America Careers Site');
-        logFieldAction('How Did You Hear', 'Bank of America Careers Site', currentSource || '(vide)', ok ? 'fill' : 'not_found');
+    // ── "How Did You Hear About Us?" — multiselect à 2 niveaux ──────────────
+    // BofA utilise un widget multiselect (data-automation-id="multiSelectContainer")
+    // sans button[aria-haspopup] → navigation : clic container → niveau 1 → niveau 2
+    const sourceField = document.querySelector('[data-automation-id="formField-source"]');
+    if (sourceField) {
+      const chips = Array.from(sourceField.querySelectorAll('[data-automation-id="selectedItem"], [class*="chip"]'));
+      const alreadySet = chips.some(c => /bank of america careers site/i.test(c.textContent || ''));
+      if (alreadySet) {
+        logFieldAction('How Did You Hear', 'Bank of America Careers Site', 'Bank of America Careers Site', 'skip');
       } else {
-        logFieldAction('How Did You Hear', 'Bank of America Careers Site', currentSource, 'skip');
+        const container = sourceField.querySelector('[data-automation-id="multiselectInputContainer"], [data-uxi-widget-type="multiselect"]');
+        if (container) { container.click(); await sleep(600); }
+        // Niveau 1 : trouver "Bank of America Careers Site" dans la liste
+        let opt1 = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
+          .find(el => el.offsetWidth > 0 && /bank of america careers site/i.test(el.textContent || ''));
+        if (opt1) {
+          opt1.click(); await sleep(600);
+          // Niveau 2 : une sous-liste peut apparaître — cliquer "Bank of America Careers Site" dedans
+          const opt2 = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
+            .find(el => el.offsetWidth > 0 && /^bank of america careers site$/i.test((el.textContent || '').trim()));
+          if (opt2) { opt2.click(); await sleep(400); }
+          logFieldAction('How Did You Hear', 'Bank of America Careers Site', '(vide)', 'fill');
+        } else {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+          logFieldAction('How Did You Hear', 'Bank of America Careers Site', undefined, 'not_found');
+        }
       }
     }
 
@@ -1271,7 +1289,14 @@
     setBanner('📝 Voluntary Disclosures...');
   }
 
-  // ─── STEP 5 : Review & Submit ─────────────────────────────────────────────
+  // ─── STEP 5 : Self Identify ───────────────────────────────────────────────────
+  async function fillSelfIdentify(p) {
+    log('📝 Step 5 — Self Identify (optionnel, laissé vide)');
+    setBanner('📝 Self Identify...');
+    await sleep(500);
+  }
+
+  // ─── STEP 6 : Review & Submit ─────────────────────────────────────────────
   async function reviewAndSubmit(pending) {
     log('📝 Step 5 — Review');
     setBanner('📋 Vérification finale...');
@@ -1363,6 +1388,10 @@
         await waitForNextStep('voluntary_disclosures');
       } else if (step === 'voluntary_disclosures' && !done.has(step)) {
         await fillVoluntaryDisclosures(p); done.add(step);
+        await saveAndContinue();
+        await waitForNextStep('self_identify');
+      } else if (step === 'self_identify' && !done.has(step)) {
+        await fillSelfIdentify(p); done.add(step);
         await saveAndContinue();
         await waitForNextStep('review');
       } else if (step === 'review') {
