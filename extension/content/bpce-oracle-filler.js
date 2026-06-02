@@ -240,7 +240,7 @@
 
   /** Liste déroulante Oracle (oj-select / listbox) si les options ne sont pas des pilules. */
   async function selectApplicationSourceFromProfile(profile) {
-    const raw = (profile.bpce_application_source || '').trim() || 'LinkedIn';
+    const raw = (profile.bpce_application_source || '').trim() || 'Natixis Website';
     const row = findApplicationSourceRow();
     if (!row || row.offsetParent === null) {
       logOnce('   ⏳ Origine candidature → question non visible encore');
