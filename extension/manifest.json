@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.190",
-  "version_name": "1.2.190-profile-textarea-bpce-site",
+  "version": "1.2.191",
+  "version_name": "1.2.191-bofa-apply-manually-popup",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

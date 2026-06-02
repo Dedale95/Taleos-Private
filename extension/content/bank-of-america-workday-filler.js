@@ -212,6 +212,29 @@
     return false;
   }
 
+  // ─── Popup "Apply Manually" ─────────────────────────────────────────────────
+  // Après le clic sur Apply, BofA peut afficher un popup avec l'option
+  // "Apply Manually" (vs "Apply with LinkedIn"). Il faut la détecter et la cliquer.
+
+  async function handleApplyManuallyPopup() {
+    // Attendre un court instant que le popup apparaisse
+    let waited = 0;
+    while (waited < 3000) {
+      const manualBtn = document.querySelector('[data-automation-id="applyManually"]')
+        || Array.from(document.querySelectorAll('a[role="button"], button')).find(el =>
+            el.offsetWidth > 0 && /apply manually/i.test((el.innerText || el.textContent || '').trim())
+          );
+      if (manualBtn) {
+        log('🖱️ Popup Apply Manually détecté → clic');
+        await clickEl(manualBtn);
+        await sleep(2000);
+        return true;
+      }
+      await sleep(300); waited += 300;
+    }
+    return false;
+  }
+
   // ─── Apply / Continue Application ──────────────────────────────────────────
   async function clickApply() {
     const url = location.href.toLowerCase();
@@ -222,7 +245,15 @@
       || Array.from(document.querySelectorAll('a[role="button"],button')).find(el =>
           el.offsetWidth > 0 && /^(apply|continue application)(\s+now)?$/i.test((el.innerText || '').trim())
         );
-    if (btn) { log('🚀 Clic Apply/Continue Application...'); await clickEl(btn); await sleep(2500); return true; }
+    if (btn) {
+      log('🚀 Clic Apply/Continue Application...');
+      await clickEl(btn);
+      await sleep(1500);
+      // Gérer le popup "Apply Manually" si présent
+      await handleApplyManuallyPopup();
+      await sleep(1000);
+      return true;
+    }
     return false;
   }
 
