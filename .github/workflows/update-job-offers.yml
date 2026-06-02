@@ -1,5 +1,5 @@
 # Dépôt : Taleos-Public — consommation Actions sur dépôt public (runners standard).
-# Copier les secrets optionnels depuis l’ancien dépôt privé : TALEOS_NTFY_TOPIC, TALEOS_SCRAPER_ALERT_WEBHOOK
+# Copier les secrets optionnels depuis l'ancien dépôt privé : TALEOS_NTFY_TOPIC, TALEOS_SCRAPER_ALERT_WEBHOOK
 # (Settings → Secrets and variables → Actions sur ce dépôt).
 #
 # Mise à jour quotidienne des offres d'emploi (CA, SG, Deloitte, BNP Paribas)
@@ -12,7 +12,7 @@ name: Mise à jour offres quotidienne
 
 permissions:
   contents: write # push des JSON
-  issues: write # issue d’alerte si le pipeline échoue (job scraper-failure-alert)
+  issues: write # issue d'alerte si le pipeline échoue (job scraper-failure-alert)
 
 on:
   schedule:
@@ -373,13 +373,13 @@ jobs:
           git push origin main
 
       - name: Déclencher Publish Public Site
-        if: steps.changes.outputs.changed == ‘true’ && github.event_name != ‘pull_request’
+        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh workflow run "publish-public-site.yml" --repo Dedale95/Taleos-Private --ref main
 
-  # S’exécute si au moins un scraper échoue (la consolidation tourne quand même).
+  # S'exécute si au moins un scraper échoue (la consolidation tourne quand même).
   scraper-failure-alert:
     name: Alerte échec pipeline offres
     needs: scrape
