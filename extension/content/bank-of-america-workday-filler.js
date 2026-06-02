@@ -463,7 +463,7 @@
   async function fillMyExperience(p) {
     log('📝 Step 2 — My Experience');
     setBanner('📝 My Experience en cours...');
-    await fillEducation(p);
+    // Education volontairement ignorée sur BofA (section laissée à remplir manuellement)
     await fillLanguages(p);
     await uploadCV(p);
     log('✅ My Experience complétée');
@@ -566,66 +566,50 @@
     return 'Basic';
   }
 
-  // Trouve le bouton "Add Another" de la section Languages
-  // (data-automation-id="add-button" avec texte "Add Another")
-  function findLanguageAddAnotherBtn() {
-    // 1. Via data-automation-id="add-button" (le plus fiable sur BofA Workday)
-    const byId = Array.from(document.querySelectorAll('[data-automation-id="add-button"]')).find(b =>
-      b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
-    );
-    if (byId) return byId;
-
-    // 2. Via proximity avec le dernier input[name="native"] (langue déjà remplie)
+  // Trouver le bouton Add/Add Another de la section Languages par PROXIMITÉ
+  // ⚠️ Ne jamais utiliser data-automation-id="add-button" en premier :
+  //    plusieurs boutons identiques existent (Education, Languages…) et le
+  //    premier dans le DOM est souvent celui d'Education → mauvaise section.
+  function _findLangAddBtn(textPattern) {
+    // 1. Proximité : remonter depuis le dernier input[name="native"]
+    //    (c'est l'ancre la plus fiable vers la section Languages)
     const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
     if (nativeInputs.length > 0) {
       const lastNative = nativeInputs[nativeInputs.length - 1];
       let el = lastNative.parentElement;
-      for (let depth = 0; depth < 12 && el; depth++) {
+      for (let depth = 0; depth < 14 && el; depth++) {
         const btn = Array.from(el.querySelectorAll('button')).find(b =>
-          b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
+          b.offsetWidth > 0 && textPattern.test((b.innerText || '').trim())
         );
         if (btn) return btn;
         el = el.parentElement;
       }
     }
 
-    // 3. Dernier "Add Another" de la page
-    const allAddAnother = Array.from(document.querySelectorAll('button')).filter(b =>
-      b.offsetWidth > 0 && /add another/i.test((b.innerText || '').trim())
-    );
-    return allAddAnother[allAddAnother.length - 1] || null;
-  }
-
-  // Bouton "Add" ou "Add Another" initial quand 0 lignes de langue existent
-  // Sur BofA Workday, le bouton est toujours "Add Another" (data-automation-id="add-button")
-  function findLanguageAddBtn() {
-    // Sur BofA : data-automation-id="add-button" avec texte "Add Another"
-    // C'est le même bouton pour la 1ère et les langues suivantes
-    const byId = Array.from(document.querySelectorAll('[data-automation-id="add-button"]')).find(b =>
-      b.offsetWidth > 0 && /add/i.test((b.innerText || '').trim())
-    );
-    if (byId) return byId;
-
-    // Heading "Languages" → chercher le bouton Add/Add Another dans la section
+    // 2. Heading "Languages" → chercher dans la section
     const langHeading = Array.from(document.querySelectorAll('h3,h4,legend,[role="heading"]')).find(el =>
       /^languages?$/i.test((el.textContent || '').trim()) && el.offsetWidth > 0
     );
     if (langHeading) {
-      let el = langHeading;
-      for (let i = 0; i < 8 && el; i++) {
+      let el = langHeading.parentElement;
+      for (let depth = 0; depth < 8 && el; depth++) {
         const btn = Array.from(el.querySelectorAll('button')).find(b =>
-          b.offsetWidth > 0 && /^add/i.test((b.innerText || '').trim())
+          b.offsetWidth > 0 && textPattern.test((b.innerText || '').trim())
         );
         if (btn) return btn;
         el = el.parentElement;
       }
     }
-    // Dernier bouton "Add*" de la page
-    const allAdds = Array.from(document.querySelectorAll('button')).filter(b =>
-      b.offsetWidth > 0 && /^add/i.test((b.innerText || '').trim())
+
+    // 3. Dernier bouton correspondant sur la page (Languages est la dernière section)
+    const all = Array.from(document.querySelectorAll('button')).filter(b =>
+      b.offsetWidth > 0 && textPattern.test((b.innerText || '').trim())
     );
-    return allAdds[allAdds.length - 1] || null;
+    return all[all.length - 1] || null;
   }
+
+  function findLanguageAddBtn()        { return _findLangAddBtn(/^add/i); }
+  function findLanguageAddAnotherBtn() { return _findLangAddBtn(/add another/i); }
 
   async function fillLanguages(p) {
     const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.name || l.language) : [];
