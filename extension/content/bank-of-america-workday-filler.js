@@ -361,11 +361,11 @@
     log('📝 Step 1 — My Information');
     setBanner('📝 My Information en cours...');
 
-    await fillField('formField-legalName--firstName', p.first_name, 'first_name');
-    await fillField('formField-legalName--lastName',  p.last_name,  'last_name');
+    await fillField('formField-legalName--firstName', p.firstname || p.first_name, 'first_name');
+    await fillField('formField-legalName--lastName',  p.lastname  || p.last_name,  'last_name');
     await fillField('formField-addressLine1',         p.address,    'address');
     await fillField('formField-city',                 p.city,       'city');
-    await fillField('formField-postalCode',           p.postal_code,'postal_code');
+    await fillField('formField-postalCode',           p.zipcode || p.postal_code, 'postal_code');
 
     // ── "How Did You Hear About Us?" ─────────────────────────────────────────
     const sourceBtn = document.querySelector('[data-automation-id="formField-source"] button[aria-haspopup]');
@@ -434,7 +434,7 @@
     }
 
     // ── Phone Number ──────────────────────────────────────────────────────────
-    const phoneVal = (p.phone || '').replace(/\s/g, '');
+    const phoneVal = (p['phone-number'] || p.phone_number || p.phone || '').replace(/\s/g, '');
     if (phoneVal) {
       // L'input téléphone peut être dans formField-phoneNumber OU directement via id
       const phoneInput = document.querySelector('[data-automation-id="formField-phoneNumber"] input:not([type="hidden"])')
@@ -904,20 +904,31 @@
   // Extraire le texte de la question pour un élément de formulaire (dropdown, textarea, input)
   // BofA Step 3 n'utilise pas de <label> → on remonte dans le DOM pour trouver le texte
   function getQuestionText(el) {
-    // 1. label directement parent ou ancêtre
+    // 1. label directement parent ou ancêtre (jusqu'à 10 niveaux)
     let node = el.parentElement;
-    for (let depth = 0; depth < 6 && node; depth++) {
+    for (let depth = 0; depth < 10 && node; depth++) {
       const lbl = node.querySelector('label');
       if (lbl && lbl.offsetWidth > 0) return lbl.textContent.replace(/\*/g, '').trim();
       node = node.parentElement;
     }
-    // 2. Texte du nœud parent direct (ignore les enfants qui sont des boutons/inputs)
+    // 2. Texte du nœud parent / frères précédents (structure BofA questionnaire sans <label>)
     node = el.parentElement;
-    for (let depth = 0; depth < 6 && node; depth++) {
+    for (let depth = 0; depth < 10 && node; depth++) {
       // Chercher un <p> ou <span> avec du texte de question
-      const textEl = node.querySelector('p:not(:empty), [class*="label"]:not(:empty), [class*="title"]:not(:empty)');
+      const textEl = node.querySelector(
+        'p:not(:empty), [class*="label"]:not(:empty), [class*="title"]:not(:empty), [class*="question"]:not(:empty)'
+      );
       if (textEl && textEl.offsetWidth > 0 && textEl.textContent.trim().length > 10) {
         return textEl.textContent.replace(/\*/g, '').trim();
+      }
+      // Frères précédents du bouton (la question est souvent un div/p juste avant le dropdown)
+      let sib = el.previousElementSibling;
+      while (sib) {
+        const sibText = (sib.innerText || sib.textContent || '').replace(/\*/g, '').trim();
+        if (sibText.length > 10 && !sib.querySelector('button, input, select')) {
+          return sibText;
+        }
+        sib = sib.previousElementSibling;
       }
       // Texte direct du nœud (nœuds texte sans balises)
       const directText = Array.from(node.childNodes)
@@ -927,7 +938,8 @@
       if (directText.length > 10) return directText.replace(/\*/g, '').trim();
       node = node.parentElement;
     }
-    // 3. aria-label du bouton (contient souvent la valeur actuelle "No Required" — peu utile)
+    // 3. aria-label du bouton : peut contenir la valeur courante ("I do not hold a FINRA license Required")
+    //    → utile pour détecter le type de question même sans texte visible
     return (el.getAttribute('aria-label') || '').replace(/required/i, '').trim();
   }
 

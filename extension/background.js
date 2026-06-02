@@ -4214,7 +4214,26 @@ async function fetchProfile(uid, bankId, token) {
     nomura_school_type: (profile.nomura_school_type || '').trim(),
     nomura_primary_carer: (profile.nomura_primary_carer || '').trim(),
     nomura_carer: (profile.nomura_carer || '').trim(),
-    nomura_disability_confident: (profile.nomura_disability_confident || '').trim()
+    nomura_disability_confident: (profile.nomura_disability_confident || '').trim(),
+    // Bank of America — questions spécifiques page 3
+    current_employer: (profile.current_employer || '').trim(),
+    current_salary: (profile.current_salary || '').trim(),
+    current_salary_currency: (profile.current_salary_currency || '').trim(),
+    current_bonus: (profile.current_bonus || '').trim(),
+    min_salary: (profile.min_salary || '').trim(),
+    employment_start_date: (profile.employment_start_date || '').trim(),
+    current_role_start_date: (profile.current_role_start_date || '').trim(),
+    bofa_has_relatives: (profile.bofa_has_relatives || 'No').trim(),
+    bofa_referred: (profile.bofa_referred || 'No').trim(),
+    bofa_worked_at_pwc: (profile.bofa_worked_at_pwc || 'No').trim(),
+    bofa_finra_license: (profile.bofa_finra_license || 'I do not hold a FINRA license').trim(),
+    bofa_is_vendor_worker: (profile.bofa_is_vendor_worker || 'No').trim(),
+    bofa_previously_applied: (profile.bofa_previously_applied || 'No').trim(),
+    bofa_previously_employed: (profile.bofa_previously_employed || 'No').trim(),
+    bofa_other_business: (profile.bofa_other_business || 'No').trim(),
+    bofa_medical_condition: (profile.bofa_medical_condition || 'No').trim(),
+    bofa_additional_info: (profile.bofa_additional_info || 'No').trim(),
+    bofa_right_to_work: (profile.bofa_right_to_work || 'Yes').trim()
   };
 }
 
