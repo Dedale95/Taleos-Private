@@ -797,6 +797,35 @@
     return m ? `${m[2]}/${m[3]}/${m[1]}` : String(iso);
   }
 
+  // Remplit un widget date Workday (segments Month/Day/Year) via key events
+  async function fillWorkdayDateSegments(container, dateStr) {
+    const m = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return false;
+    const [, year, month, day] = m;
+
+    const fillSegment = async (automationId, value) => {
+      const el = container.querySelector(`[data-automation-id="${automationId}"]:not([aria-hidden])`);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center' });
+      el.focus(); el.click();
+      await sleep(200);
+      const digits = String(parseInt(value, 10)); // supprime les zéros de tête (Workday les gère)
+      for (const ch of digits) {
+        el.dispatchEvent(new KeyboardEvent('keydown',  { key: ch, keyCode: ch.charCodeAt(0), bubbles: true, cancelable: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: ch.charCodeAt(0), bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup',    { key: ch, keyCode: ch.charCodeAt(0), bubbles: true }));
+        await sleep(80);
+      }
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(150);
+    };
+
+    await fillSegment('dateSectionMonth', month);
+    await fillSegment('dateSectionDay',   day);
+    await fillSegment('dateSectionYear',  year);
+    return true;
+  }
+
   function dropdownIsFilled(btn) {
     const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
     return txt !== '' && txt !== 'select one' && txt !== 'select';
@@ -816,18 +845,33 @@
   }
 
   async function selectBestOption(btn, preferences) {
-    const opts = await getDropdownOptions(btn);
-    if (!opts.length) { btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); return null; }
-    btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
-    await sleep(200);
+    // Ouvre le dropdown une seule fois et clique directement sur l'option sans fermer/rouvrir
+    btn.click();
+    await sleep(500);
+    const deadline = Date.now() + 2000;
+    let optEls = [];
+    while (Date.now() < deadline) {
+      optEls = Array.from(document.querySelectorAll(
+        '[role="option"], [data-automation-id="promptOption"], [data-automation-id="menuItem"]'
+      )).filter(el => el.offsetWidth > 0);
+      if (optEls.length > 0) break;
+      await sleep(200);
+    }
+    if (!optEls.length) {
+      btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      return null;
+    }
     for (const pref of preferences) {
-      const match = opts.find(o => o.toLowerCase() === pref.toLowerCase())
-        || opts.find(o => o.toLowerCase().includes(pref.toLowerCase()));
+      const match = optEls.find(el => (el.innerText || el.textContent || '').trim().toLowerCase() === pref.toLowerCase())
+        || optEls.find(el => (el.innerText || el.textContent || '').trim().toLowerCase().includes(pref.toLowerCase()));
       if (match) {
-        const ok = await selectListbox(btn, match);
-        if (ok) return match;
+        const text = (match.innerText || match.textContent || '').trim();
+        match.click();
+        await sleep(300);
+        return text;
       }
     }
+    btn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
     return null;
   }
 
@@ -924,16 +968,36 @@
         continue;
       }
 
-      // ── Textarea (champs conditionnels) ─────────────────────────────────────
+      // ── Textarea ─────────────────────────────────────────────────────────────
       const textarea = field.querySelector('textarea');
       if (textarea) {
         if (textarea.value.trim()) continue; // déjà rempli
         let val = '';
-        if (/relatives|close personal relationship/i.test(lower)) val = p.bofa_relatives_details || '';
-        else if (/referrer|name.*refer/i.test(lower)) val = p.bofa_referrer_name || '';
-        else if (/other business|details.*business/i.test(lower)) val = p.bofa_other_business_details || '';
-        else if (/medical.*assistance|adjustments|disability.*details/i.test(lower)) val = p.bofa_medical_details || '';
-        else if (/additional.*details|disclose.*details/i.test(lower)) val = p.bofa_additional_info_details || '';
+        // Champs principaux (non-conditionnels)
+        if (/most recent.*employer|current.*employer|confirm.*employer/i.test(lower)) {
+          val = p.current_employer || '';
+        } else if (/base.salary|current.*salary/i.test(lower)) {
+          const amt = p.current_salary || '';
+          const cur = p.current_salary_currency || '';
+          val = amt ? (cur ? `${amt} ${cur}` : String(amt)) : '';
+        } else if (/minimum.*salary|salary requirement/i.test(lower)) {
+          const amt = p.salary_expectations || p.min_salary || '';
+          const cur = p.current_salary_currency || p.salary_currency || '';
+          val = amt ? (cur ? `${amt} ${cur}` : String(amt)) : '';
+        } else if (/incentive|bonus/i.test(lower)) {
+          val = p.current_bonus ? String(p.current_bonus) : '';
+        // Champs conditionnels
+        } else if (/relatives|close personal relationship/i.test(lower)) {
+          val = p.bofa_relatives_details || '';
+        } else if (/referrer|name.*refer/i.test(lower)) {
+          val = p.bofa_referrer_name || '';
+        } else if (/other business|details.*business/i.test(lower)) {
+          val = p.bofa_other_business_details || '';
+        } else if (/medical.*assistance|adjustments|disability.*details/i.test(lower)) {
+          val = p.bofa_medical_details || '';
+        } else if (/additional.*details|disclose.*details/i.test(lower)) {
+          val = p.bofa_additional_info_details || '';
+        }
         if (val) {
           const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
           if (setter) setter.call(textarea, val); else textarea.value = val;
@@ -941,6 +1005,25 @@
           textarea.dispatchEvent(new Event('change', { bubbles: true }));
           logFieldAction(labelText.slice(0, 50), val, '(vide)', 'fill');
           answered++;
+        }
+        continue;
+      }
+
+      // ── Widget date Workday (dateSectionMonth/Day/Year) ──────────────────────
+      if (field.querySelector('[data-automation-id="dateSectionMonth-display"]')) {
+        // Vérifier si déjà rempli (année à 4 chiffres visible)
+        const yearDisplay = field.querySelector('[data-automation-id="dateSectionYear-display"]');
+        const yearVal = (yearDisplay?.textContent || '').trim();
+        if (/^\d{4}$/.test(yearVal)) { continue; } // déjà rempli
+        let dateStr = '';
+        if (/start.date.*employer/i.test(lower)) dateStr = p.employment_start_date || '';
+        else if (/start.date.*role/i.test(lower)) dateStr = p.current_role_start_date || p.employment_start_date || '';
+        if (dateStr) {
+          const ok = await fillWorkdayDateSegments(field, dateStr);
+          if (ok) { logFieldAction(labelText.slice(0, 50), dateStr, '(vide)', 'fill'); answered++; }
+          else logFieldAction(labelText.slice(0, 50), dateStr, undefined, 'not_found');
+        } else {
+          logFieldAction(labelText.slice(0, 50), undefined, undefined, 'missing_firebase');
         }
         continue;
       }
@@ -974,7 +1057,7 @@
         } else if (/vendor.worker/i.test(lower)) {
           chosen = await selectBestOption(dropBtn, [p.bofa_is_vendor_worker || 'No']);
         } else if (/previously applied/i.test(lower)) {
-          chosen = await selectBestOption(dropBtn, ['Yes']);
+          chosen = await selectBestOption(dropBtn, [p.bofa_previously_applied || 'No']);
         } else if (/notice.period/i.test(lower)) {
           const prefs = noticePeriodToBofa(p.sg_notice_period || p.notice_period_weeks || '');
           log(`  ℹ️ Notice period Firebase="${p.sg_notice_period}" → BofA preferences: ${prefs.join(' | ')}`);
@@ -1091,7 +1174,7 @@
       } else if (/vendor.worker|prestataire.*bank|bank.*prestataire/i.test(lower)) {
         chosen = await selectBestOption(dropBtn, [p.bofa_is_vendor_worker || 'No']);
       } else if (/previously applied/i.test(lower)) {
-        chosen = await selectBestOption(dropBtn, ['Yes']);
+        chosen = await selectBestOption(dropBtn, [p.bofa_previously_applied || 'No']);
       } else if (/notice.period/i.test(lower)) {
         const prefs = noticePeriodToBofa(p.sg_notice_period || p.notice_period_weeks || '');
         log(`  ℹ️ Notice: Firebase="${p.sg_notice_period}" → ${prefs.join(' | ')}`);
@@ -1135,11 +1218,27 @@
       const labelText = getQuestionText(ta);
       const lower = labelText.toLowerCase();
       let val = '';
-      if (/relatives|close personal.*relation|name.*describe.*relation/i.test(lower)) val = p.bofa_relatives_details || '';
-      else if (/referrer|name.*refer/i.test(lower)) val = p.bofa_referrer_name || '';
-      else if (/other business|details.*business/i.test(lower)) val = p.bofa_other_business_details || '';
-      else if (/medical.*assistance|adjustments|disability.*details/i.test(lower)) val = p.bofa_medical_details || '';
-      else if (/additional.*details|disclose.*details/i.test(lower)) val = p.bofa_additional_info_details || '';
+      if (/most recent.*employer|current.*employer|confirm.*employer/i.test(lower)) {
+        val = p.current_employer || '';
+      } else if (/base.salary|current.*salary/i.test(lower)) {
+        const amt = p.current_salary || ''; const cur = p.current_salary_currency || '';
+        val = amt ? (cur ? `${amt} ${cur}` : String(amt)) : '';
+      } else if (/minimum.*salary|salary requirement/i.test(lower)) {
+        const amt = p.salary_expectations || p.min_salary || ''; const cur = p.current_salary_currency || p.salary_currency || '';
+        val = amt ? (cur ? `${amt} ${cur}` : String(amt)) : '';
+      } else if (/incentive|bonus/i.test(lower)) {
+        val = p.current_bonus ? String(p.current_bonus) : '';
+      } else if (/relatives|close personal.*relation|name.*describe.*relation/i.test(lower)) {
+        val = p.bofa_relatives_details || '';
+      } else if (/referrer|name.*refer/i.test(lower)) {
+        val = p.bofa_referrer_name || '';
+      } else if (/other business|details.*business/i.test(lower)) {
+        val = p.bofa_other_business_details || '';
+      } else if (/medical.*assistance|adjustments|disability.*details/i.test(lower)) {
+        val = p.bofa_medical_details || '';
+      } else if (/additional.*details|disclose.*details/i.test(lower)) {
+        val = p.bofa_additional_info_details || '';
+      }
       if (val) {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
         if (setter) setter.call(ta, val); else ta.value = val;
