@@ -373,7 +373,7 @@ jobs:
           git push origin main
 
       - name: Déclencher Publish Public Site
-        if: steps.changes.outputs.changed == ‘true’
+        if: steps.changes.outputs.changed == ‘true’ && github.event_name != ‘pull_request’
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
