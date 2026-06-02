@@ -365,8 +365,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # Fichiers par source (un par banque), live slim, summary
           # scraped_jobs.json (sans underscore) volontairement exclus (trop grands, redondants)
-          git add HTML/scraped_jobs_*.json scraped_jobs_*.json \
-                  HTML/scraped_jobs_summary.json scraped_jobs_summary.json
+          # -f nécessaire pour les fichiers dans .gitignore (live.json, full.json)
+          git add -f HTML/scraped_jobs_*.json scraped_jobs_*.json \
+                     HTML/scraped_jobs_summary.json scraped_jobs_summary.json
           git commit -m "chore: mise à jour quotidienne des offres (pipeline parallèle)"
           git pull --rebase --autostash origin main
           git push origin main
