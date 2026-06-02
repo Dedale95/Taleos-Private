@@ -233,29 +233,27 @@ jobs:
             playwright install-deps $browser
           done
 
-      # ── Cache DB entre runs (delta scraping BNP) ──────────────────────────
-      # Seul BNP a un backlog de détails qui se résorbe sur plusieurs runs.
-      # Le cache persiste la DB SQLite d'un run au suivant pour éviter de
-      # re-scraper les mêmes 600 offres indéfiniment.
-      - name: Restaurer le cache DB (BNP uniquement)
-        if: matrix.key == 'bnp_paribas'
+      # ── Cache DB entre runs (delta scraping — tous les scrapers) ─────────
+      # La DB SQLite est persistée d'un run au suivant pour que le scraper
+      # puisse faire du delta (offres déjà connues conservées, nouvelles ajoutées,
+      # disparues marquées expirées) plutôt que de tout re-scraper depuis zéro.
+      - name: Restaurer le cache DB
         uses: actions/cache/restore@v4
         with:
           path: PYTHON/${{ matrix.db_file }}
-          key: bnp-db-${{ github.run_id }}
+          key: scraper-db-${{ matrix.key }}-${{ github.run_id }}
           restore-keys: |
-            bnp-db-
+            scraper-db-${{ matrix.key }}-
 
       - name: Exécuter le scraper
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
         run: python "PYTHON/${{ matrix.script }}"
 
-      - name: Sauvegarder le cache DB (BNP uniquement)
-        if: matrix.key == 'bnp_paribas'
+      - name: Sauvegarder le cache DB
         uses: actions/cache/save@v4
         with:
           path: PYTHON/${{ matrix.db_file }}
-          key: bnp-db-${{ github.run_id }}
+          key: scraper-db-${{ matrix.key }}-${{ github.run_id }}
 
       - name: Vérifier la base générée
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
