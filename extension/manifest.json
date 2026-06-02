@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.188",
-  "version_name": "1.2.188-bofa-appquestions-profile",
+  "version": "1.2.189",
+  "version_name": "1.2.189-bofa-previously-applied-yes",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

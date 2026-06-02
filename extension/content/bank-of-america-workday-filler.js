@@ -905,7 +905,7 @@
         } else if (/vendor.worker/i.test(lower)) {
           chosen = await selectBestOption(dropBtn, [p.bofa_is_vendor_worker || 'No']);
         } else if (/previously applied/i.test(lower)) {
-          chosen = await selectBestOption(dropBtn, [p.bofa_previously_applied || 'No']);
+          chosen = await selectBestOption(dropBtn, ['Yes']);
         } else if (/notice.period/i.test(lower)) {
           const prefs = noticePeriodToBofa(p.sg_notice_period || p.notice_period_weeks || '');
           log(`  ℹ️ Notice period Firebase="${p.sg_notice_period}" → BofA preferences: ${prefs.join(' | ')}`);
