@@ -1042,45 +1042,43 @@
     return hasEU || auths.length > 0 ? 'Yes' : null;
   }
 
-  // Extraire le texte de la question pour un élément de formulaire (dropdown, textarea, input)
-  // BofA Step 3 n'utilise pas de <label> → on remonte dans le DOM pour trouver le texte
+  // Extraire le texte de la question depuis un formField-* wrapper
+  // BofA EMEA Step 3 : texte dans <legend> > [data-automation-id="richText"]
+  // BofA US Step 1/2  : texte dans <label>
+  function getFieldLabel(field) {
+    // 1. legend > richText (BofA EMEA questionnaire)
+    const richText = field.querySelector('legend [data-automation-id="richText"]');
+    if (richText) return richText.textContent.replace(/\*/g, '').trim();
+    // 2. label classique
+    const lbl = field.querySelector('label');
+    if (lbl) return lbl.textContent.replace(/\*/g, '').trim();
+    // 3. innerText du fieldset/legend directement
+    const legend = field.querySelector('legend');
+    if (legend) return legend.textContent.replace(/\*/g, '').trim();
+    return '';
+  }
+
+  // Extraire le texte de la question depuis un élément interactif (hors formField)
   function getQuestionText(el) {
-    // 1. label directement parent ou ancêtre (jusqu'à 10 niveaux)
+    // 1. formField-* parent → utiliser getFieldLabel
+    const parentField = el.closest('[data-automation-id^="formField-"]');
+    if (parentField) return getFieldLabel(parentField);
+    // 2. Remonter jusqu'à trouver legend richText ou label
     let node = el.parentElement;
-    for (let depth = 0; depth < 10 && node; depth++) {
+    for (let depth = 0; depth < 12 && node; depth++) {
+      const richText = node.querySelector('legend [data-automation-id="richText"]');
+      if (richText && richText.offsetWidth > 0) return richText.textContent.replace(/\*/g, '').trim();
       const lbl = node.querySelector('label');
       if (lbl && lbl.offsetWidth > 0) return lbl.textContent.replace(/\*/g, '').trim();
-      node = node.parentElement;
-    }
-    // 2. Texte du nœud parent / frères précédents (structure BofA questionnaire sans <label>)
-    node = el.parentElement;
-    for (let depth = 0; depth < 10 && node; depth++) {
-      // Chercher un <p> ou <span> avec du texte de question
-      const textEl = node.querySelector(
-        'p:not(:empty), [class*="label"]:not(:empty), [class*="title"]:not(:empty), [class*="question"]:not(:empty)'
-      );
-      if (textEl && textEl.offsetWidth > 0 && textEl.textContent.trim().length > 10) {
-        return textEl.textContent.replace(/\*/g, '').trim();
-      }
-      // Frères précédents du bouton (la question est souvent un div/p juste avant le dropdown)
+      // Frères précédents avec texte substantiel
       let sib = el.previousElementSibling;
       while (sib) {
         const sibText = (sib.innerText || sib.textContent || '').replace(/\*/g, '').trim();
-        if (sibText.length > 10 && !sib.querySelector('button, input, select')) {
-          return sibText;
-        }
+        if (sibText.length > 10 && !sib.querySelector('button, input, select')) return sibText;
         sib = sib.previousElementSibling;
       }
-      // Texte direct du nœud (nœuds texte sans balises)
-      const directText = Array.from(node.childNodes)
-        .filter(n => n.nodeType === 3)
-        .map(n => n.textContent.trim())
-        .join(' ').trim();
-      if (directText.length > 10) return directText.replace(/\*/g, '').trim();
       node = node.parentElement;
     }
-    // 3. aria-label du bouton : peut contenir la valeur courante ("I do not hold a FINRA license Required")
-    //    → utile pour détecter le type de question même sans texte visible
     return (el.getAttribute('aria-label') || '').replace(/required/i, '').trim();
   }
 
@@ -1103,8 +1101,7 @@
       .filter(f => f.offsetParent !== null);
 
     for (const field of formFields) {
-      const labelEl   = field.querySelector('label');
-      const labelText = (labelEl?.textContent || '').replace(/\*/g, '').trim();
+      const labelText = getFieldLabel(field);
       const lower     = labelText.toLowerCase();
 
       // ── Radio Yes/No ───────────────────────────────────────────────────────
@@ -1200,7 +1197,7 @@
         } else if (/referred.*bank|bank.*referred|refer.*employment/i.test(lower)) {
           const ref = p.bofa_referred || 'No';
           if (ref === 'Yes_employee') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America employee', 'Yes']);
-          else if (ref === 'Yes_client') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America client', 'Yes, by a client', 'Yes']);
+          else if (ref === 'Yes_client') chosen = await selectBestOption(dropBtn, ['Yes, by a Bank of America client/customer', 'Yes, by a Bank of America client', 'Yes, by a client', 'Yes']);
           else chosen = await selectBestOption(dropBtn, ['No']);
         } else if (/pricewaterhouse|pwc/i.test(lower)) {
           chosen = await selectBestOption(dropBtn, [p.bofa_worked_at_pwc || 'No']);
