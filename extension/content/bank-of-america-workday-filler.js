@@ -744,11 +744,22 @@
       for (let d = 0; d < 20 && container; d++) {
         const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'))
           .filter(b => b.offsetParent !== null);
-        // On cherche 2 boutons : langBtn et wsBtn
-        const ws  = btns.find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || '')
-          || /^(fluent|intermediate|basic|select one)$/i.test((b.innerText || '').trim()));
-        const lng = btns.find(b => b !== ws);
-        if (ws && lng) { langBtn = lng; wsBtn = ws; break; }
+        if (btns.length < 2) { container = container.parentElement; continue; }
+
+        // Identifier langBtn et wsBtn par aria-label EN PRIORITÉ (stable même quand innerText = "Select One")
+        // wsBtn a aria-label="Written and Spoken *" OU aria-label contient "written"
+        // langBtn a aria-label="Language *" OU aria-label contient "language"
+        let ws  = btns.find(b => /written.*spoken/i.test(b.getAttribute('aria-label') || ''));
+        let lng = btns.find(b => /^language/i.test(b.getAttribute('aria-label') || ''));
+
+        // Fallback si aria-labels non discriminants : utiliser innerText (quand langue déjà sélectionnée)
+        if (!ws || !lng || ws === lng) {
+          ws  = btns.find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || '')
+            || /^(fluent|intermediate|basic)$/i.test((b.innerText || '').trim()));
+          lng = btns.find(b => b !== ws);
+        }
+
+        if (ws && lng && ws !== lng) { langBtn = lng; wsBtn = ws; break; }
         container = container.parentElement;
       }
       if (!langBtn || usedLangBtns.has(langBtn)) return;
@@ -799,14 +810,14 @@
       const lbl = b => b.getAttribute('aria-label') || b.innerText || '';
       if (/^written.*spoken/i.test(lbl(langBtn)) || /^(fluent|intermediate|basic)$/i.test((langBtn.innerText || '').trim())) continue;
 
-      // Chercher wsBtn associé dans le container parent
+      // Chercher wsBtn associé dans le container parent (par aria-label en priorité)
       let wsBtn = null, deleteBtn = null;
       let container = langBtn.parentElement;
       for (let d = 0; d < 15 && container; d++) {
         const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'))
           .filter(b => b.offsetParent !== null && b !== langBtn && !usedLangBtns.has(b));
-        wsBtn = btns.find(b => /^written.*spoken/i.test(lbl(b))
-          || /^(fluent|intermediate|basic|select one)$/i.test((b.innerText || '').trim()));
+        wsBtn = btns.find(b => /written.*spoken/i.test(lbl(b)))
+          || btns.find(b => /^(fluent|intermediate|basic)$/i.test((b.innerText || '').trim()));
         if (!deleteBtn) deleteBtn = Array.from(container.querySelectorAll('button')).find(b =>
           b.offsetParent !== null && /delete|remove|supprimer/i.test(lbl(b))) || null;
         if (wsBtn) break;
