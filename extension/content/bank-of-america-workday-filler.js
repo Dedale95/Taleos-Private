@@ -687,7 +687,6 @@
   //    premier dans le DOM est souvent celui d'Education → mauvaise section.
   function _findLangAddBtn(textPattern) {
     // 1. Proximité : remonter depuis le dernier input[name="native"]
-    //    (c'est l'ancre la plus fiable vers la section Languages)
     const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
     if (nativeInputs.length > 0) {
       const lastNative = nativeInputs[nativeInputs.length - 1];
@@ -701,13 +700,13 @@
       }
     }
 
-    // 2. Heading "Languages" → chercher dans la section
-    const langHeading = Array.from(document.querySelectorAll('h3,h4,legend,[role="heading"]')).find(el =>
-      /^languages?$/i.test((el.textContent || '').trim()) && el.offsetWidth > 0
+    // 2. Heading "Languages" → chercher dans la section (uniquement dans ce container)
+    const langHeading = Array.from(document.querySelectorAll('h2,h3,h4,legend,p,span,div,[role="heading"]')).find(el =>
+      /^languages?$/i.test((el.textContent || '').trim()) && el.offsetWidth > 0 && !el.querySelector('button')
     );
     if (langHeading) {
       let el = langHeading.parentElement;
-      for (let depth = 0; depth < 8 && el; depth++) {
+      for (let depth = 0; depth < 10 && el; depth++) {
         const btn = Array.from(el.querySelectorAll('button')).find(b =>
           b.offsetWidth > 0 && textPattern.test((b.innerText || '').trim())
         );
@@ -716,11 +715,11 @@
       }
     }
 
-    // 3. Dernier bouton correspondant sur la page (Languages est la dernière section)
-    const all = Array.from(document.querySelectorAll('button')).filter(b =>
-      b.offsetWidth > 0 && textPattern.test((b.innerText || '').trim())
-    );
-    return all[all.length - 1] || null;
+    // 3. ⚠️ SÉCURITÉ : ne pas utiliser le fallback "dernier bouton Add de la page"
+    //    car ça peut capter le bouton Add de Work Experience ou Education.
+    //    Si on arrive ici, on ne sait pas où est la section Languages → ne rien retourner.
+    log('  ⚠️ findLangAddBtn: section Languages introuvable, abandon (évite clic sur mauvaise section)');
+    return null;
   }
 
   function findLanguageAddBtn()        { return _findLangAddBtn(/^add$/i); }
@@ -851,6 +850,26 @@
     if (!langs.length) { log('  ℹ️ Langues: aucune dans Firebase'); return; }
 
     log(`  🌐 Langues Firebase: ${langs.map(l => normalizeLanguageName(l.name || l.language)).join(', ')}`);
+
+    // Attendre que React ait rendu la section Languages (jusqu'à 6s)
+    // La section est prête quand input[name="native"] existe OU quand un button
+    // lié aux langues est visible (pour les formulaires vierges sans native)
+    let waitLang = 0;
+    while (waitLang < 6000) {
+      if (document.querySelector('input[name="native"]')) break;
+      // Vérifier si le heading "Languages" a des boutons enfants visibles
+      const heading = Array.from(document.querySelectorAll('h2,h3,h4,p,span,div,[role="heading"]'))
+        .find(el => el.offsetParent !== null && /^languages?$/i.test((el.textContent || '').trim()) && !el.querySelector('button'));
+      if (heading) {
+        let el = heading.parentElement;
+        for (let d = 0; d < 8 && el; d++) {
+          if (el.querySelector('button[aria-haspopup]')) { heading._sectionEl = el; break; }
+          el = el.parentElement;
+        }
+        if (heading._sectionEl) break;
+      }
+      await sleep(300); waitLang += 300;
+    }
 
     // Debug : afficher toutes les rows détectées avant traitement
     const debugRows = getLangRows();
