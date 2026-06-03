@@ -771,28 +771,37 @@
       let rows = getLangRows();
       let row  = rows.find(r => r.langName.toLowerCase() === langName.toLowerCase());
 
-      if (!row) {
-        // ── 2. Chercher une ligne vide ─────────────────────────────────────────
-        row = rows.find(r => r.isEmpty);
-      }
-
-      if (!row) {
-        // ── 3. Ajouter une nouvelle ligne ──────────────────────────────────────
-        const addBtn = rows.length === 0 ? findLanguageAddBtn() : findLanguageAddAnotherBtn();
-        if (!addBtn) {
-          log(`  ⚠️ Bouton Add/Add Another introuvable pour langue ${i + 1}`);
-          break;
+      if (row) {
+        // Langue déjà présente → mettre à jour Fluent/WS uniquement, pas de re-sélection
+        log(`  ✓ Langue ${i + 1}: "${langName}" déjà présente`);
+      } else {
+        // ── 2. Chercher une ligne vide SANS langue déjà assignée ──────────────
+        // Important : ne pas réutiliser une ligne vide si la langue cible existe
+        // déjà dans une autre ligne (évite les doublons)
+        const alreadyExists = rows.some(r => r.langName.toLowerCase() === langName.toLowerCase());
+        if (alreadyExists) {
+          // Ne devrait pas arriver ici, mais garde de sécurité
+          row = rows.find(r => r.langName.toLowerCase() === langName.toLowerCase());
+        } else {
+          row = rows.find(r => r.isEmpty);
         }
-        await clickEl(addBtn);
-        await sleep(1000);
-        log(`  + ${rows.length === 0 ? 'Add' : 'Add Another'} (langue ${i + 1})`);
-        rows = getLangRows();
-        row  = rows.find(r => r.isEmpty);
-        if (!row) { log(`  ⚠️ Ligne vide non trouvée après Add`); continue; }
-      }
 
-      // ── 4. Sélectionner la langue si besoin ──────────────────────────────────
-      if (row.langName.toLowerCase() !== langName.toLowerCase()) {
+        if (!row) {
+          // ── 3. Ajouter une nouvelle ligne ────────────────────────────────────
+          const addBtn = rows.length === 0 ? findLanguageAddBtn() : findLanguageAddAnotherBtn();
+          if (!addBtn) {
+            log(`  ⚠️ Bouton Add/Add Another introuvable pour langue ${i + 1}`);
+            break;
+          }
+          await clickEl(addBtn);
+          await sleep(1000);
+          log(`  + ${rows.length === 0 ? 'Add' : 'Add Another'} (langue ${i + 1})`);
+          rows = getLangRows();
+          row  = rows.find(r => r.isEmpty);
+          if (!row) { log(`  ⚠️ Ligne vide non trouvée après Add`); continue; }
+        }
+
+        // ── 4. Sélectionner la langue dans la ligne vide ─────────────────────
         const ok = await selectBestOption(row.langBtn, [langName]);
         if (!ok) { log(`  ⚠️ Langue ${i + 1}: "${langName}" introuvable dans Workday`); continue; }
         log(`  ✓ Langue ${i + 1}: Firebase="${langName}" → sélectionné`);
@@ -801,8 +810,6 @@
         rows = getLangRows();
         row  = rows.find(r => r.langName.toLowerCase() === langName.toLowerCase());
         if (!row) { log(`  ⚠️ Ligne "${langName}" introuvable après sélection`); continue; }
-      } else {
-        log(`  ✓ Langue ${i + 1}: "${langName}" déjà présente`);
       }
 
       // ── 5. Native / Fluent checkbox ──────────────────────────────────────────
