@@ -720,15 +720,39 @@
     return all[all.length - 1] || null;
   }
 
-  function findLanguageAddBtn()        { return _findLangAddBtn(/^add/i); }
+  function findLanguageAddBtn()        { return _findLangAddBtn(/^add$/i); }
   function findLanguageAddAnotherBtn() { return _findLangAddBtn(/add another/i); }
+
+  // Lit l'état de chaque ligne de langue dans le DOM
+  // Retourne [{langBtn, wsBtn, nativeInput, langName, wsLevel, isEmpty}]
+  function getLangRows() {
+    return Array.from(document.querySelectorAll('input[name="native"]')).map(ni => {
+      let container = ni.parentElement;
+      for (let d = 0; d < 15 && container; d++) {
+        const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'));
+        const langBtn = btns.find(b => /^language/i.test(b.getAttribute('aria-label') || ''));
+        const wsBtn   = btns.find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || ''));
+        if (langBtn) {
+          return {
+            langBtn,
+            wsBtn,
+            nativeInput: ni,
+            langName: (langBtn.innerText || '').trim(),
+            wsLevel:  wsBtn ? (wsBtn.innerText || '').trim() : '',
+            isEmpty:  /select one/i.test(langBtn.innerText || '')
+          };
+        }
+        container = container.parentElement;
+      }
+      return null;
+    }).filter(Boolean);
+  }
 
   async function fillLanguages(p) {
     const langs = Array.isArray(p.languages) ? p.languages.filter(l => l.name || l.language) : [];
     if (!langs.length) { log('  ℹ️ Langues: aucune dans Firebase'); return; }
 
-    const displayNames = langs.map(l => normalizeLanguageName(l.name || l.language)).join(', ');
-    log(`  🌐 Langues Firebase: ${displayNames}`);
+    log(`  🌐 Langues Firebase: ${langs.map(l => normalizeLanguageName(l.name || l.language)).join(', ')}`);
 
     for (let i = 0; i < langs.length; i++) {
       const lang     = langs[i];
@@ -738,78 +762,64 @@
       const wsLevel  = getWSLevel(level);
 
       if (!langName) { log(`  ⚠️ Langue ${i + 1}: nom vide dans Firebase`); continue; }
+      log(`  ℹ️ Langue ${i + 1}/${langs.length} "${langName}" (${wsLevel}${isFluent ? ', fluent' : ''})`);
 
-      // Nombre de lignes actuellement dans le DOM
-      const currentRows = document.querySelectorAll('input[name="native"]').length;
-      log(`  ℹ️ Langue ${i + 1}/${langs.length} "${langName}" | lignes existantes: ${currentRows}`);
+      // ── 1. Chercher ligne existante avec ce nom de langue ────────────────────
+      let rows = getLangRows();
+      let row  = rows.find(r => r.langName.toLowerCase() === langName.toLowerCase());
 
-      if (i < currentRows) {
-        // La ligne i existe déjà — vérifier si elle a une valeur
-        const langBtns = Array.from(document.querySelectorAll('button[aria-haspopup]')).filter(b =>
-          /language.*select one/i.test(b.getAttribute('aria-label') || '')
-        );
-        if (langBtns.length === 0) {
-          log(`  ✓ Langue ${i + 1}: déjà renseignée par Workday (skip)`);
-          continue;
-        }
-        // Sinon il reste des boutons vides → traiter plus bas
-      } else if (i === 0 && currentRows === 0) {
-        // Première langue, aucune ligne → clic sur Add
-        const addBtn = findLanguageAddBtn();
-        if (addBtn) {
-          await clickEl(addBtn);
-          await sleep(1000);
-          log(`  + Add (langue 1)`);
-        } else {
-          log('  ⚠️ Bouton Add Languages introuvable');
+      if (!row) {
+        // ── 2. Chercher une ligne vide ─────────────────────────────────────────
+        row = rows.find(r => r.isEmpty);
+      }
+
+      if (!row) {
+        // ── 3. Ajouter une nouvelle ligne ──────────────────────────────────────
+        const addBtn = rows.length === 0 ? findLanguageAddBtn() : findLanguageAddAnotherBtn();
+        if (!addBtn) {
+          log(`  ⚠️ Bouton Add/Add Another introuvable pour langue ${i + 1}`);
           break;
         }
+        await clickEl(addBtn);
+        await sleep(1000);
+        log(`  + ${rows.length === 0 ? 'Add' : 'Add Another'} (langue ${i + 1})`);
+        rows = getLangRows();
+        row  = rows.find(r => r.isEmpty);
+        if (!row) { log(`  ⚠️ Ligne vide non trouvée après Add`); continue; }
+      }
+
+      // ── 4. Sélectionner la langue si besoin ──────────────────────────────────
+      if (row.langName.toLowerCase() !== langName.toLowerCase()) {
+        const ok = await selectBestOption(row.langBtn, [langName]);
+        if (!ok) { log(`  ⚠️ Langue ${i + 1}: "${langName}" introuvable dans Workday`); continue; }
+        log(`  ✓ Langue ${i + 1}: Firebase="${langName}" → sélectionné`);
+        await sleep(400);
+        // Relire après sélection (les refs DOM peuvent changer)
+        rows = getLangRows();
+        row  = rows.find(r => r.langName.toLowerCase() === langName.toLowerCase());
+        if (!row) { log(`  ⚠️ Ligne "${langName}" introuvable après sélection`); continue; }
       } else {
-        // Langue supplémentaire → Add Another
-        const addAnother = findLanguageAddAnotherBtn();
-        if (addAnother) {
-          await clickEl(addAnother);
-          await sleep(1000);
-          log(`  + Add Another (langue ${i + 1})`);
-        } else {
-          log(`  ⚠️ Add Another introuvable pour langue ${i + 1}`);
-          break;
-        }
+        log(`  ✓ Langue ${i + 1}: "${langName}" déjà présente`);
       }
 
-      // Trouver le premier bouton Language vide disponible
-      const langBtn = document.querySelector('button[aria-label="Language Select One Required"]')
-        || Array.from(document.querySelectorAll('button[aria-haspopup]')).find(b =>
-            /language.*select one/i.test(b.getAttribute('aria-label') || '')
-          );
-      if (!langBtn) {
-        log(`  ✓ Langue ${i + 1} "${langName}": déjà renseignée (bouton vide absent)`);
-        continue;
-      }
-
-      const ok = await selectListbox(langBtn, langName);
-      if (ok) log(`  ✓ Langue ${i + 1}: Firebase="${langName}" → sélectionné`);
-      else { log(`  ⚠️ Langue ${i + 1}: "${langName}" introuvable dans Workday`); continue; }
-
-      // Fluent checkbox
-      const nativeInputs = Array.from(document.querySelectorAll('input[name="native"]'));
-      const nativeChk    = nativeInputs[nativeInputs.length - 1];
+      // ── 5. Native / Fluent checkbox ──────────────────────────────────────────
+      const nativeChk = row.nativeInput;
       if (nativeChk) {
-        const isChecked = nativeChk.checked;
-        if (isFluent && !isChecked) { nativeChk.click(); log(`  ✓ Fluent: coché (level="${level}")`); }
-        else if (isFluent) log(`  ✓ Fluent: déjà coché`);
-        else log(`  ✓ Fluent: non coché (level="${level}")`);
+        if (isFluent && !nativeChk.checked)  { nativeChk.click(); log(`  ✓ Fluent: coché (level="${level}")`); }
+        else if (!isFluent && nativeChk.checked) { nativeChk.click(); log(`  ✓ Fluent: décoché (level="${level}")`); }
+        else log(`  ✓ Fluent: ${nativeChk.checked ? 'déjà coché' : 'déjà décoché'} (level="${level}")`);
         await sleep(200);
       }
 
-      // Written and Spoken
-      const wsBtn = document.querySelector('button[aria-label="Written and Spoken Select One Required"]')
-        || Array.from(document.querySelectorAll('button[aria-haspopup]')).find(b =>
-            /written.*spoken.*select one/i.test(b.getAttribute('aria-label') || '')
-          );
-      if (wsBtn) {
-        const wsOk = await selectListbox(wsBtn, wsLevel);
-        log(`  ${wsOk ? '✓' : '⚠️'} Written & Spoken: Firebase="${level}" → ${wsLevel}${wsOk ? '' : ' (introuvable)'}`);
+      // ── 6. Written and Spoken ────────────────────────────────────────────────
+      if (row.wsBtn) {
+        const currentWs = (row.wsBtn.innerText || '').trim();
+        if (currentWs.toLowerCase() === wsLevel.toLowerCase()) {
+          log(`  ✓ Written & Spoken: "${wsLevel}" déjà correct`);
+        } else {
+          const wsOk = await selectBestOption(row.wsBtn, [wsLevel]);
+          log(`  ${wsOk ? '✓' : '⚠️'} Written & Spoken: "${currentWs}" → ${wsLevel}${wsOk ? '' : ' (introuvable)'}`);
+        }
       }
 
       await sleep(300);
