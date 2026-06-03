@@ -270,6 +270,9 @@
   async function clickApply() {
     const url = location.href.toLowerCase();
 
+    // Formulaire déjà rendu (progressBar présent) → rien à faire, quelle que soit l'URL
+    if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
+
     // Déjà sur le formulaire vierge → rien à faire
     if (url.includes('/apply/applymanually') || url.includes('/application/')) return true;
 
@@ -944,20 +947,23 @@
     if (!m) return false;
     const [, year, month, day] = m;
 
+    // Chercher l'input spinbutton avec le suffixe -input (BofA EMEA) OU sans suffixe
     const fillSegment = async (automationId, value) => {
-      const el = container.querySelector(`[data-automation-id="${automationId}"]:not([aria-hidden])`);
+      const el = container.querySelector(`[data-automation-id="${automationId}-input"]`)
+        || container.querySelector(`[data-automation-id="${automationId}"]:not([aria-hidden])`);
       if (!el) return;
       el.scrollIntoView({ block: 'center' });
       el.focus(); el.click();
-      await sleep(200);
-      const digits = String(parseInt(value, 10)); // supprime les zéros de tête (Workday les gère)
-      for (const ch of digits) {
-        el.dispatchEvent(new KeyboardEvent('keydown',  { key: ch, keyCode: ch.charCodeAt(0), bubbles: true, cancelable: true }));
-        el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: ch.charCodeAt(0), bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent('keyup',    { key: ch, keyCode: ch.charCodeAt(0), bubbles: true }));
-        await sleep(80);
-      }
+      await sleep(100);
+      // Réinitialiser le tracker React avant de setter la valeur
+      const tracker = el._valueTracker;
+      if (tracker) tracker.setValue('');
+      const nset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      const val = String(parseInt(value, 10)); // supprime les zéros de tête
+      if (nset) nset.call(el, val); else el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
       await sleep(150);
     };
 
@@ -1149,10 +1155,14 @@
           val = p.bofa_additional_info_details || '';
         }
         if (val) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-          if (setter) setter.call(textarea, val); else textarea.value = val;
-          textarea.dispatchEvent(new Event('input', { bubbles: true }));
-          textarea.dispatchEvent(new Event('change', { bubbles: true }));
+          // Utiliser execCommand('insertText') pour que React reconnaisse la valeur
+          // (le setter natif seul ne met pas à jour l'état interne React des textareas)
+          textarea.focus();
+          textarea.select();
+          document.execCommand('selectAll', false);
+          document.execCommand('delete', false);
+          document.execCommand('insertText', false, val);
+          textarea.blur();
           logFieldAction(labelText.slice(0, 50), val, '(vide)', 'fill');
           answered++;
         }
@@ -1183,12 +1193,12 @@
       if (dropBtn && !dropdownIsFilled(dropBtn)) {
         let chosen = null;
 
-        if (/right.to.work|authorized.to.work|eligible.to.work/i.test(lower)) {
+        if (/right.to.work|authorized.to.work|eligible.to.work|have the right to work/i.test(lower)) {
           // Réponse Yes si on a des autorisations dans Firebase
-          const rightToWork = p.bofa_right_to_work || (p.jp_morgan_work_authorizations?.length > 0 ? 'Yes' : 'Yes');
-          chosen = await selectBestOption(dropBtn, [rightToWork || 'Yes']);
-        } else if (/which option.*right.to.work|please select.*right.*work/i.test(lower)) {
-          // Type de droit au travail (dropdown de suivi)
+          const rightToWork = p.bofa_right_to_work || 'Yes';
+          chosen = await selectBestOption(dropBtn, [rightToWork]);
+        } else if (/which option.*right.to.work|please select.*right.*work|please select from the list/i.test(lower)) {
+          // Dropdown conditionnel EMEA : type de droit de travail (Citizenship, Skilled Worker visa…)
           const rwType = p.bofa_right_to_work_type || 'Citizenship';
           chosen = await selectBestOption(dropBtn, [rwType]);
         } else if (/relatives|close personal relationship/i.test(lower)) {
@@ -1390,9 +1400,11 @@
         val = p.bofa_additional_info_details || '';
       }
       if (val) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-        if (setter) setter.call(ta, val); else ta.value = val;
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.focus(); ta.select();
+        document.execCommand('selectAll', false);
+        document.execCommand('delete', false);
+        document.execCommand('insertText', false, val);
+        ta.blur();
         log(`  ✓ Textarea "${labelText.slice(0,50)}" → renseigné`);
         answered++;
       }
@@ -1404,9 +1416,23 @@
   }
 
   // ─── STEP 4 : Voluntary Disclosures ──────────────────────────────────────────
+  // Sur BofA EMEA : contient un checkbox "Terms and Conditions" obligatoire.
+  // Sur BofA US   : section optionnelle (diversité, anciens combattants…).
   async function fillVoluntaryDisclosures(p) {
-    log('📝 Step 4 — Voluntary Disclosures (optionnel, laissé vide)');
+    log('📝 Step 4 — Voluntary Disclosures');
     setBanner('📝 Voluntary Disclosures...');
+    await sleep(500);
+
+    // ── Checkbox Terms and Conditions (EMEA) ────────────────────────────────
+    const termsChk = document.querySelector('input[name="acceptTermsAndAgreements"]')
+      || document.querySelector('input[type="checkbox"][aria-required="true"]');
+    if (termsChk && !termsChk.checked) {
+      termsChk.click();
+      await sleep(300);
+      log('  ✓ Terms and Conditions : accepté');
+    } else if (termsChk?.checked) {
+      log('  ✓ Terms and Conditions : déjà coché');
+    }
   }
 
   // ─── STEP 5 : Self Identify ───────────────────────────────────────────────────
@@ -1477,6 +1503,7 @@
 
     // ── Apply Now / Continue Application ─────────────────────────────────────
     const applied = await clickApply();
+    let initialApplyDone = applied;
     if (applied) {
       // Attendre que le formulaire se charge
       let loadW = 0;
@@ -1489,6 +1516,7 @@
     const done      = new Set();
     let submitted   = false;
     let maxIter     = 14;
+    let applyDone   = initialApplyDone; // garde anti-redirection infinie
 
     while (maxIter-- > 0 && !submitted) {
       const step = currentStep();
@@ -1517,19 +1545,27 @@
       } else if (step === 'review') {
         submitted = await reviewAndSubmit(pending); break;
       } else if (step === 'unknown') {
-        // Sur la page offre ou transition — tenter Apply
-        const tryApply = await clickApply();
-        if (!tryApply) {
-          const advanced = await saveAndContinue();
-          if (!advanced) {
-            log('❌ Impossible de progresser');
-            setBanner('⚠️ Vérification manuelle requise', '#e65100');
-            break;
+        // Ne tenter Apply qu'une seule fois pour éviter la boucle infinie de redirection
+        if (!applyDone) {
+          const tryApply = await clickApply();
+          if (tryApply) {
+            applyDone = true;
+          } else {
+            const advanced = await saveAndContinue();
+            if (!advanced) {
+              log('❌ Impossible de progresser');
+              setBanner('⚠️ Vérification manuelle requise', '#e65100');
+              break;
+            }
           }
         }
-        // Attendre le chargement du formulaire
+        // Attendre le chargement du formulaire (plus long : 10s)
         let tw = 0;
-        while (tw < 6000 && currentStep() === 'unknown') { await sleep(400); tw += 400; }
+        while (tw < 10000 && currentStep() === 'unknown') { await sleep(400); tw += 400; }
+        if (applyDone && currentStep() === 'unknown') {
+          log('⚠️ Formulaire non chargé après Apply — attente supplémentaire 5s');
+          await sleep(5000);
+        }
       } else {
         // Étape déjà faite (retour arrière ou reload) — avancer
         await saveAndContinue();
