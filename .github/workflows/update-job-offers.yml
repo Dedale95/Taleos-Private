@@ -11,8 +11,9 @@
 name: Mise à jour offres quotidienne
 
 permissions:
-  contents: write # push des JSON
-  issues: write # issue d'alerte si le pipeline échoue (job scraper-failure-alert)
+  contents: write  # push des JSON
+  issues: write    # issue d'alerte si le pipeline échoue (job scraper-failure-alert)
+  actions: write   # déclencher workflow_dispatch sur publish-public-site depuis consolidate
 
 on:
   schedule:
