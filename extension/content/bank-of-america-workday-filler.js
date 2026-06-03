@@ -132,11 +132,16 @@
     const wrapper = document.querySelector(`[data-automation-id="${automationId}"]`);
 
     if (!wrapper) {
-      // Fallback : certains tenants Workday (EMEA) n'exposent pas les wrappers
-      // formField-* — chercher l'input directement par son name attribute.
+      // Fallback multi-stratégie pour tenants Workday EMEA sans wrappers formField-* :
+      // 1. input[name="fieldName"]          → BofA pre-filled : name="legalName--firstName"
+      // 2. input[id$="--fieldName"]         → BofA EMEA : id="name--legalName--firstName"
+      // 3. input[id*="fieldName"]           → variantes de nommage
       const inputName = automationId.replace(/^formField-/, '');
       const inp = document.querySelector(
-        `input[name="${inputName}"]:not([type="hidden"]):not([type="file"]), textarea[name="${inputName}"]`
+        `input[name="${inputName}"]:not([type="hidden"]):not([type="file"]), ` +
+        `textarea[name="${inputName}"], ` +
+        `input[id$="--${inputName}"]:not([type="hidden"]):not([type="file"]), ` +
+        `input[id*="${inputName}"]:not([type="hidden"]):not([type="file"])`
       );
       if (inp) {
         const current = (inp.value || '').trim();
@@ -407,6 +412,27 @@
   async function fillMyInformation(p) {
     log('📝 Step 1 — My Information');
     setBanner('📝 My Information en cours...');
+
+    // Attendre que React ait rendu les inputs (le progressBar peut apparaître
+    // avant que les champs de formulaire soient dans le DOM)
+    let waitMs = 0;
+    while (waitMs < 5000) {
+      const hasInput = document.querySelector(
+        '[data-automation-id^="formField-legalName"] input, ' +
+        'input[name="legalName--firstName"], input[id*="legalName--firstName"]'
+      );
+      if (hasInput) break;
+      await sleep(300); waitMs += 300;
+    }
+
+    // Diagnostic : lister tous les inputs visibles (aide au debug EMEA)
+    const allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="file"]), textarea'))
+      .filter(i => i.offsetParent !== null)
+      .map(i => `  ${i.tagName}[name="${i.name || ''}"][id="${i.id || ''}"][type="${i.type || ''}"] val="${(i.value||'').slice(0,20)}"`);
+    log(`  🔍 Inputs visibles Step 1 (${allInputs.length}):\n${allInputs.slice(0,12).join('\n')}`);
+    const formFields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'))
+      .map(f => f.getAttribute('data-automation-id'));
+    log(`  🔍 formField-* présents: ${formFields.length ? formFields.join(', ') : 'AUCUN'}`);
 
     await fillField('formField-legalName--firstName', p.firstname || p.first_name, 'first_name');
     await fillField('formField-legalName--lastName',  p.lastname  || p.last_name,  'last_name');
