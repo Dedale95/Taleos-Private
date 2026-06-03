@@ -727,63 +727,77 @@
   function findLanguageAddAnotherBtn() { return _findLangAddBtn(/add another/i); }
 
   // Lit l'état de chaque ligne de langue dans le DOM
-  // ⚠️ La première ligne (row 1 sans bouton Delete) peut ne PAS avoir input[name="native"]
-  // → on scanne tous les boutons Language visibles, pas uniquement ceux ancrés sur native
-  // Retourne [{langBtn, wsBtn, nativeInput, langName, wsLevel, isEmpty}]
+  // ⚠️ La row 1 (sans bouton Delete) n'a pas input[name="native"] ET son aria-label
+  //    sur le langBtn change dynamiquement ("Language" → "French" après sélection).
+  // → On ancre sur les boutons "Written and Spoken" qui sont TOUJOURS présents dans
+  //    toutes les rows (y compris row 1), quelle que soit la langue sélectionnée.
+  // Retourne [{langBtn, wsBtn, nativeInput, deleteBtn, langName, wsLevel, isEmpty}]
   function getLangRows() {
     const seen = new Set();
     const rows = [];
 
-    // Stratégie 1 : rows avec input[name="native"] (rows 2+)
-    Array.from(document.querySelectorAll('input[name="native"]')).forEach(ni => {
-      let container = ni.parentElement;
-      for (let d = 0; d < 15 && container; d++) {
-        const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'));
-        const langBtn = btns.find(b => /^language/i.test(b.getAttribute('aria-label') || ''));
-        const wsBtn   = btns.find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || ''));
-        if (langBtn && !seen.has(langBtn)) {
-          seen.add(langBtn);
+    // Ancrer sur les boutons "Written and Spoken" (présents dans toutes les rows)
+    Array.from(document.querySelectorAll('button[aria-haspopup]'))
+      .filter(b => b.offsetParent !== null && /^written.*spoken/i.test(b.getAttribute('aria-label') || ''))
+      .forEach(wsBtn => {
+        if (seen.has(wsBtn)) return;
+        seen.add(wsBtn);
+        // Remonter pour trouver le container de la row entière
+        let container = wsBtn.parentElement;
+        let langBtn = null, nativeInput = null, deleteBtn = null;
+        for (let d = 0; d < 15 && container; d++) {
+          const allBtns = Array.from(container.querySelectorAll('button[aria-haspopup]'))
+            .filter(b => b.offsetParent !== null);
+          // langBtn = l'autre button[aria-haspopup] dans ce container (pas wsBtn)
+          const candidate = allBtns.find(b => b !== wsBtn && !seen.has(b));
+          if (candidate && !nativeInput) {
+            // Vérifier qu'il s'agit bien d'un bouton de langue (pas un autre wsBtn)
+            const lbl = (candidate.getAttribute('aria-label') || candidate.innerText || '').toLowerCase();
+            if (!/^written.*spoken/i.test(lbl)) langBtn = candidate;
+          }
+          if (!nativeInput) nativeInput = container.querySelector('input[name="native"]') || null;
+          if (!deleteBtn) {
+            deleteBtn = Array.from(container.querySelectorAll('button')).find(b =>
+              b.offsetParent !== null && /delete|remove|supprimer/i.test(b.getAttribute('aria-label') || b.innerText || '')
+            ) || null;
+          }
+          if (langBtn) break;
+          container = container.parentElement;
+        }
+        if (langBtn) {
           rows.push({
             langBtn,
             wsBtn,
-            nativeInput: ni,
+            nativeInput: nativeInput || null,
+            deleteBtn:   deleteBtn || null,
             langName: (langBtn.innerText || '').trim(),
-            wsLevel:  wsBtn ? (wsBtn.innerText || '').trim() : '',
+            wsLevel:  (wsBtn.innerText || '').trim(),
             isEmpty:  /select one/i.test(langBtn.innerText || '')
           });
-          break;
         }
-        container = container.parentElement;
-      }
-    });
-
-    // Stratégie 2 : tous les boutons Language visibles (capte la row 1 sans native)
-    Array.from(document.querySelectorAll('button[aria-haspopup]'))
-      .filter(b => b.offsetParent !== null && /^language/i.test(b.getAttribute('aria-label') || ''))
-      .forEach(langBtn => {
-        if (seen.has(langBtn)) return; // déjà capté via native
-        seen.add(langBtn);
-        // Chercher wsBtn et nativeInput dans le container parent
-        let container = langBtn.parentElement;
-        let wsBtn = null, nativeInput = null;
-        for (let d = 0; d < 15 && container; d++) {
-          if (!wsBtn) wsBtn = Array.from(container.querySelectorAll('button[aria-haspopup]'))
-            .find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || ''));
-          if (!nativeInput) nativeInput = container.querySelector('input[name="native"]') || null;
-          if (wsBtn) break;
-          container = container.parentElement;
-        }
-        rows.push({
-          langBtn,
-          wsBtn: wsBtn || null,
-          nativeInput: nativeInput || null,
-          langName: (langBtn.innerText || '').trim(),
-          wsLevel:  wsBtn ? (wsBtn.innerText || '').trim() : '',
-          isEmpty:  /select one/i.test(langBtn.innerText || '')
-        });
       });
 
     return rows;
+  }
+
+  // Supprime les lignes de langue en doublon (garde la première occurrence de chaque langue)
+  // Retourne true si des suppressions ont été effectuées
+  async function deduplicateLangRows() {
+    const rows = getLangRows();
+    const seen = new Set();
+    let deleted = false;
+    for (const row of rows) {
+      const key = row.langName.toLowerCase();
+      if (!row.isEmpty && seen.has(key) && row.deleteBtn) {
+        log(`  🗑️ Doublon langue "${row.langName}" → suppression`);
+        await clickEl(row.deleteBtn);
+        await sleep(600);
+        deleted = true;
+      } else {
+        seen.add(key);
+      }
+    }
+    return deleted;
   }
 
   async function fillLanguages(p) {
@@ -791,6 +805,10 @@
     if (!langs.length) { log('  ℹ️ Langues: aucune dans Firebase'); return; }
 
     log(`  🌐 Langues Firebase: ${langs.map(l => normalizeLanguageName(l.name || l.language)).join(', ')}`);
+
+    // Supprimer les doublons éventuels (runs précédents bugués)
+    const hadDups = await deduplicateLangRows();
+    if (hadDups) { await sleep(500); log('  ✓ Doublons supprimés'); }
 
     for (let i = 0; i < langs.length; i++) {
       const lang     = langs[i];
