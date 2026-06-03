@@ -825,15 +825,27 @@
     return rows;
   }
 
-  // Supprime les lignes de langue en doublon (garde la première occurrence de chaque langue)
+  // Supprime les lignes de langue en doublon ET les lignes vides orphelines (sauf la row 1)
   // Retourne true si des suppressions ont été effectuées
   async function deduplicateLangRows() {
     const rows = getLangRows();
     const seen = new Set();
     let deleted = false;
+    let emptyCount = 0;
+
     for (const row of rows) {
       const key = row.langName.toLowerCase();
-      if (!row.isEmpty && seen.has(key) && row.deleteBtn) {
+
+      if (row.isEmpty) {
+        emptyCount++;
+        // Garder max 1 ligne vide (row 1 sans Delete) — supprimer les suivantes
+        if (emptyCount > 1 && row.deleteBtn) {
+          log(`  🗑️ Ligne vide orpheline → suppression`);
+          await clickEl(row.deleteBtn);
+          await sleep(600);
+          deleted = true;
+        }
+      } else if (seen.has(key) && row.deleteBtn) {
         log(`  🗑️ Doublon langue "${row.langName}" → suppression`);
         await clickEl(row.deleteBtn);
         await sleep(600);
@@ -1553,14 +1565,29 @@
     await sleep(500);
 
     // ── Checkbox Terms and Conditions (EMEA) ────────────────────────────────
-    const termsChk = document.querySelector('input[name="acceptTermsAndAgreements"]')
-      || document.querySelector('input[type="checkbox"][aria-required="true"]');
-    if (termsChk && !termsChk.checked) {
-      termsChk.click();
+    // Attendre que la checkbox apparaisse (jusqu'à 4s)
+    let termsChk = null;
+    for (let w = 0; w < 4000; w += 300) {
+      termsChk = document.querySelector('input[name="acceptTermsAndAgreements"]')
+        || document.querySelector('input[type="checkbox"][aria-required="true"]');
+      if (termsChk) break;
       await sleep(300);
-      log('  ✓ Terms and Conditions : accepté');
-    } else if (termsChk?.checked) {
-      log('  ✓ Terms and Conditions : déjà coché');
+    }
+
+    if (termsChk) {
+      // BofA EMEA utilise aria-checked (pas .checked) pour l'état de la checkbox
+      const isChecked = termsChk.getAttribute('aria-checked') === 'true' || termsChk.checked;
+      if (!isChecked) {
+        termsChk.click();
+        termsChk.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(400);
+        const nowChecked = termsChk.getAttribute('aria-checked') === 'true' || termsChk.checked;
+        log(`  ✓ Terms and Conditions : ${nowChecked ? 'accepté' : '⚠️ clic effectué mais état incertain'}`);
+      } else {
+        log('  ✓ Terms and Conditions : déjà coché');
+      }
+    } else {
+      log('  ℹ️ Terms and Conditions : checkbox non trouvée (step US sans T&C obligatoire)');
     }
   }
 
