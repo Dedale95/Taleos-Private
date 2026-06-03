@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.213",
-  "version_name": "1.2.213-bofa-fix-tc-dedup-empty-rows",
+  "version": "1.2.214",
+  "version_name": "1.2.214-bofa-fix-dedup-loop-ghost-rows",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",

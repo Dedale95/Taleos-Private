@@ -825,34 +825,41 @@
     return rows;
   }
 
-  // Supprime les lignes de langue en doublon ET les lignes vides orphelines (sauf la row 1)
-  // Retourne true si des suppressions ont été effectuées
+  // Supprime toutes les lignes vides avec Delete (ghost rows) ET les doublons.
+  // Ré-fetch les rows après chaque suppression pour éviter les refs DOM obsolètes.
+  // Retourne true si des suppressions ont été effectuées.
   async function deduplicateLangRows() {
-    const rows = getLangRows();
-    const seen = new Set();
     let deleted = false;
-    let emptyCount = 0;
+    let safetyMax = 20; // évite boucle infinie
 
-    for (const row of rows) {
-      const key = row.langName.toLowerCase();
+    while (safetyMax-- > 0) {
+      const rows = getLangRows();
+      const seen = new Set();
+      let deletedThisRound = false;
 
-      if (row.isEmpty) {
-        emptyCount++;
-        // Garder max 1 ligne vide (row 1 sans Delete) — supprimer les suivantes
-        if (emptyCount > 1 && row.deleteBtn) {
-          log(`  🗑️ Ligne vide orpheline → suppression`);
+      for (const row of rows) {
+        const key = row.langName.toLowerCase();
+        if (row.isEmpty && row.deleteBtn) {
+          // Ligne vide avec Delete = ghost row (row 1 réelle n'a jamais de Delete)
+          log(`  🗑️ Ghost row vide → suppression`);
           await clickEl(row.deleteBtn);
-          await sleep(600);
+          await sleep(800);
           deleted = true;
+          deletedThisRound = true;
+          break; // re-fetch les rows après chaque suppression
+        } else if (!row.isEmpty && seen.has(key) && row.deleteBtn) {
+          log(`  🗑️ Doublon "${row.langName}" → suppression`);
+          await clickEl(row.deleteBtn);
+          await sleep(800);
+          deleted = true;
+          deletedThisRound = true;
+          break;
+        } else {
+          seen.add(key);
         }
-      } else if (seen.has(key) && row.deleteBtn) {
-        log(`  🗑️ Doublon langue "${row.langName}" → suppression`);
-        await clickEl(row.deleteBtn);
-        await sleep(600);
-        deleted = true;
-      } else {
-        seen.add(key);
       }
+
+      if (!deletedThisRound) break; // plus rien à supprimer
     }
     return deleted;
   }
