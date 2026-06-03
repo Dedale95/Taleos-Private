@@ -726,94 +726,101 @@
   function findLanguageAddBtn()        { return _findLangAddBtn(/^add$/i); }
   function findLanguageAddAnotherBtn() { return _findLangAddBtn(/add another/i); }
 
-  // Lit l'état de chaque ligne de langue dans le DOM
-  // Stratégie : trouver la section Languages puis itérer sur ses sous-sections.
-  // Chaque row a exactement 2 button[aria-haspopup] : langBtn (1er) et wsBtn (2ème).
-  // La row 1 n'a pas de Delete ni de input[name="native"].
+  // Lit l'état de chaque ligne de langue dans le DOM.
+  // Chaque row a un input[name="native"] sauf la row 1.
+  // On ancre sur les inputs[name="native"] pour les rows 2+,
+  // puis on remonte depuis chacun pour trouver le container de la row.
+  // Pour la row 1, on la trouve via le premier langBtn[aria-haspopup] de la section
+  // qui n'est pas déjà capté par les rows 2+.
   // Retourne [{langBtn, wsBtn, nativeInput, deleteBtn, langName, wsLevel, isEmpty}]
   function getLangRows() {
-    // 1. Trouver le conteneur de la section Languages
-    //    Workday : heading "Languages" suivi d'un container avec les rows
-    const langHeading = Array.from(document.querySelectorAll('h2,h3,h4,legend,[role="heading"]'))
-      .find(el => el.offsetParent !== null && /^languages?$/i.test((el.textContent || '').trim()));
-
-    let section = null;
-    if (langHeading) {
-      // Remonter jusqu'à trouver le container qui contient aussi les boutons Add
-      let el = langHeading.parentElement;
-      for (let d = 0; d < 8 && el; d++) {
-        if (el.querySelector('button[aria-haspopup]')) { section = el; break; }
-        el = el.parentElement;
-      }
-    }
-
-    // Fallback : utiliser tout le document si heading non trouvé
-    const root = section || document;
-
-    // 2. Trouver tous les button[aria-haspopup] visibles dans la section,
-    //    groupés par paires (langBtn, wsBtn) dans chaque row
-    const allHaspopup = Array.from(root.querySelectorAll('button[aria-haspopup]'))
-      .filter(b => b.offsetParent !== null);
-
-    // 3. Pour chaque paire, remonter pour trouver nativeInput et deleteBtn
     const rows = [];
-    const usedBtns = new Set();
+    const usedLangBtns = new Set();
 
-    for (let i = 0; i < allHaspopup.length; i++) {
-      const b1 = allHaspopup[i];
-      if (usedBtns.has(b1)) continue;
-
-      // Chercher le deuxième bouton dans le même container proche
-      let container = b1.parentElement;
-      let b2 = null;
-      for (let d = 0; d < 8 && container; d++) {
-        const candidates = Array.from(container.querySelectorAll('button[aria-haspopup]'))
-          .filter(b => b.offsetParent !== null && b !== b1 && !usedBtns.has(b));
-        if (candidates.length > 0) {
-          // Prendre le premier candidat dans ce container
-          b2 = candidates[0];
-          break;
-        }
+    // ── Rows 2+ : ancrage sur input[name="native"] ───────────────────────────
+    Array.from(document.querySelectorAll('input[name="native"]')).forEach(ni => {
+      // Remonter pour trouver le container qui contient langBtn ET wsBtn
+      let container = ni.parentElement;
+      let langBtn = null, wsBtn = null, deleteBtn = null;
+      for (let d = 0; d < 20 && container; d++) {
+        const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'))
+          .filter(b => b.offsetParent !== null);
+        // On cherche 2 boutons : langBtn et wsBtn
+        const ws  = btns.find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || '')
+          || /^(fluent|intermediate|basic|select one)$/i.test((b.innerText || '').trim()));
+        const lng = btns.find(b => b !== ws);
+        if (ws && lng) { langBtn = lng; wsBtn = ws; break; }
         container = container.parentElement;
       }
-      if (!b2) continue; // pas trouvé de paire → ignorer
+      if (!langBtn || usedLangBtns.has(langBtn)) return;
+      usedLangBtns.add(langBtn);
 
-      // Identifier lequel est langBtn et lequel est wsBtn
-      // wsBtn a aria-label commençant par "Written" OU son innerText match un niveau connu
-      const isWs = b => /^written.*spoken/i.test(b.getAttribute('aria-label') || '')
-        || /^(fluent|intermediate|basic|select one)$/i.test((b.innerText || '').trim());
-      let langBtn, wsBtn;
-      if (isWs(b2) && !isWs(b1)) { langBtn = b1; wsBtn = b2; }
-      else if (isWs(b1) && !isWs(b2)) { langBtn = b2; wsBtn = b1; }
-      else { langBtn = b1; wsBtn = b2; } // fallback : ordre DOM
-
-      usedBtns.add(b1);
-      usedBtns.add(b2);
-
-      // Chercher nativeInput et deleteBtn dans le container de la row
-      let nativeInput = null, deleteBtn = null;
+      // Chercher deleteBtn dans le container
       let rowContainer = langBtn.parentElement;
       for (let d = 0; d < 12 && rowContainer; d++) {
-        if (!nativeInput) nativeInput = rowContainer.querySelector('input[name="native"]') || null;
-        if (!deleteBtn) {
-          deleteBtn = Array.from(rowContainer.querySelectorAll('button')).find(b =>
-            b.offsetParent !== null && /delete|remove|supprimer/i.test(b.getAttribute('aria-label') || b.innerText || '')
-          ) || null;
-        }
-        if (nativeInput && deleteBtn) break;
+        if (!deleteBtn) deleteBtn = Array.from(rowContainer.querySelectorAll('button')).find(b =>
+          b.offsetParent !== null && /delete|remove|supprimer/i.test(b.getAttribute('aria-label') || b.innerText || '')
+        ) || null;
+        if (deleteBtn) break;
         rowContainer = rowContainer.parentElement;
       }
 
       const langName = (langBtn.innerText || '').trim();
-      const wsLevel  = (wsBtn.innerText || '').trim();
-      rows.push({
-        langBtn, wsBtn,
-        nativeInput: nativeInput || null,
-        deleteBtn:   deleteBtn || null,
-        langName,
-        wsLevel,
-        isEmpty: /^(select one|select|language)$/i.test(langName)
-      });
+      rows.push({ langBtn, wsBtn, nativeInput: ni, deleteBtn: deleteBtn || null,
+        langName, wsLevel: (wsBtn.innerText || '').trim(),
+        isEmpty: /^(select one|select|language)$/i.test(langName) });
+    });
+
+    // ── Row 1 : chercher le premier langBtn de la section Languages non encore capté ──
+    // On cherche la section Languages via le heading, puis le premier button[aria-haspopup]
+    // dans cette section qui n'est pas dans usedLangBtns.
+    const langSection = (() => {
+      const heading = Array.from(document.querySelectorAll('[data-automation-id="languages"], [data-automation-id^="formField-language"]'))
+        .find(el => el.offsetParent !== null);
+      if (heading) return heading;
+      // Fallback : heading texte "Languages"
+      const h = Array.from(document.querySelectorAll('h2,h3,h4,p,span,div,[role="heading"]'))
+        .find(el => el.offsetParent !== null && /^languages?$/i.test((el.textContent || '').trim())
+          && !el.querySelector('button')); // heading pur, sans bouton enfant
+      if (!h) return null;
+      let el = h.parentElement;
+      for (let d = 0; d < 6 && el; d++) {
+        if (el.querySelector('input[name="native"]') || el.querySelector('button[aria-haspopup]')) return el;
+        el = el.parentElement;
+      }
+      return null;
+    })();
+
+    const searchRoot = langSection || document.body;
+    const allBtns = Array.from(searchRoot.querySelectorAll('button[aria-haspopup]'))
+      .filter(b => b.offsetParent !== null && !usedLangBtns.has(b));
+
+    for (const langBtn of allBtns) {
+      // Vérifier que ce n'est pas un wsBtn (Written and Spoken / niveau)
+      const lbl = b => b.getAttribute('aria-label') || b.innerText || '';
+      if (/^written.*spoken/i.test(lbl(langBtn)) || /^(fluent|intermediate|basic)$/i.test((langBtn.innerText || '').trim())) continue;
+
+      // Chercher wsBtn associé dans le container parent
+      let wsBtn = null, deleteBtn = null;
+      let container = langBtn.parentElement;
+      for (let d = 0; d < 15 && container; d++) {
+        const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'))
+          .filter(b => b.offsetParent !== null && b !== langBtn && !usedLangBtns.has(b));
+        wsBtn = btns.find(b => /^written.*spoken/i.test(lbl(b))
+          || /^(fluent|intermediate|basic|select one)$/i.test((b.innerText || '').trim()));
+        if (!deleteBtn) deleteBtn = Array.from(container.querySelectorAll('button')).find(b =>
+          b.offsetParent !== null && /delete|remove|supprimer/i.test(lbl(b))) || null;
+        if (wsBtn) break;
+        container = container.parentElement;
+      }
+      if (!wsBtn) continue; // pas une row de langue valide
+
+      usedLangBtns.add(langBtn);
+      const langName = (langBtn.innerText || '').trim();
+      rows.push({ langBtn, wsBtn, nativeInput: null, deleteBtn: deleteBtn || null,
+        langName, wsLevel: (wsBtn.innerText || '').trim(),
+        isEmpty: /^(select one|select|language)$/i.test(langName) });
+      break; // row 1 seulement
     }
 
     return rows;
@@ -1547,7 +1554,7 @@
 
   // ─── STEP 6 : Review & Submit ─────────────────────────────────────────────
   async function reviewAndSubmit(pending) {
-    log('📝 Step 5 — Review');
+    log('📝 Step 6 — Review');
     setBanner('📋 Vérification finale...');
     await sleep(2000);
 
@@ -1559,6 +1566,13 @@
       log('⚠️ Bouton Submit introuvable');
       setBanner('⚠️ Cliquez Submit pour finaliser', '#e65100');
       return false;
+    }
+
+    // ── Pause de 60s pour vérification manuelle avant soumission ──────────────
+    log('⏳ Pause 60s — vérifiez la candidature avant soumission automatique...');
+    for (let s = 60; s > 0; s--) {
+      setBanner(`⏳ Soumission automatique dans ${s}s — vérifiez la candidature...`, '#1565c0');
+      await sleep(1000);
     }
 
     log('🚀 Soumission...');
