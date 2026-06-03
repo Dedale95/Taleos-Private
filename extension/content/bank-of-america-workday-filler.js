@@ -827,23 +827,35 @@
   }
 
   // ── 2c. CV Upload ────────────────────────────────────────────────────────────
+
+  // Supprime le CV actuellement affiché dans la section Resume/CV de BofA Workday.
+  // Sélecteur direct : [data-automation-id="delete-file"] avec aria-label contenant le nom.
   async function deleteExistingCV() {
-    // Chercher un bouton de suppression de fichier dans la section CV/Resume
-    const deleteBtn = Array.from(document.querySelectorAll('button, [role="button"]')).find(b => {
+    // 1. Sélecteur direct BofA : data-automation-id="delete-file"
+    const directBtn = document.querySelector('[data-automation-id="delete-file"]');
+    if (directBtn && directBtn.offsetWidth > 0) {
+      log(`  🗑️ CV existant détecté → suppression (delete-file)...`);
+      await clickEl(directBtn);
+      // Attendre que le file-upload-item disparaisse
+      let w = 0;
+      while (w < 3000 && document.querySelector('[data-automation-id="file-upload-item"]')) {
+        await sleep(200); w += 200;
+      }
+      log(`  ✓ CV existant supprimé`);
+      return true;
+    }
+    // 2. Fallback : cherche un bouton delete/remove proche d'une zone upload
+    const fallbackBtn = Array.from(document.querySelectorAll('button, [role="button"]')).find(b => {
       if (!b.offsetWidth) return false;
       const label = (b.getAttribute('aria-label') || b.innerText || b.title || '').toLowerCase();
       return /delete|remove|clear|supprimer/i.test(label) && (
-        b.closest('[data-automation-id*="resume"]') ||
-        b.closest('[data-automation-id*="cv"]') ||
-        b.closest('[data-automation-id*="upload"]') ||
-        b.closest('[data-automation-id*="file"]') ||
-        b.closest('[class*="resume"]') ||
-        b.closest('[class*="file"]')
+        b.closest('[data-automation-id*="upload"]') || b.closest('[data-automation-id*="file"]') ||
+        b.closest('[class*="resume"]') || b.closest('[class*="file"]')
       );
     });
-    if (deleteBtn) {
-      log(`  🗑️ CV existant détecté → suppression...`);
-      await clickEl(deleteBtn);
+    if (fallbackBtn) {
+      log(`  🗑️ CV existant détecté → suppression (fallback)...`);
+      await clickEl(fallbackBtn);
       await sleep(800);
       log(`  ✓ CV existant supprimé`);
       return true;
@@ -852,28 +864,32 @@
   }
 
   async function uploadCV(p) {
-    const fileInput = document.querySelector('input[type="file"]');
-    if (!fileInput) { log('  ℹ️ CV: pas d\'input file visible'); return; }
-
     const storagePath = p.cv_storage_path || '';
     const filename    = p.cv_filename || (storagePath ? storagePath.split('/').pop() : 'cv.pdf');
-    const cvBase      = (filename || '').replace('.pdf', '').toLowerCase();
+    const cvBase      = (filename || '').replace(/\.pdf$/i, '').toLowerCase();
 
-    // Vérifier si un CV est déjà affiché (nom visible dans le DOM)
-    const pageText = document.body.innerText.toLowerCase();
-    if (cvBase && pageText.includes(cvBase) && fileInput.files?.length > 0) {
-      logFieldAction('CV', filename, filename, 'skip');
+    // ── Vérifier si le bon CV est déjà affiché (évite delete+reupload inutile) ──
+    // BofA affiche le fichier dans [data-automation-id="file-upload-item-name"]
+    const uploadedName = (document.querySelector('[data-automation-id="file-upload-item-name"]') || {}).textContent || '';
+    const alreadyUploaded = cvBase && uploadedName.toLowerCase().includes(cvBase);
+    const uploadSuccess   = !!document.querySelector('[data-automation-id="file-upload-successful"]');
+    if (alreadyUploaded && uploadSuccess) {
+      logFieldAction('CV', filename, uploadedName.trim(), 'skip');
       return;
     }
 
     // Supprimer le CV existant si présent
     await deleteExistingCV();
 
+    // Récupérer le file input (toujours présent dans la drop zone après suppression)
+    const fileInput = document.querySelector('input[type="file"]');
+    if (!fileInput) { log('  ⚠️ CV: input[type="file"] introuvable'); return; }
+
     if (!storagePath) {
       log('  ⚠️ CV: cv_storage_path absent dans Firebase — upload manuel requis');
       setBanner('⏸️ ÉTAPE MANUELLE : Uploadez votre CV, reprise automatique...', '#c47900');
       let waited = 0;
-      while (waited < 180000 && !(fileInput.files?.length > 0)) {
+      while (waited < 180000 && !document.querySelector('[data-automation-id="file-upload-successful"]')) {
         await sleep(1000); waited += 1000;
       }
       log('  ✓ CV uploadé manuellement');
@@ -887,27 +903,30 @@
       log('  ⚠️ CV: échec upload Firebase — upload manuel requis');
       setBanner('⏸️ Uploadez votre CV manuellement', '#c47900');
       let waited = 0;
-      while (waited < 180000 && !(fileInput.files?.length > 0)) {
+      while (waited < 180000 && !document.querySelector('[data-automation-id="file-upload-successful"]')) {
         await sleep(1000); waited += 1000;
       }
       setBanner('📝 My Experience en cours...');
       return;
     }
 
-    // Vérification : attendre que Workday affiche le nom du fichier dans l'UI
-    // (signe que le fichier a bien été accepté par React/Workday)
-    await sleep(2000);
-    const cvPageText = document.body.innerText || '';
-    // Workday affiche généralement le nom du fichier dans un span/div visible
-    const visibleFilename = Array.from(document.querySelectorAll('[class*="file"], [class*="resume"], [class*="attachment"], [data-automation-id*="file"]'))
-      .find(el => el.offsetWidth > 0 && el.innerText && el.innerText.toLowerCase().includes(cvBase));
+    // ── Attendre la confirmation Workday ──────────────────────────────────────
+    // BofA affiche [data-automation-id="file-upload-successful"] quand le fichier
+    // est accepté côté serveur. Attendre jusqu'à 8 secondes.
+    let waited = 0;
+    while (waited < 8000 && !document.querySelector('[data-automation-id="file-upload-successful"]')) {
+      await sleep(400); waited += 400;
+    }
 
-    if (visibleFilename || cvPageText.toLowerCase().includes(cvBase)) {
-      log(`  ✅ CV: "${filename}" confirmé visible dans l'interface Workday`);
-    } else if (fileInput.files?.length > 0) {
-      log(`  ✓ CV: "${filename}" assigné à l'input (${fileInput.files[0]?.name}) — non encore affiché par Workday (délai possible)`);
+    const successEl     = document.querySelector('[data-automation-id="file-upload-successful"]');
+    const uploadedAfter = (document.querySelector('[data-automation-id="file-upload-item-name"]') || {}).textContent || '';
+
+    if (successEl && uploadedAfter.toLowerCase().includes(cvBase)) {
+      log(`  ✅ CV: "${filename}" confirmé uploaded par Workday`);
+    } else if (successEl) {
+      log(`  ✓ CV: upload confirmé (fichier affiché: "${uploadedAfter.trim()}")`);
     } else {
-      log(`  ⚠️ CV: fichier non trouvé dans l'input après upload — Workday n'a peut-être pas accepté le fichier`);
+      log(`  ⚠️ CV: pas de confirmation Workday après ${waited}ms — vérifiez manuellement`);
       setBanner('⚠️ Vérifiez le CV manuellement sur cette page', '#e65100');
     }
   }
