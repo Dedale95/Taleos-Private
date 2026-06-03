@@ -174,14 +174,24 @@ Mapping niveau d'études → Workday :
 
 ### Languages
 
-**Ancre fiable pour la section Languages :** `input[name="native"]` (un par ligne de langue).
+**Structure critique :**
+- **Row 1** (sans bouton Delete) : **N'a PAS** de `input[name="native"]`. Le `aria-label` du langBtn change dynamiquement (`"Language"` → `"French"` après sélection). C'est la row fixe, toujours présente.
+- **Rows 2+** (avec bouton Delete) : ont `input[name="native"]`. Ancre fiable.
 
-**Structure d'une ligne de langue :**
+**⚠️ Pièges identifiés :**
+- Ne pas ancrer sur `aria-label^="Language"` : change avec la valeur sélectionnée.
+- Ne pas ancrer sur `aria-label^="Written and Spoken"` : capte aussi des boutons hors-section (ex: bouton Settings du header Workday).
+- La bonne stratégie : ancrer sur `input[name="native"]` pour rows 2+, puis faire un fallback ciblé pour la row 1.
+
+**Sélecteurs de chaque row :**
 ```
-button[aria-haspopup][aria-label^="Language"]         ← sélecteur de langue
-button[aria-haspopup][aria-label^="Written and Spoken"] ← niveau
-input[name="native"]                                  ← checkbox Fluent/Native
+input[name="native"]                                     ← anchor rows 2+ (absent en row 1)
+button[aria-haspopup] (1er dans le container)            ← langBtn (nom change dynamiquement)
+button[aria-haspopup] (2ème, wsLevel = Fluent/Basic/...) ← wsBtn (Written and Spoken)
+button[aria-label*="delete" ou innerText="Delete"]       ← deleteBtn (absent en row 1)
 ```
+
+**wsBtn identification :** `aria-label^="Written and Spoken"` OU `innerText` ∈ `{Fluent, Intermediate, Basic, Select One}`.
 
 **Boutons Add :**
 - Premier Add : remonter depuis `input[name="native"]` jusqu'à 14 niveaux ou chercher heading `"Languages"`.
