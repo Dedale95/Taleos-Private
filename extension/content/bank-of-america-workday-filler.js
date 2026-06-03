@@ -130,7 +130,28 @@
       return;
     }
     const wrapper = document.querySelector(`[data-automation-id="${automationId}"]`);
-    if (!wrapper) { logFieldAction(label, value, undefined, 'not_found'); return; }
+
+    if (!wrapper) {
+      // Fallback : certains tenants Workday (EMEA) n'exposent pas les wrappers
+      // formField-* — chercher l'input directement par son name attribute.
+      const inputName = automationId.replace(/^formField-/, '');
+      const inp = document.querySelector(
+        `input[name="${inputName}"]:not([type="hidden"]):not([type="file"]), textarea[name="${inputName}"]`
+      );
+      if (inp) {
+        const current = (inp.value || '').trim();
+        if (current.toLowerCase() === String(value).trim().toLowerCase()) {
+          logFieldAction(label, value, current, 'skip'); return;
+        }
+        inp.focus();
+        reactSet(inp, String(value));
+        inp.blur();
+        logFieldAction(label, value, current || '(vide)', 'fill');
+      } else {
+        logFieldAction(label, value, undefined, 'not_found');
+      }
+      return;
+    }
 
     const wrapperText = (wrapper.innerText || '').toLowerCase();
     if (wrapperText.includes(String(value).toLowerCase())) {
@@ -373,8 +394,12 @@
     // sans button[aria-haspopup] → navigation : clic container → niveau 1 → niveau 2
     const sourceField = document.querySelector('[data-automation-id="formField-source"]');
     if (sourceField) {
-      const chips = Array.from(sourceField.querySelectorAll('[data-automation-id="selectedItem"], [class*="chip"]'));
-      const alreadySet = chips.some(c => /bank of america careers site/i.test(c.textContent || ''));
+      // Les items sélectionnés peuvent être des chips (US) ou des promptOption (EMEA)
+      const chips = Array.from(sourceField.querySelectorAll(
+        '[data-automation-id="selectedItem"], [class*="chip"], [data-automation-id="promptOption"]'
+      ));
+      const alreadySet = chips.some(c => /bank of america careers site/i.test(c.textContent || ''))
+        || /bank of america careers site/i.test(sourceField.innerText || '');
       if (alreadySet) {
         logFieldAction('How Did You Hear', 'Bank of America Careers Site', 'Bank of America Careers Site', 'skip');
       } else {
@@ -436,18 +461,36 @@
     }
 
     // ── Country Phone Code → France (+33) ────────────────────────────────────
-    const phoneCodeBtn = document.querySelector('[data-automation-id="formField-phoneDeviceType"] button[aria-haspopup]')
-      || document.querySelector('[id*="phoneNumber--"][id*="countryPhone"] button, [id*="phoneNumber--phoneCountry"] button')
-      || Array.from(document.querySelectorAll('button[aria-haspopup]')).find(b =>
-          /france|phone.*code|country.*phone|\(\+/i.test((b.getAttribute('aria-label') || b.innerText || ''))
-        );
-    if (phoneCodeBtn) {
-      const currentCode = (phoneCodeBtn.innerText || '').trim();
-      if (!/france.*\+33|\+33.*france/i.test(currentCode)) {
-        const ok = await selectListbox(phoneCodeBtn, 'France (+33)', 4000);
-        logFieldAction('Country Phone Code', 'France (+33)', currentCode || '(vide)', ok ? 'fill' : 'not_found');
+    // Vérifier d'abord si déjà sélectionné (chip ou promptOption EMEA)
+    const phoneCodeField = document.querySelector('[data-automation-id="formField-countryPhoneCode"]');
+    const phoneCodeAlreadySet = phoneCodeField
+      && /france.*\+33|\+33.*france/i.test(phoneCodeField.innerText || '');
+    if (phoneCodeAlreadySet) {
+      logFieldAction('Country Phone Code', 'France (+33)', 'France (+33)', 'skip');
+    } else {
+      const phoneCodeBtn = document.querySelector('[data-automation-id="formField-phoneDeviceType"] button[aria-haspopup]')
+        || document.querySelector('[id*="phoneNumber--"][id*="countryPhone"] button, [id*="phoneNumber--phoneCountry"] button')
+        || Array.from(document.querySelectorAll('button[aria-haspopup]')).find(b =>
+            /france|phone.*code|country.*phone|\(\+/i.test((b.getAttribute('aria-label') || b.innerText || ''))
+          );
+      if (phoneCodeBtn) {
+        const currentCode = (phoneCodeBtn.innerText || '').trim();
+        if (!/france.*\+33|\+33.*france/i.test(currentCode)) {
+          const ok = await selectListbox(phoneCodeBtn, 'France (+33)', 4000);
+          logFieldAction('Country Phone Code', 'France (+33)', currentCode || '(vide)', ok ? 'fill' : 'not_found');
+        } else {
+          logFieldAction('Country Phone Code', 'France (+33)', currentCode, 'skip');
+        }
       } else {
-        logFieldAction('Country Phone Code', 'France (+33)', currentCode, 'skip');
+        // Fallback multiselect (même approche que How Did You Hear)
+        const cpcContainer = phoneCodeField && phoneCodeField.querySelector('[data-automation-id="multiselectInputContainer"]');
+        if (cpcContainer) {
+          cpcContainer.click(); await sleep(600);
+          const opt = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
+            .find(el => el.offsetWidth > 0 && /france.*\+33/i.test(el.textContent || ''));
+          if (opt) { opt.click(); await sleep(400); logFieldAction('Country Phone Code', 'France (+33)', '(vide)', 'fill'); }
+          else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+        }
       }
     }
 
