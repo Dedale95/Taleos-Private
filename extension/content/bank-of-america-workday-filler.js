@@ -727,28 +727,63 @@
   function findLanguageAddAnotherBtn() { return _findLangAddBtn(/add another/i); }
 
   // Lit l'état de chaque ligne de langue dans le DOM
+  // ⚠️ La première ligne (row 1 sans bouton Delete) peut ne PAS avoir input[name="native"]
+  // → on scanne tous les boutons Language visibles, pas uniquement ceux ancrés sur native
   // Retourne [{langBtn, wsBtn, nativeInput, langName, wsLevel, isEmpty}]
   function getLangRows() {
-    return Array.from(document.querySelectorAll('input[name="native"]')).map(ni => {
+    const seen = new Set();
+    const rows = [];
+
+    // Stratégie 1 : rows avec input[name="native"] (rows 2+)
+    Array.from(document.querySelectorAll('input[name="native"]')).forEach(ni => {
       let container = ni.parentElement;
       for (let d = 0; d < 15 && container; d++) {
         const btns = Array.from(container.querySelectorAll('button[aria-haspopup]'));
         const langBtn = btns.find(b => /^language/i.test(b.getAttribute('aria-label') || ''));
         const wsBtn   = btns.find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || ''));
-        if (langBtn) {
-          return {
+        if (langBtn && !seen.has(langBtn)) {
+          seen.add(langBtn);
+          rows.push({
             langBtn,
             wsBtn,
             nativeInput: ni,
             langName: (langBtn.innerText || '').trim(),
             wsLevel:  wsBtn ? (wsBtn.innerText || '').trim() : '',
             isEmpty:  /select one/i.test(langBtn.innerText || '')
-          };
+          });
+          break;
         }
         container = container.parentElement;
       }
-      return null;
-    }).filter(Boolean);
+    });
+
+    // Stratégie 2 : tous les boutons Language visibles (capte la row 1 sans native)
+    Array.from(document.querySelectorAll('button[aria-haspopup]'))
+      .filter(b => b.offsetParent !== null && /^language/i.test(b.getAttribute('aria-label') || ''))
+      .forEach(langBtn => {
+        if (seen.has(langBtn)) return; // déjà capté via native
+        seen.add(langBtn);
+        // Chercher wsBtn et nativeInput dans le container parent
+        let container = langBtn.parentElement;
+        let wsBtn = null, nativeInput = null;
+        for (let d = 0; d < 15 && container; d++) {
+          if (!wsBtn) wsBtn = Array.from(container.querySelectorAll('button[aria-haspopup]'))
+            .find(b => /^written.*spoken/i.test(b.getAttribute('aria-label') || ''));
+          if (!nativeInput) nativeInput = container.querySelector('input[name="native"]') || null;
+          if (wsBtn) break;
+          container = container.parentElement;
+        }
+        rows.push({
+          langBtn,
+          wsBtn: wsBtn || null,
+          nativeInput: nativeInput || null,
+          langName: (langBtn.innerText || '').trim(),
+          wsLevel:  wsBtn ? (wsBtn.innerText || '').trim() : '',
+          isEmpty:  /select one/i.test(langBtn.innerText || '')
+        });
+      });
+
+    return rows;
   }
 
   async function fillLanguages(p) {
