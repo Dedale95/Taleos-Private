@@ -258,9 +258,35 @@
   }
 
   // ─── Apply / Continue Application ──────────────────────────────────────────
+  // On force toujours le passage par /apply/applyManually pour obtenir un
+  // formulaire vierge avec les wrappers formField-* standard.
+  // Quand l'utilisateur a déjà postulé, Workday navigue vers /apply (formulaire
+  // pré-rempli sans wrappers formField-*) → on redirige vers applyManually.
   async function clickApply() {
     const url = location.href.toLowerCase();
-    if (url.includes('/apply/') || url.includes('/application/')) return true;
+
+    // Déjà sur le formulaire vierge → rien à faire
+    if (url.includes('/apply/applymanually') || url.includes('/application/')) return true;
+
+    // Sur /apply (pré-rempli OU popup) → forcer applyManually
+    if (url.includes('/apply')) {
+      const applyManualUrl = location.href.replace(/\/apply.*$/i, '') + '/apply/applyManually';
+      log('🔄 Redirection Apply Manually (formulaire vierge)...');
+      location.href = applyManualUrl;
+      await sleep(2000);
+      return true;
+    }
+
+    // Sur la page offre : chercher d'abord le lien applyManually direct
+    const applyManuallyLink = document.querySelector('a[data-automation-id="applyManually"][href]');
+    if (applyManuallyLink) {
+      log('🚀 Lien Apply Manually → navigation directe...');
+      location.href = applyManuallyLink.href;
+      await sleep(2000);
+      return true;
+    }
+
+    // Fallback : clic sur le bouton Apply standard puis gérer le popup
     const btn = document.querySelector('[data-automation-id="adventureButton"]')
       || document.querySelector('[data-automation-id="continueButton"]')
       || document.querySelector('[data-automation-id="applyNow"]')
@@ -271,7 +297,6 @@
       log('🚀 Clic Apply/Continue Application...');
       await clickEl(btn);
       await sleep(1500);
-      // Gérer le popup "Apply Manually" si présent
       await handleApplyManuallyPopup();
       await sleep(1000);
       return true;
