@@ -98,13 +98,14 @@ Attendre `[data-automation-id="progressBarActiveStep"]` (jusqu'à 12 secondes).
 ### How Did You Hear About Us ?
 
 ```
-[data-automation-id="formField-source"]            ← wrapper
-[data-automation-id="selectedItem"]                ← chips sélectionnés (US)
-[data-automation-id="promptOption"]                ← chips sélectionnés (EMEA)
-[data-automation-id="multiselectInputContainer"]   ← déclencheur du multiselect
-[data-automation-id="multiSelectContainer"]        ← conteneur global
+[data-automation-id="formField-source"]            ← wrapper (peut être absent sur formulaire vierge)
+input[data-uxi-widget-type="selectinput"]          ← ⚠️ déclencheur réel (focus+click)
+input[id="source--source"]                         ← alias
+[data-automation-id="promptOption"]                ← options niveau 1 ET niveau 2
 ```
-Valeur cible : `"Bank of America Careers Site"` (peut nécessiter 2 niveaux de sélection).
+**Procédure :** focus + click sur l'input selectinput → attendre options → cliquer "Bank of America Careers Site" (niveau 1) → attendre → cliquer à nouveau "Bank of America Careers Site" (niveau 2 identique).
+**⚠️ Ne pas cliquer le container/wrapper** — c'est l'input `selectinput` qui déclenche l'ouverture du dropdown.
+Si `formField-source` absent : fallback via label `"How Did You Hear"` → remonter jusqu'au container avec `multiselectInputContainer`.
 
 ### Country
 
