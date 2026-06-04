@@ -191,7 +191,13 @@ button[aria-haspopup] (2ème, wsLevel = Fluent/Basic/...) ← wsBtn (Written and
 button[aria-label*="delete" ou innerText="Delete"]       ← deleteBtn (absent en row 1)
 ```
 
-**wsBtn identification :** `aria-label^="Written and Spoken"` OU `innerText` ∈ `{Fluent, Intermediate, Basic, Select One}`.
+**wsBtn identification — PRIORITÉ aria-label (critique) :**
+- `aria-label` contient `"written.*spoken"` → wsBtn
+- `aria-label` contient `"^language"` → langBtn
+- **⚠️ Ne jamais identifier par `innerText` seul quand les deux boutons montrent "Select One"** (rows fraîches) — provoque un swap langBtn/wsBtn → dropdown Written/Spoken s'ouvre au lieu de Language → "French introuvable"
+- Fallback `innerText` uniquement quand une langue est déjà sélectionnée (`innerText` ∈ `{Fluent, Intermediate, Basic}`)
+
+**Ghost rows :** Des lignes vides avec Delete peuvent s'accumuler (runs bugués). Toutes les lignes avec `isEmpty=true AND deleteBtn` sont des ghost rows (la row 1 réelle n'a jamais de Delete). Les supprimer en boucle avec re-fetch DOM après chaque Delete.
 
 **Boutons Add :**
 - Premier Add : remonter depuis `input[name="native"]` jusqu'à 14 niveaux ou chercher heading `"Languages"`.
