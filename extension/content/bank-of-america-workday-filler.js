@@ -465,14 +465,34 @@
       if (alreadySet) {
         logFieldAction('How Did You Hear', 'Bank of America Careers Site', 'Bank of America Careers Site', 'skip');
       } else {
-        const container = sourceField.querySelector('[data-automation-id="multiselectInputContainer"], [data-uxi-widget-type="multiselect"]');
-        if (container) { container.click(); await sleep(600); }
-        let opt1 = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
-          .find(el => el.offsetWidth > 0 && /bank of america careers site/i.test(el.textContent || ''));
+        // Widget selectinput Workday : cliquer l'input de recherche (pas le container)
+        // Sélecteurs par ordre de priorité
+        const triggerEl = sourceField.querySelector('input[data-uxi-widget-type="selectinput"]')
+          || sourceField.querySelector('input[id="source--source"]')
+          || sourceField.querySelector('[data-automation-id="multiselectInputContainer"], [data-uxi-widget-type="multiselect"]')
+          || sourceField.querySelector('input[data-automation-id="searchBox"]');
+
+        if (triggerEl) {
+          triggerEl.focus();
+          triggerEl.click();
+          await sleep(700);
+        }
+
+        // Niveau 1 : cliquer "Bank of America Careers Site"
+        let opt1 = null;
+        const deadline1 = Date.now() + 3000;
+        while (!opt1 && Date.now() < deadline1) {
+          opt1 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
+            .find(el => el.offsetWidth > 0 && /bank of america careers site/i.test(el.textContent || ''));
+          if (!opt1) await sleep(200);
+        }
+
         if (opt1) {
-          opt1.click(); await sleep(600);
-          const opt2 = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
-            .find(el => el.offsetWidth > 0 && /^bank of america careers site$/i.test((el.textContent || '').trim()));
+          opt1.click();
+          await sleep(700);
+          // Niveau 2 : une sous-liste apparaît — cliquer à nouveau "Bank of America Careers Site"
+          const opt2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
+            .find(el => el.offsetWidth > 0 && /bank of america careers site/i.test((el.textContent || '').trim()));
           if (opt2) { opt2.click(); await sleep(400); }
           logFieldAction('How Did You Hear', 'Bank of America Careers Site', '(vide)', 'fill');
         } else {

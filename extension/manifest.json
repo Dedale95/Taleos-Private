@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.218",
-  "version_name": "1.2.218-bofa-fix-phone-source",
+  "version": "1.2.219",
+  "version_name": "1.2.219-bofa-fix-source-selectinput",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
