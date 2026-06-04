@@ -1229,11 +1229,51 @@
     return ['Up to 4 weeks'];
   }
 
-  // Déduire le droit au travail depuis jp_morgan_work_authorizations
-  function deriveRightToWork(p) {
+  // Déduire le droit au travail depuis jp_morgan_work_authorizations + pays du poste
+  // jobLocation : pending.location (ex: "London - Royaume-Uni", "New York - États-Unis", "Paris - France")
+  function deriveRightToWork(p, jobLocation) {
     const auths = Array.isArray(p.jp_morgan_work_authorizations) ? p.jp_morgan_work_authorizations : [];
-    const hasEU = auths.some(a => (a.country || '').toLowerCase().includes('union') || (a.country || '').toLowerCase().includes('france'));
-    return hasEU || auths.length > 0 ? 'Yes' : null;
+    if (auths.length === 0) return p.bofa_right_to_work || null;
+
+    const loc = (jobLocation || '').toLowerCase();
+
+    // Détecter le pays du poste
+    const isUK = /royaume.uni|united.kingdom|\buk\b|\bengland\b|\bscotland\b|\bwales\b|\blondon\b/i.test(loc);
+    const isUS = /états.unis|united.states|\busa?\b|\bnew.york\b|\bchicago\b|\bboston\b/i.test(loc);
+    const isFrance = /\bfrance\b|\bparis\b|\blyon\b|\bmarseille\b/i.test(loc);
+
+    // Cherche une entrée spécifique pour le pays du poste
+    function hasAuthFor(keywords) {
+      return auths.some(a => {
+        const c = (a.country || '').toLowerCase();
+        return keywords.some(k => c.includes(k)) && String(a.work_authorized || '').toLowerCase() !== 'no';
+      });
+    }
+
+    if (isUK) {
+      // UK post-Brexit : nécessite autorisation UK/British explicite
+      const hasUK = hasAuthFor(['united kingdom', 'uk', 'britain', 'british', 'royaume']);
+      return hasUK ? 'Yes' : 'No';
+    }
+    if (isUS) {
+      const hasUS = hasAuthFor(['united states', 'usa', 'us ', 'american', 'états-unis', 'etats-unis']);
+      return hasUS ? 'Yes' : 'No';
+    }
+    if (isFrance) {
+      const hasFR = hasAuthFor(['france', 'french', 'european union', 'union européenne', 'union europeenne', 'eu ']);
+      return hasFR ? 'Yes' : 'No';
+    }
+
+    // Autres pays EU : vérifier autorisation EU générique ou pays spécifique
+    const hasEU = auths.some(a => {
+      const c = (a.country || '').toLowerCase();
+      return (c.includes('european union') || c.includes('union') || c.includes('eu ') || c.includes('europe'))
+        && String(a.work_authorized || '').toLowerCase() !== 'no';
+    });
+    if (hasEU) return 'Yes';
+
+    // Fallback : bofa_right_to_work ou null (pas de réponse forcée)
+    return p.bofa_right_to_work || null;
   }
 
   // Extraire le texte de la question depuis un formField-* wrapper
@@ -1382,8 +1422,9 @@
         let chosen = null;
 
         if (/right.to.work|authorized.to.work|eligible.to.work|have the right to work/i.test(lower)) {
-          // Réponse Yes si on a des autorisations dans Firebase
-          const rightToWork = p.bofa_right_to_work || 'Yes';
+          // Déduire Yes/No selon le pays du poste et les autorisations du profil
+          const rightToWork = deriveRightToWork(p, pending.location) || 'Yes';
+          log(`  ℹ️ Right to work → "${rightToWork}" (poste: "${pending.location || ''}")`);
           chosen = await selectBestOption(dropBtn, [rightToWork]);
         } else if (/which option.*right.to.work|please select.*right.*work|please select from the list/i.test(lower)) {
           // Dropdown conditionnel EMEA : type de droit de travail (Citizenship, Skilled Worker visa…)
@@ -1504,7 +1545,9 @@
 
       let chosen = null;
       if (/right.to.work|authorized.to.work|eligible.to.work/i.test(lower)) {
-        chosen = await selectBestOption(dropBtn, ['Yes']);
+        const rightToWork = deriveRightToWork(p, pending.location) || 'Yes';
+        log(`  ℹ️ Right to work → "${rightToWork}" (poste: "${pending.location || ''}")`);
+        chosen = await selectBestOption(dropBtn, [rightToWork]);
       } else if (/which option.*right.to.work|please select.*right.*work/i.test(lower)) {
         chosen = await selectBestOption(dropBtn, [p.bofa_right_to_work_type || 'Citizenship']);
       } else if (/relatives|close personal relationship/i.test(lower)) {
