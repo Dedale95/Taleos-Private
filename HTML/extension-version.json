@@ -1,7 +1,7 @@
 {
   "version": "1.2.216",
   "version_name": "1.2.216-bofa-already-applied-detection",
-  "published_at": "2026-06-03T22:00:00Z",
+  "published_at": "2026-06-04T15:57:30Z",
   "release_notes": "Bank of America — détection 'Vous avez déjà candidaté' : mise à jour Taleos automatique + fermeture de l'onglet.",
   "download_url": "https://dedale95.github.io/Taleos-Public/HTML/downloads/taleos-extension-1.2.216.zip"
 }
