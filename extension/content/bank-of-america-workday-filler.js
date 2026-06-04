@@ -444,27 +444,33 @@
     await fillField('formField-postalCode',           p.zipcode || p.postal_code, 'postal_code');
 
     // ── "How Did You Hear About Us?" — multiselect à 2 niveaux ──────────────
-    // BofA utilise un widget multiselect (data-automation-id="multiSelectContainer")
-    // sans button[aria-haspopup] → navigation : clic container → niveau 1 → niveau 2
-    const sourceField = document.querySelector('[data-automation-id="formField-source"]');
+    // Chercher d'abord via formField-source, fallback via multiselectInputContainer
+    // sur un formulaire vierge (source peut être absent de la liste formField-*)
+    const sourceField = document.querySelector('[data-automation-id="formField-source"]')
+      || (() => {
+        // Fallback : trouver le container multiselect via le label "How Did You Hear"
+        const allLabels = Array.from(document.querySelectorAll('label, legend, [role="heading"]'));
+        const label = allLabels.find(el => /how did you hear/i.test(el.textContent || ''));
+        if (!label) return null;
+        let el = label.parentElement;
+        for (let d = 0; d < 8 && el; d++) {
+          if (el.querySelector('[data-automation-id="multiselectInputContainer"]')) return el;
+          el = el.parentElement;
+        }
+        return null;
+      })();
+
     if (sourceField) {
-      // Les items sélectionnés peuvent être des chips (US) ou des promptOption (EMEA)
-      const chips = Array.from(sourceField.querySelectorAll(
-        '[data-automation-id="selectedItem"], [class*="chip"], [data-automation-id="promptOption"]'
-      ));
-      const alreadySet = chips.some(c => /bank of america careers site/i.test(c.textContent || ''))
-        || /bank of america careers site/i.test(sourceField.innerText || '');
+      const alreadySet = /bank of america careers site/i.test(sourceField.innerText || '');
       if (alreadySet) {
         logFieldAction('How Did You Hear', 'Bank of America Careers Site', 'Bank of America Careers Site', 'skip');
       } else {
         const container = sourceField.querySelector('[data-automation-id="multiselectInputContainer"], [data-uxi-widget-type="multiselect"]');
         if (container) { container.click(); await sleep(600); }
-        // Niveau 1 : trouver "Bank of America Careers Site" dans la liste
         let opt1 = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
           .find(el => el.offsetWidth > 0 && /bank of america careers site/i.test(el.textContent || ''));
         if (opt1) {
           opt1.click(); await sleep(600);
-          // Niveau 2 : une sous-liste peut apparaître — cliquer "Bank of America Careers Site" dedans
           const opt2 = Array.from(document.querySelectorAll('[role="option"],[data-automation-id="promptOption"]'))
             .find(el => el.offsetWidth > 0 && /^bank of america careers site$/i.test((el.textContent || '').trim()));
           if (opt2) { opt2.click(); await sleep(400); }
@@ -558,11 +564,11 @@
       if (phoneInput) {
         const currentPhone = (phoneInput.value || '').trim();
         if (currentPhone && currentPhone.replace(/\s/g, '') === phoneVal) {
-          logFieldAction('Phone Number', p.phone, currentPhone, 'skip');
+          logFieldAction('Phone Number', phoneVal, currentPhone, 'skip');
         } else {
-          reactSet(phoneInput, p.phone);
+          reactSet(phoneInput, phoneVal); // utiliser phoneVal (nettoyé) pas p.phone (peut être undefined)
           phoneInput.blur();
-          logFieldAction('Phone Number', p.phone, currentPhone || '(vide)', 'fill');
+          logFieldAction('Phone Number', phoneVal, currentPhone || '(vide)', 'fill');
         }
       } else {
         logFieldAction('Phone Number', p.phone, undefined, 'not_found');
