@@ -1677,11 +1677,14 @@
     const p = pending.profile || {};
     log(`  Firebase: email="${p.auth_email || p.email}" | job="${pending.jobTitle}"`);
 
-    // ── Détection "Déjà candidaté" ────────────────────────────────────────────
-    // BofA affiche "You've already applied for this job." si la candidature existe déjà.
-    // Dans ce cas : notifier Taleos + fermer l'onglet.
-    if (/you.ve already applied/i.test(document.body.innerText || '')) {
-      log('ℹ️ Déjà candidaté sur cette offre → mise à jour Taleos + fermeture');
+    // ── Helper : détecter si "déjà candidaté" ────────────────────────────────
+    // Signaux : texte "You've already applied" OU bouton "View Application"
+    const isAlreadyApplied = () =>
+      /you.ve already applied/i.test(document.body.innerText || '')
+      || !!document.querySelector('[data-automation-id="viewButton"]');
+
+    async function handleAlreadyApplied(label) {
+      log(`ℹ️ Déjà candidaté (${label}) → mise à jour Taleos + fermeture`);
       setBanner('✅ Déjà candidaté sur cette offre — Taleos mis à jour', '#2e7d32');
       try {
         await chrome.runtime.sendMessage({
@@ -1695,8 +1698,10 @@
       if (pending.tabId) chrome.tabs.remove(pending.tabId).catch(() => {});
       await chrome.storage.local.remove([PENDING_KEY, TAB_KEY]).catch(() => {});
       globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false;
-      return;
     }
+
+    // ── Détection "Déjà candidaté" avant connexion ────────────────────────────
+    if (isAlreadyApplied()) { await handleAlreadyApplied('pré-connexion'); return; }
 
     // ── Connexion ─────────────────────────────────────────────────────────────
     const ok = await handleSignIn(p.auth_email || p.email, p.auth_password);
@@ -1704,24 +1709,7 @@
     await sleep(1000);
 
     // ── Détection post-connexion "Déjà candidaté" ─────────────────────────────
-    // Peut apparaître aussi après la connexion (page offre rechargée)
-    if (/you.ve already applied/i.test(document.body.innerText || '')) {
-      log('ℹ️ Déjà candidaté (post-connexion) → mise à jour Taleos + fermeture');
-      setBanner('✅ Déjà candidaté sur cette offre — Taleos mis à jour', '#2e7d32');
-      try {
-        await chrome.runtime.sendMessage({
-          action: 'candidature_success', bankId: 'bank_of_america_workday',
-          jobTitle: pending.jobTitle || '', jobId: pending.jobId || '',
-          offerUrl: pending.offerUrl || '', timestamp: new Date().toISOString(),
-          alreadyApplied: true
-        }).catch(() => {});
-      } catch (_) {}
-      await sleep(2000);
-      if (pending.tabId) chrome.tabs.remove(pending.tabId).catch(() => {});
-      await chrome.storage.local.remove([PENDING_KEY, TAB_KEY]).catch(() => {});
-      globalThis.__TALEOS_BOFA_FILLER_RUNNING__ = false;
-      return;
-    }
+    if (isAlreadyApplied()) { await handleAlreadyApplied('post-connexion'); return; }
 
     // ── Apply Now / Continue Application ─────────────────────────────────────
     const applied = await clickApply();
