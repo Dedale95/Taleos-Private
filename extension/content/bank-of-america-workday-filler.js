@@ -444,21 +444,24 @@
     await fillField('formField-postalCode',           p.zipcode || p.postal_code, 'postal_code');
 
     // ── "How Did You Hear About Us?" — multiselect à 2 niveaux ──────────────
-    // Chercher d'abord via formField-source, fallback via multiselectInputContainer
-    // sur un formulaire vierge (source peut être absent de la liste formField-*)
-    const sourceField = document.querySelector('[data-automation-id="formField-source"]')
-      || (() => {
-        // Fallback : trouver le container multiselect via le label "How Did You Hear"
-        const allLabels = Array.from(document.querySelectorAll('label, legend, [role="heading"]'));
-        const label = allLabels.find(el => /how did you hear/i.test(el.textContent || ''));
-        if (!label) return null;
-        let el = label.parentElement;
-        for (let d = 0; d < 8 && el; d++) {
-          if (el.querySelector('[data-automation-id="multiselectInputContainer"]')) return el;
-          el = el.parentElement;
-        }
-        return null;
-      })();
+    // Attendre que le champ source soit dans le DOM (chargement React asynchrone)
+    let sourceField = null;
+    for (let sw = 0; sw < 4000; sw += 300) {
+      sourceField = document.querySelector('[data-automation-id="formField-source"]')
+        || document.querySelector('#source--source')?.closest('[data-automation-id]')
+        || (() => {
+          const label = Array.from(document.querySelectorAll('label, legend')).find(el => /how did you hear/i.test(el.textContent || ''));
+          if (!label) return null;
+          let el = label.parentElement;
+          for (let d = 0; d < 8 && el; d++) {
+            if (el.querySelector('[data-automation-id="multiselectInputContainer"]')) return el;
+            el = el.parentElement;
+          }
+          return null;
+        })();
+      if (sourceField) break;
+      await sleep(300);
+    }
 
     if (sourceField) {
       const alreadySet = /bank of america careers site/i.test(sourceField.innerText || '');
