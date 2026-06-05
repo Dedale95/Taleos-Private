@@ -206,6 +206,12 @@ jobs:
             db_file: revolut_jobs.db
             timeout_minutes: 90
             playwright_browser: "chromium"
+          - name: Kepler Cheuvreux
+            key: kepler_cheuvreux
+            script: kepler_cheuvreux_scraper.py
+            db_file: kepler_cheuvreux_jobs.db
+            timeout_minutes: 5
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
