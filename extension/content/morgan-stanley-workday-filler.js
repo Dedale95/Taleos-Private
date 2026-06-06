@@ -342,21 +342,25 @@
           await sleep(600);
         }
 
-        // Niveau 1 : "Site de carrière"
+        // Source configurée dans le profil (ms_source) ou défaut "Site de carrière de Morgan Stanley"
+        const msSource = p.ms_source || 'Site de carrière de Morgan Stanley';
+
+        // Niveau 1 : "Site de carrière" (catégorie parent)
         let found = false;
         const deadline1 = Date.now() + 3000;
         while (Date.now() < deadline1) {
+          // Chercher la catégorie parent correspondant à la source souhaitée
           const opt1 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
             .find(o => o.offsetWidth > 0 && /site de carri[eè]re(?!\s+de\s+morgan)/i.test(o.textContent || ''));
           if (opt1) {
             await clickEl(opt1);
             await sleep(500);
-            // Niveau 2 : "Site de carrière de Morgan Stanley"
+            // Niveau 2 : l'option exacte
             const opt2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
-              .find(o => o.offsetWidth > 0 && /site de carri[eè]re de morgan stanley/i.test(o.textContent || ''));
+              .find(o => o.offsetWidth > 0 && new RegExp(msSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(o.textContent || ''));
             if (opt2) {
               await clickEl(opt2);
-              log('  ✓ Source: "Site de carrière de Morgan Stanley"');
+              log(`  ✓ Source: "${msSource}"`);
               found = true;
             }
             break;
@@ -367,15 +371,17 @@
       }
     }
 
-    // ── Ex-employé MS → Non (value="false") ──
+    // ── Ex-employé MS → lu depuis ms_previously_employed (défaut: Non) ──
     const prevWorker = document.querySelector('[data-automation-id="formField-candidateIsPreviousWorker"]');
     if (prevWorker) {
-      const radioFalse = prevWorker.querySelector('input[type="radio"][value="false"]');
-      if (radioFalse && !radioFalse.checked) {
-        radioFalse.click();
-        log('  ✓ Ex-employé Morgan Stanley: Non');
+      const wasEmployee = (p.ms_previously_employed || 'No').toLowerCase() === 'yes';
+      const targetVal   = wasEmployee ? 'true' : 'false';
+      const targetRadio = prevWorker.querySelector(`input[type="radio"][value="${targetVal}"]`);
+      if (targetRadio && !targetRadio.checked) {
+        targetRadio.click();
+        log(`  ✓ Ex-employé Morgan Stanley: ${wasEmployee ? 'Oui' : 'Non'}`);
       } else {
-        log('  ✓ Ex-employé Morgan Stanley: déjà Non → skip');
+        log(`  ✓ Ex-employé Morgan Stanley: déjà rempli → skip`);
       }
     }
 
@@ -581,9 +587,9 @@
       else if (/recommandé.*fonctionnaire|parrainé.*fonctionnaire|sponsored.*government.*official/i.test(lower)) {
         answer = 'No';
       }
-      // Consentement communication → Yes
-      else if (/consent.*follow.*communication|recevoir.*communication/i.test(lower)) {
-        answer = 'Yes';
+      // Consentement SMS/WhatsApp Talent Acquisition → lu depuis le profil (ms_sms_consent)
+      else if (/consent.*follow.*communication|consent.*sms|whatsapp|talent acquisition.*sms|recevoir.*communication/i.test(lower)) {
+        answer = p.ms_sms_consent || 'Yes'; // Par défaut Yes (l'utilisateur veut recevoir les offres)
       }
       // Défaut compliance → No
       else {
