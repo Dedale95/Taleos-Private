@@ -49,6 +49,7 @@ jobs:
     name: Scraper ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
+    continue-on-error: true   # Un scraper qui plante ne bloque pas les autres ni la consolidation
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -257,6 +258,7 @@ jobs:
         run: python "PYTHON/${{ matrix.script }}"
 
       - name: Sauvegarder le cache DB
+        if: always()   # Sauvegarder même si le scraper a planté (DB partielle > pas de DB)
         uses: actions/cache/save@v4
         with:
           path: PYTHON/${{ matrix.db_file }}
@@ -265,15 +267,15 @@ jobs:
       - name: Vérifier la base générée
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
         run: |
-          test -f "PYTHON/${{ matrix.db_file }}"
+          test -f "PYTHON/${{ matrix.db_file }}" || echo "⚠️ DB absente pour ${{ matrix.key }} — la consolidation utilisera le cache précédent"
 
       - name: Upload artifact base SQLite
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.source == 'all' || inputs.source == matrix.key) && hashFiles(format('PYTHON/{0}', matrix.db_file)) != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: db-${{ matrix.key }}
           path: PYTHON/${{ matrix.db_file }}
-          if-no-files-found: error
+          if-no-files-found: warn
 
   consolidate:
     name: Consolidation + export
@@ -309,6 +311,7 @@ jobs:
           pattern: db-*
           merge-multiple: true
           path: PYTHON
+        continue-on-error: true   # Si aucun artifact dispo (tous scrapers ont planté), ne pas bloquer
 
       - name: Diagnostiquer les bases téléchargées
         run: |
