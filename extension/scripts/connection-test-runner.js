@@ -1,7 +1,7 @@
 /**
  * Taleos - Script de test de connexion bancaire (injecté dans l'onglet)
  * Gère le remplissage, la soumission et la détection du résultat pour CA, BNP, SG, Deloitte,
- * Bpifrance, AXA, Allianz, HSBC, Nomura, Bank of America.
+ * Bpifrance, AXA, Allianz, HSBC, Nomura, Bank of America, Morgan Stanley.
  * JP Morgan est géré côté background car aucune authentification par mot de passe n'est requise ici.
  */
 (function() {
@@ -127,6 +127,27 @@
         return !!document.querySelector('#errorMsg_1, #uiErrorContainer_2, #uiErrorMsg') ||
           /errormsg_1|uierrorcontainer_2|uierrormsg/.test(html) ||
           /invalid email address or password|incorrect|invalid user id|invalid login|login failed|unable to sign in|wrong email|wrong password/.test(text);
+      }
+    },
+    morgan_stanley: {
+      // Portail Workday — même moteur que Bank of America (data-automation-id identiques)
+      loginUrl: 'https://ms.wd5.myworkdayjobs.com/fr-CA/External/login',
+      emailSel: 'input[data-automation-id="email"]',
+      passwordSel: 'input[data-automation-id="password"]',
+      submitSel: '[data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
+      cookieSel: null,
+      successCheck: (url, content) => {
+        return /welcome to candidate home|my applications|candidate home/i.test(content) ||
+          !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
+          !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
+          /candidate-home|my-applications/i.test(url) ||
+          !!document.querySelector('span.css-1xtbc5b');
+      },
+      failureCheck: (url, content) => {
+        return !!document.querySelector('p.css-1hqkimk') ||
+          /you may have entered the wrong email address|wrong email/i.test(content) ||
+          /data-automation-id="errorMessage"/i.test(content) ||
+          /incorrect.*credentials|invalid.*password|login.*failed/i.test(content);
       }
     },
     bank_of_america: {
@@ -401,8 +422,8 @@
       }
       return fillAndSubmit(bankId, email, password);
     }
-    if (bankId === 'bank_of_america') {
-      // DOM Workday BofA (vérifié en direct) :
+    if (bankId === 'morgan_stanley' || bankId === 'bank_of_america') {
+      // DOM Workday commun (Morgan Stanley & Bank of America — même moteur Workday React) :
       // - Bouton compte : <button id="accountSettingsButton" data-automation-id="utilityMenuButton">
       // - Après clic → menu : <ul role="menu" aria-labelledby="accountSettingsButton">
       //     <li><button aria-label="Sign Out" role="menuitem">...</button></li>
@@ -420,7 +441,8 @@
         // Étape 2 : cliquer Sign Out via aria-label (stable, indépendant des classes CSS)
         const signOutEl = document.querySelector('button[aria-label="Sign Out"], [role="menuitem"][aria-label="Sign Out"]');
         if (!signOutEl) {
-          return { done: false, error: 'Menu Sign Out BofA introuvable. Déconnectez-vous manuellement puis relancez le test.' };
+          const label = bankId === 'morgan_stanley' ? 'Morgan Stanley' : 'BofA';
+          return { done: false, error: `Menu Sign Out ${label} introuvable. Déconnectez-vous manuellement puis relancez le test.` };
         }
         signOutEl.click();
         return { done: false, needRetry: true, phase: 'signout', retryDelayMs: 2500 };

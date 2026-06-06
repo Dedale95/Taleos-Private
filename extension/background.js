@@ -2169,7 +2169,8 @@ const CONNECTION_TEST_URLS = {
   axa: 'https://careers.axa.com/careers-home/auth/1/verify-login-type',
   hsbc: 'https://career2.successfactors.eu/career?company=hsbcholdin&site=&lang=en_GB&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=&_s.crb=OupXiSPpV6NVVB92Trb%252fkx9KHywNEecoMl55nAmzpZM%253d',
   nomura: 'https://career4.successfactors.com/career?company=nomurahold&site=VjItclVPaDlpTTV6elVtOTVzYklhTW5Vdz09&lang=en_US&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=Nomura&_s.crb=SNrcB9xhcLpoddiSLBSDMfAXxCyTprMuQj5mKg81yaA%253d',
-  bank_of_america: 'https://ghr.wd1.myworkdayjobs.com/en-US/Lateral-US/login'
+  bank_of_america: 'https://ghr.wd1.myworkdayjobs.com/en-US/Lateral-US/login',
+  morgan_stanley: 'https://ms.wd5.myworkdayjobs.com/fr-CA/External/login'
 };
 
 async function saveCareerConnectionToFirestore(uid, token, bankId, bankName, email, passwordEncoded) {
@@ -2596,6 +2597,12 @@ async function runTestConnection(msg) {
         for (const t of bofaTabs) idsToClose.add(t.id);
       } catch (_) {}
     }
+    if (bankId === 'morgan_stanley') {
+      try {
+        const msTabs = await chrome.tabs.query({ windowId: testWindowId, url: ['https://ms.wd5.myworkdayjobs.com/*'] });
+        for (const t of msTabs) idsToClose.add(t.id);
+      } catch (_) {}
+    }
 
     for (const id of idsToClose) {
       try {
@@ -2719,8 +2726,8 @@ async function runTestConnection(msg) {
       } catch (_) {}
       fillRes = await runFill(0);
     }
-    // Bank of America : formulaire pas encore rendu par React → attendre et relancer (max 3 fois)
-    if (bankId === 'bank_of_america' && fillRes?.[0]?.result?.needRetry && fillRes[0].result.phase === 'wait_form') {
+    // Morgan Stanley / Bank of America : formulaire pas encore rendu par React → attendre et relancer (max 3 fois)
+    if ((bankId === 'morgan_stanley' || bankId === 'bank_of_america') && fillRes?.[0]?.result?.needRetry && fillRes[0].result.phase === 'wait_form') {
       for (let attempt = 0; attempt < 3; attempt++) {
         await new Promise(r => setTimeout(r, 3000));
         try { await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/connection-test-runner.js'] }); } catch (_) {}
@@ -2728,8 +2735,8 @@ async function runTestConnection(msg) {
         if (!fillRes?.[0]?.result?.needRetry || fillRes[0].result.phase !== 'wait_form') break;
       }
     }
-    // Bank of America (Workday) : si déjà connecté → sign out en 2 étapes puis retry
-    if (bankId === 'bank_of_america' && fillRes?.[0]?.result?.needRetry) {
+    // Morgan Stanley / Bank of America (Workday) : si déjà connecté → sign out en 2 étapes puis retry
+    if ((bankId === 'morgan_stanley' || bankId === 'bank_of_america') && fillRes?.[0]?.result?.needRetry) {
       const phase = fillRes[0].result.phase;
       if (phase === 'signout_step2') {
         // Étape 2 du sign-out (clic Sign Out dans le dropdown)
