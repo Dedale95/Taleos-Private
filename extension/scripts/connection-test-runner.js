@@ -134,10 +134,11 @@
       loginUrl: 'https://ms.wd5.myworkdayjobs.com/fr-CA/External/login',
       emailSel: 'input[data-automation-id="email"]',
       passwordSel: 'input[data-automation-id="password"]',
-      submitSel: '[data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
+      // Bouton fr-CA : aria-label="Ouvrir une session" (différent de BofA en-US "Sign In")
+      submitSel: '[data-automation-id="click_filter"][aria-label="Ouvrir une session"], [data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Ouvrir une session"][role="button"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
       cookieSel: null,
       successCheck: (url, content) => {
-        return /welcome to candidate home|my applications|candidate home/i.test(content) ||
+        return /welcome to candidate home|my applications|candidate home|accueil du candidat|mes candidatures/i.test(content) ||
           !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
           !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
           /candidate-home|my-applications/i.test(url) ||
@@ -145,7 +146,7 @@
       },
       failureCheck: (url, content) => {
         return !!document.querySelector('p.css-1hqkimk') ||
-          /you may have entered the wrong email address|wrong email/i.test(content) ||
+          /you may have entered the wrong email address|wrong email|adresse e-mail ou mot de passe incorrect/i.test(content) ||
           /data-automation-id="errorMessage"/i.test(content) ||
           /incorrect.*credentials|invalid.*password|login.*failed/i.test(content);
       }
@@ -452,9 +453,12 @@
       try {
         const emailEl  = document.querySelector('input[data-automation-id="email"]');
         const passEl   = document.querySelector('input[data-automation-id="password"]');
-        // Le bouton Sign In est un <div data-automation-id="click_filter" aria-label="Sign In">
+        // Le bouton Sign In est un <div data-automation-id="click_filter" role="button">
+        // → libellé "Sign In" (en-US, BofA) ou "Ouvrir une session" (fr-CA, Morgan Stanley)
         // → simple .click() ignoré par React ; il faut mousedown+mouseup+click
-        const submitEl = document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+        const submitEl = document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]')
+                      || document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                      || document.querySelector('[aria-label="Ouvrir une session"][role="button"]')
                       || document.querySelector('[aria-label="Sign In"][role="button"]')
                       || document.querySelector('[data-automation-id="signInSubmitButton"]');
 
@@ -509,7 +513,9 @@
         // retente Entrée sur password + clic sur bouton
         setTimeout(() => {
           const pass = document.querySelector('input[data-automation-id="password"]');
-          const btn  = document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+          const btn  = document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]')
+                    || document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                    || document.querySelector('[aria-label="Ouvrir une session"][role="button"]')
                     || document.querySelector('[aria-label="Sign In"][role="button"]');
           if (pass) {
             ['keydown', 'keypress', 'keyup'].forEach(type =>
