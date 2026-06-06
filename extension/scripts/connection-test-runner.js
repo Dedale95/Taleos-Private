@@ -439,11 +439,18 @@
           accountBtn.click();
           return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 900 };
         }
-        // Étape 2 : cliquer Sign Out via aria-label (stable, indépendant des classes CSS)
-        const signOutEl = document.querySelector('button[aria-label="Sign Out"], [role="menuitem"][aria-label="Sign Out"]');
+        // Étape 2 : cliquer Sign Out — couvre en-US "Sign Out" et fr-CA "Fermer la session" / "Se déconnecter"
+        const signOutEl =
+          document.querySelector('[aria-label="Sign Out"][role="menuitem"], button[aria-label="Sign Out"]') ||
+          document.querySelector('[aria-label="Fermer la session"][role="menuitem"], button[aria-label="Fermer la session"]') ||
+          document.querySelector('[aria-label="Se déconnecter"][role="menuitem"], button[aria-label="Se déconnecter"]') ||
+          // Fallback générique : chercher par texte dans le menu déroulant ouvert
+          Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, [role="menu"] [role="button"]'))
+            .find(el => /sign out|fermer la session|se d[ée]connecter|d[ée]connexion|log out/i.test(el.textContent?.trim()));
         if (!signOutEl) {
-          const label = bankId === 'morgan_stanley' ? 'Morgan Stanley' : 'BofA';
-          return { done: false, error: `Menu Sign Out ${label} introuvable. Déconnectez-vous manuellement puis relancez le test.` };
+          // Dernier recours : naviguer directement vers la page de logout Workday
+          window.location.href = window.location.origin + '/d/logout';
+          return { done: false, needRetry: true, phase: 'signout', retryDelayMs: 3000 };
         }
         signOutEl.click();
         return { done: false, needRetry: true, phase: 'signout', retryDelayMs: 2500 };
