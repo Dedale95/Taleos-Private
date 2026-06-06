@@ -213,6 +213,12 @@ jobs:
             db_file: kepler_cheuvreux_jobs.db
             timeout_minutes: 5
             playwright_browser: ""
+          - name: Morgan Stanley
+            key: morgan_stanley
+            script: morgan_stanley_scraper.py
+            db_file: morgan_stanley_jobs.db
+            timeout_minutes: 30
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
