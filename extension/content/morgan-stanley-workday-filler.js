@@ -1,15 +1,16 @@
 /**
- * Taleos — Morgan Stanley Workday Filler
+ * Taleos — Morgan Stanley Workday Filler  v2
  * Portail : ms.wd5.myworkdayjobs.com  (locale fr-CA)
- * Moteur   : Workday React (identique à Bank of America, même data-automation-id)
+ * Exploré manuellement le 2026-06-06 sur l'offre JR037505
  *
- * 6 étapes :
- *   1. Créer un compte / Ouvrir une session
- *   2. Mes renseignements   (coordonnées, téléphone, source)
- *   3. Mon expérience       (CV, formation, langues)
- *   4. Questions liées à la candidature (droit au travail, etc.)
- *   5. Divulgations volontaires
- *   6. Réviser (PAS de soumission automatique)
+ * Structure réelle du formulaire (5 étapes après connexion) :
+ *   1. Mes renseignements  → source (2 niveaux), ex-employé MS, pays, prénom/nom,
+ *                            adresse, ville, CP, téléphone
+ *   2. Mon expérience      → CV upload (OBLIGATOIRE), exp. pro, études, langues,
+ *                            habiletés, LinkedIn
+ *   3. Questions candidature → 9 dropdowns Yes/No (compliance / gouvernement)
+ *   4. Divulgations volontaires → genre (dropdown fr-CA) + checkbox CGU (OBLIGATOIRE)
+ *   5. Réviser             → bouton "Soumettre" (soumission manuelle)
  */
 (function () {
   'use strict';
@@ -59,7 +60,6 @@
     el.textContent = text;
   }
 
-  // React-compatible value setter
   function reactSet(el, value) {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     if (setter) setter.call(el, value); else el.value = value;
@@ -67,7 +67,6 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // Frappe caractère par caractère (typeaheads Workday)
   function simulateTyping(el, text) {
     return new Promise(resolve => {
       if (!el || !text) { resolve(); return; }
@@ -109,7 +108,6 @@
     el.click();
   }
 
-  // Récupérer un fichier depuis Firebase Storage
   async function setFileFromStorage(fileInput, storagePath, filename) {
     if (!fileInput || !storagePath) return false;
     const r = await chrome.runtime.sendMessage({ action: 'fetch_storage_file', storagePath }).catch(() => null);
@@ -136,12 +134,13 @@
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const opts = Array.from(document.querySelectorAll(
-        '[role="option"], [data-automation-id="promptOption"], [data-automation-id="menuItem"]'
+        '[data-automation-id="promptOption"], [role="option"]'
       ));
       const opt = opts.find(o => o.offsetWidth > 0 && (o.textContent || '').trim().toLowerCase().includes(targetText.toLowerCase()));
       if (opt) { await clickEl(opt); await sleep(300); return true; }
       await sleep(200);
     }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
     return false;
   }
 
@@ -166,30 +165,28 @@
   // ─── Détecter l'étape courante (fr-CA) ──────────────────────────────────────
   function currentStep() {
     const bar = document.querySelector('[data-automation-id="progressBarActiveStep"]');
-    const name = (bar?.querySelector('label:last-child')?.textContent || bar?.textContent || '').toLowerCase().trim();
-    if (name.includes('mes renseignements') || name.includes('my information'))   return 'my_information';
-    if (name.includes('mon expérience')     || name.includes('my experience'))    return 'my_experience';
+    const name = (bar?.textContent || '').toLowerCase().trim();
+    if (name.includes('mes renseignements') || name.includes('my information'))    return 'my_information';
+    if (name.includes('mon expérience')     || name.includes('my experience'))     return 'my_experience';
     if (name.includes('questions liées')    || name.includes('application quest')) return 'application_questions';
     if (name.includes('divulgations')       || name.includes('voluntary'))         return 'voluntary_disclosures';
     if (name.includes('réviser')            || name.includes('review'))            return 'review';
     return 'unknown';
   }
 
-  // ─── Bouton Enregistrer et continuer (fr-CA) / Save and Continue ──────────
+  // ─── Bouton Enregistrer et continuer (fr-CA) ─────────────────────────────────
   async function saveAndContinue() {
     await sleep(400);
-    // Cherche "Enregistrer et continuer" (fr) ou "Save and continue" (en)
     const btn = Array.from(document.querySelectorAll('button')).find(b =>
       b.offsetWidth > 0 &&
       /enregistrer\s+et\s+continuer|save\s+and\s+continue/i.test((b.innerText || '').trim())
     ) || document.querySelector('[data-automation-id="pageFooterNextButton"]');
-    if (btn) { await clickEl(btn); await sleep(2500); return true; }
+    if (btn) { await clickEl(btn); await sleep(3000); return true; }
     log('⚠️ Bouton "Enregistrer et continuer" introuvable');
     return false;
   }
 
-  // ─── Attendre une étape spécifique ─────────────────────────────────────────
-  async function waitForStep(expected, timeout = 12000) {
+  async function waitForStep(expected, timeout = 15000) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       if (currentStep() === expected) return true;
@@ -198,13 +195,10 @@
     return false;
   }
 
-  // ─── Connexion (fr-CA) ──────────────────────────────────────────────────────
-  // MS Workday fr-CA : le bouton de header s'appelle "Ouvrir une session"
-  // et le formulaire dans la modale a les mêmes data-automation-id que BofA.
-
+  // ─── Connexion fr-CA ─────────────────────────────────────────────────────────
   function isLoggedIn() {
     if (document.getElementById('accountSettingsButton')) return true;
-    const hasLoginBtn = Array.from(document.querySelectorAll('span, button, [role="button"]')).some(el =>
+    const hasLoginBtn = Array.from(document.querySelectorAll('span, button, [role="button"], a')).some(el =>
       el.offsetWidth > 0 && /ouvrir une session|sign\s*in/i.test((el.textContent || '').trim())
     );
     if (hasLoginBtn) return false;
@@ -214,7 +208,7 @@
   async function handleSignIn(authEmail, authPassword) {
     if (isLoggedIn()) { log('  ✓ Déjà connecté'); return true; }
 
-    // Clic "Ouvrir une session" dans le header pour ouvrir la modale
+    // Ouvrir la modale "Ouvrir une session"
     const signInBtn = Array.from(document.querySelectorAll('button, [role="button"], a, span')).find(el =>
       el.offsetWidth > 0 && /ouvrir une session|sign\s*in/i.test((el.innerText || el.textContent || '').trim())
     );
@@ -231,7 +225,7 @@
     if (!loginEl) { log('  ✓ Formulaire absent → déjà connecté'); return true; }
 
     if (!authEmail || !authPassword) {
-      log('❌ Identifiants Morgan Stanley manquants — ajoutez-les dans Connexions');
+      log('❌ Identifiants Morgan Stanley manquants — configurez-les dans Connexions');
       setBanner('❌ Identifiants Morgan Stanley manquants — Connexions', '#c62828');
       return false;
     }
@@ -239,6 +233,7 @@
     log(`🔐 Connexion avec ${authEmail}...`);
     const ns = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
 
+    // Remplir email
     loginEl.focus();
     if (ns) ns.call(loginEl, authEmail); else loginEl.value = authEmail;
     loginEl.dispatchEvent(new Event('input', { bubbles: true }));
@@ -246,20 +241,26 @@
     loginEl.blur();
     await sleep(400);
 
-    const passEl = document.querySelector('input[data-automation-id="password"]') || document.querySelector('input[type="password"]');
+    // Vider et remplir le mot de passe proprement
+    const passEl = document.querySelector('input[data-automation-id="password"]') ||
+                   Array.from(document.querySelectorAll('input[type="password"]')).find(e => e.offsetParent !== null);
     if (passEl) {
       passEl.focus();
+      if (ns) { ns.call(passEl, ''); } else { passEl.value = ''; }
+      passEl.dispatchEvent(new Event('input', { bubbles: true }));
+      // Sélectionner tout et écraser
+      passEl.select();
       if (ns) ns.call(passEl, authPassword); else passEl.value = authPassword;
       passEl.dispatchEvent(new Event('input', { bubbles: true }));
       passEl.dispatchEvent(new Event('change', { bubbles: true }));
       await sleep(300);
     }
 
-    // Bouton fr-CA : aria-label="Ouvrir une session" ; en-US : aria-label="Sign In"
+    // Soumettre — fr-CA : aria-label="Ouvrir une session"
     const submitBtn =
       document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]') ||
       document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]') ||
-      Array.from(document.querySelectorAll('button, [role="button"]')).find(el =>
+      Array.from(document.querySelectorAll('button')).find(el =>
         el.offsetWidth > 0 && /ouvrir une session|sign\s*in/i.test((el.innerText || el.getAttribute('aria-label') || '').trim())
       );
 
@@ -272,7 +273,6 @@
       );
     }
 
-    // Attendre disparition du formulaire
     let waited = 0;
     while (waited < 15000) {
       await sleep(500); waited += 500;
@@ -280,62 +280,46 @@
     }
     const ok = !document.querySelector('input[data-automation-id="email"]');
     if (!ok) {
-      log('❌ Connexion échouée — vérifiez vos identifiants Morgan Stanley');
+      log('❌ Connexion MS échouée — vérifiez vos identifiants');
       setBanner('❌ Connexion Morgan Stanley échouée — vérifiez vos identifiants', '#c62828');
     }
     return ok;
   }
 
-  // ─── ÉTAPE 2 : Mes renseignements ───────────────────────────────────────────
+  // ─── ÉTAPE 1 : Mes renseignements ────────────────────────────────────────────
+  // Ordre réel : source → ex-employé MS → pays → prénom → nom → adresse → téléphone
   async function fillMesRenseignements(p) {
-    log('📝 Étape 2 — Mes renseignements');
+    log('📝 Étape 1 — Mes renseignements');
     setBanner('📝 Mes renseignements en cours...');
 
     // Attendre le rendu React
-    let wMs = 0;
-    while (wMs < 6000) {
-      if (document.querySelector('[data-automation-id^="formField-legalName"]')) break;
-      await sleep(300); wMs += 300;
+    let w = 0;
+    while (w < 6000) {
+      if (document.querySelector('[data-automation-id="formField-source"]') ||
+          document.querySelector('[data-automation-id="formField-legalName--firstName"]')) break;
+      await sleep(300); w += 300;
     }
 
-    // Debug : lister les formField-* présents
+    // Debug
     const ffs = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'))
       .map(f => f.getAttribute('data-automation-id'));
     log(`  🔍 formField-* (${ffs.length}): ${ffs.slice(0, 20).join(', ')}`);
 
-    await fillField('formField-legalName--firstName', p.first_name || p.firstName, 'Prénom');
-    await fillField('formField-legalName--lastName',  p.last_name  || p.lastName,  'Nom');
-    await fillField('formField-addressLine1',          p.address,    'Adresse');
-    await fillField('formField-city',                  p.city,       'Ville');
-    await fillField('formField-postalCode',            p.postal_code || p.zipcode, 'Code postal');
-
-    // ── Pays ──
-    const countryBtn = document.querySelector('[data-automation-id="formField-country"] button[aria-haspopup]');
-    if (countryBtn) {
-      const current = (countryBtn.innerText || '').trim();
-      const target  = p.country || 'France';
-      if (!current.toLowerCase().includes(target.toLowerCase())) {
-        await selectListbox(countryBtn, target);
-        log(`  ✓ Pays: "${target}"`);
-      } else {
-        log(`  ✓ Pays: déjà "${current}" → skip`);
-      }
-    }
-
-    // ── "Comment avez-vous entendu parler de ce poste ?" (Source) ──
-    // MS Workday fr-CA — le champ peut s'appeler "source" ou équivalent
+    // ── Source (2 niveaux) ──
+    // Niveau 1 : "Site de carrière"
+    // Niveau 2 : "Site de carrière de Morgan Stanley"
     let sourceField = null;
     for (let sw = 0; sw < 4000; sw += 300) {
       sourceField = document.querySelector('[data-automation-id="formField-source"]')
         || (() => {
           const lbl = Array.from(document.querySelectorAll('label, legend')).find(el =>
-            /comment avez.vous entendu|how did you hear|source/i.test(el.textContent || '')
+            /comment avez.vous entendu|how did you hear/i.test(el.textContent || '')
           );
           if (!lbl) return null;
           let el = lbl.parentElement;
           for (let d = 0; d < 8 && el; d++) {
-            if (el.querySelector('[data-automation-id="multiselectInputContainer"]') ||
-                el.querySelector('button[aria-haspopup]')) return el;
+            if (el.querySelector('button[aria-haspopup]') ||
+                el.querySelector('[data-automation-id="multiselectInputContainer"]')) return el;
             el = el.parentElement;
           }
           return null;
@@ -345,16 +329,12 @@
     }
 
     if (sourceField) {
-      // Source = "Eightfold" (candidature venue d'Eightfold) ou "Morgan Stanley Careers Site"
-      const msSource = 'Eightfold';
-      const alreadySet = new RegExp(msSource, 'i').test(sourceField.innerText || '');
+      const alreadySet = /site de carrière de morgan stanley|morgan stanley careers/i.test(sourceField.innerText || '');
       if (alreadySet) {
-        log(`  ✓ Source: déjà "${msSource}" → skip`);
+        log('  ✓ Source: déjà "Site de carrière de Morgan Stanley" → skip');
       } else {
-        const triggerEl =
-          sourceField.querySelector('input[data-uxi-widget-type="selectinput"]') ||
+        const triggerEl = sourceField.querySelector('button[aria-haspopup]') ||
           sourceField.querySelector('[data-automation-id="multiselectInputContainer"]') ||
-          sourceField.querySelector('button[aria-haspopup]') ||
           sourceField.querySelector('input[data-automation-id="searchBox"]');
 
         if (triggerEl) {
@@ -362,77 +342,89 @@
           await sleep(600);
         }
 
-        // Chercher l'option Eightfold puis fallback Morgan Stanley Careers Site
-        const candidates = ['Eightfold', 'Morgan Stanley Careers Site', 'Site de carrières', 'Internet'];
+        // Niveau 1 : "Site de carrière"
         let found = false;
-        for (const candidate of candidates) {
-          const deadline = Date.now() + 2500;
-          while (Date.now() < deadline) {
-            const opt = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
-              .find(el => el.offsetWidth > 0 && new RegExp(candidate, 'i').test(el.textContent || ''));
-            if (opt) {
-              await clickEl(opt);
-              await sleep(500);
-              // Sous-menu éventuel
-              const opt2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
-                .find(el => el.offsetWidth > 0 && new RegExp(candidate, 'i').test((el.textContent || '').trim()));
-              if (opt2) { await clickEl(opt2); await sleep(400); }
-              log(`  ✓ Source: "${candidate}"`);
+        const deadline1 = Date.now() + 3000;
+        while (Date.now() < deadline1) {
+          const opt1 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
+            .find(o => o.offsetWidth > 0 && /site de carri[eè]re(?!\s+de\s+morgan)/i.test(o.textContent || ''));
+          if (opt1) {
+            await clickEl(opt1);
+            await sleep(500);
+            // Niveau 2 : "Site de carrière de Morgan Stanley"
+            const opt2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
+              .find(o => o.offsetWidth > 0 && /site de carri[eè]re de morgan stanley/i.test(o.textContent || ''));
+            if (opt2) {
+              await clickEl(opt2);
+              log('  ✓ Source: "Site de carrière de Morgan Stanley"');
               found = true;
-              break;
             }
-            await sleep(200);
+            break;
           }
-          if (found) break;
+          await sleep(200);
         }
-        if (!found) {
-          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
-          log('  ⚠️ Source: aucune option reconnue → ignoré');
-        }
+        if (!found) log('  ⚠️ Source: option introuvable → ignoré');
       }
     }
 
-    // ── Type de téléphone → Mobile ──
-    const phoneTypeBtn =
-      document.querySelector('[data-automation-id="formField-phoneType"] button[aria-haspopup]') ||
-      document.querySelector('[data-automation-id="formField-phoneDeviceType"] button[aria-haspopup]');
+    // ── Ex-employé MS → Non (value="false") ──
+    const prevWorker = document.querySelector('[data-automation-id="formField-candidateIsPreviousWorker"]');
+    if (prevWorker) {
+      const radioFalse = prevWorker.querySelector('input[type="radio"][value="false"]');
+      if (radioFalse && !radioFalse.checked) {
+        radioFalse.click();
+        log('  ✓ Ex-employé Morgan Stanley: Non');
+      } else {
+        log('  ✓ Ex-employé Morgan Stanley: déjà Non → skip');
+      }
+    }
+
+    // ── Pays → France ──
+    const countryBtn = document.querySelector('[data-automation-id="formField-country"] button[aria-haspopup]');
+    if (countryBtn) {
+      const current = (countryBtn.innerText || '').trim();
+      if (!current.toLowerCase().includes('france')) {
+        await selectListbox(countryBtn, 'France');
+        log('  ✓ Pays: France');
+      } else {
+        log(`  ✓ Pays: déjà "${current}" → skip`);
+      }
+    }
+
+    // ── Prénom / Nom / Adresse / Ville / Code postal ──
+    await fillField('formField-legalName--firstName', p.first_name || p.firstName, 'Prénom');
+    await fillField('formField-legalName--lastName',  p.last_name  || p.lastName,  'Nom');
+    await fillField('formField-addressLine1',          p.address,    'Adresse');
+    await fillField('formField-city',                  p.city,       'Ville');
+    await fillField('formField-postalCode',            p.postal_code || p.zipcode, 'Code postal');
+
+    // ── Type de téléphone → Téléphone cellulaire (= Mobile en fr-CA) ──
+    // Note : le type est déjà "Téléphone cellulaire" par défaut sur MS Workday fr-CA
+    const phoneTypeBtn = document.querySelector('[data-automation-id="formField-phoneType"] button[aria-haspopup]');
     if (phoneTypeBtn) {
       const cur = (phoneTypeBtn.innerText || '').trim();
-      // fr-CA : "Mobile" reste "Mobile" dans les deux langues
-      if (!/mobile/i.test(cur)) {
-        const ok = await selectListbox(phoneTypeBtn, 'Mobile');
-        log(`  ✓ Type téléphone: Mobile (était: "${cur}")`);
+      if (!/cellulaire|mobile/i.test(cur)) {
+        const ok = await selectListbox(phoneTypeBtn, 'Téléphone cellulaire') ||
+                   await selectListbox(phoneTypeBtn, 'Mobile');
+        log(`  ${ok ? '✓' : '⚠️'} Type téléphone: Téléphone cellulaire`);
       } else {
-        log(`  ✓ Type téléphone: déjà Mobile → skip`);
+        log(`  ✓ Type téléphone: déjà "${cur}" → skip`);
       }
     }
 
     // ── Indicatif pays → France (+33) ──
+    // MS Workday fr-CA pré-sélectionne France (+33) pour les comptes créés en France
     const phoneCodeField = document.querySelector('[data-automation-id="formField-countryPhoneCode"]');
     const alreadyFR = phoneCodeField && /france.*\+33|\+33/i.test(phoneCodeField.innerText || '');
-    if (!alreadyFR) {
-      const codeBtn =
-        document.querySelector('[data-automation-id="formField-phoneDeviceType"] button[aria-haspopup]') ||
-        document.querySelector('[data-automation-id="formField-countryPhoneCode"] button[aria-haspopup]') ||
-        (phoneCodeField && phoneCodeField.querySelector('button[aria-haspopup]'));
-
+    if (!alreadyFR && phoneCodeField) {
+      const codeBtn = phoneCodeField.querySelector('button[aria-haspopup]') ||
+        document.querySelector('[data-automation-id="formField-phoneDeviceType"] button[aria-haspopup]');
       if (codeBtn) {
         const ok = await selectListbox(codeBtn, 'France', 5000);
-        log(`  ✓ Indicatif pays: France (+33) — ${ok ? 'sélectionné' : 'non trouvé'}`);
-      } else if (phoneCodeField) {
-        // Fallback multiselect
-        const searchInput = phoneCodeField.querySelector('[data-automation-id="multiselectInputContainer"]') ||
-                            phoneCodeField.querySelector('input');
-        if (searchInput) {
-          await simulateTyping(searchInput, 'France');
-          await sleep(600);
-          const opt = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
-            .find(el => /france/i.test(el.textContent || ''));
-          if (opt) { await clickEl(opt); log('  ✓ Indicatif: France (+33)'); }
-        }
+        log(`  ${ok ? '✓' : '⚠️'} Indicatif: France (+33)`);
       }
     } else {
-      log('  ✓ Indicatif pays: déjà France (+33) → skip');
+      log('  ✓ Indicatif: déjà France (+33) → skip');
     }
 
     // ── Numéro de téléphone ──
@@ -440,7 +432,6 @@
     if (phone) {
       const phoneInput =
         document.querySelector('[data-automation-id="formField-phoneNumber"] input:not([type="hidden"])') ||
-        document.querySelector('#phoneNumber--phoneNumber') ||
         document.querySelector('input[name="phoneNumber"]');
       if (phoneInput) {
         const cur = (phoneInput.value || '').trim().replace(/\s/g, '');
@@ -455,27 +446,29 @@
     }
   }
 
-  // ─── ÉTAPE 3 : Mon expérience ────────────────────────────────────────────────
+  // ─── ÉTAPE 2 : Mon expérience ─────────────────────────────────────────────────
   async function fillMonExperience(p) {
-    log('📝 Étape 3 — Mon expérience');
+    log('📝 Étape 2 — Mon expérience');
     setBanner('📝 Mon expérience en cours...');
 
-    // ── Upload CV ──
+    // ── CV upload (OBLIGATOIRE) ──
     await uploadCV(p);
 
-    // ── Éducation ──
-    await fillEducation(p);
+    // ── LinkedIn ──
+    if (p.linkedin_url) {
+      await fillField('formField-linkedInAccount', p.linkedin_url, 'LinkedIn');
+    }
 
-    // ── Langues ──
-    await fillLanguages(p);
+    // Note : Expérience pro, Études, Langues → sections "Ajouter" manuelles
+    // Le filler ne les remplit pas automatiquement (Workday n'expose pas de formField-*)
+    log('  ℹ️ Expérience pro / Études / Langues : sections "Ajouter" — remplissage manuel');
   }
 
-  // ─── Upload CV ───────────────────────────────────────────────────────────────
   async function deleteExistingCV() {
     const deleteBtn = document.querySelector('[data-automation-id="delete-file"]') ||
       Array.from(document.querySelectorAll('button')).find(b =>
         /supprimer|delete|remove/i.test(b.getAttribute('aria-label') || b.innerText || '') &&
-        (b.closest('[data-automation-id*="upload"]') || b.closest('[data-automation-id*="file"]'))
+        b.closest('[data-automation-id*="upload"], [data-automation-id*="file"]')
       );
     if (!deleteBtn) return;
     log('  🗑️ CV existant → suppression...');
@@ -491,7 +484,7 @@
     const fileInput = document.querySelector('input[type="file"]');
     if (!fileInput) { log('  ⚠️ CV: input[type="file"] introuvable'); return; }
 
-    const filename  = p.cv_filename  || 'cv.pdf';
+    const filename    = p.cv_filename || 'cv.pdf';
     const storagePath = p.cv_storage_path;
 
     // Vérifier si le bon CV est déjà chargé
@@ -525,358 +518,165 @@
       return;
     }
 
-    // Attendre confirmation Workday
     let waited = 0;
     while (waited < 10000 && !document.querySelector('[data-automation-id="file-upload-successful"]')) {
       await sleep(500); waited += 500;
     }
     const confirmed = !!document.querySelector('[data-automation-id="file-upload-successful"]');
     log(confirmed ? `  ✅ CV: "${filename}" uploadé` : `  ⚠️ CV: pas de confirmation après ${waited}ms`);
-  }
-
-  // ─── Éducation ───────────────────────────────────────────────────────────────
-  async function fillEducation(p) {
-    const school   = p.establishment || p.school;
-    const diplYear = p.graduation_year ? String(p.graduation_year) : null;
-    const degree   = p.education_level;
-
-    if (!school && !diplYear) { log('  ℹ️ Éducation: pas de données → ignorée'); return; }
-
-    // Attendre que la section soit rendue
-    let w = 0;
-    while (w < 5000) {
-      if (document.querySelector('[data-automation-id="formField-school"]')) break;
-      await sleep(300); w += 300;
-    }
-
-    // Vérifier si déjà remplie
-    const existingSchool = document.querySelector('[data-automation-id="formField-school"] input');
-    if (existingSchool && (existingSchool.value || '').trim()) {
-      log(`  ✓ École: "${existingSchool.value}" → skip`);
-      if (diplYear) await fillField('formField-lastYearAttended', diplYear, 'Année diplomation');
-      return;
-    }
-
-    if (school) {
-      const schoolInput = document.querySelector('[data-automation-id="formField-school"] input') ||
-        document.querySelector('input[name*="school"], input[id*="school"]');
-      if (schoolInput) {
-        await simulateTyping(schoolInput, school);
-        await sleep(1000);
-        // Sélectionner la première option du typeahead
-        const opts = document.querySelectorAll(
-          '[role="option"], [data-automation-id="promptOption"], [data-automation-id="menuItem"], [data-automation-id="promptLeafNode"]'
-        );
-        const opt = Array.from(opts).find(o => o.offsetWidth > 0);
-        if (opt) { await clickEl(opt); log(`  ✓ École: "${school}"`); }
-        else {
-          // Valeur libre si aucune option
-          reactSet(schoolInput, school);
-          schoolInput.dispatchEvent(new Event('blur', { bubbles: true }));
-          log(`  ✓ École (libre): "${school}"`);
-        }
-        await sleep(400);
-      }
-    }
-
-    // Diplôme (niveau)
-    if (degree) {
-      // Mapping éducation fr → Workday
-      const degreeMap = {
-        'bac + 5 / m2 et plus': "Master's Degree",
-        'bac + 4 / m1':         "Master's Degree",
-        'bac + 3 / licence':    "Bachelor's Degree",
-        'bac + 2':              "Associate's Degree",
-        'bac':                  'High School Diploma/GED',
-      };
-      const degreeLabel = degreeMap[degree.toLowerCase()] || degree;
-      const degreeBtn = document.querySelector('[data-automation-id="formField-degree"] button[aria-haspopup]');
-      if (degreeBtn) {
-        const ok = await selectListbox(degreeBtn, degreeLabel);
-        log(`  ${ok ? '✓' : '⚠️'} Diplôme: "${degreeLabel}"`);
-      }
-    }
-
-    if (diplYear) await fillField('formField-lastYearAttended', diplYear, 'Année diplomation');
-  }
-
-  // ─── Langues ─────────────────────────────────────────────────────────────────
-  // Workday fr-CA — même structure que BofA en-US
-  async function fillLanguages(p) {
-    const langs = Array.isArray(p.languages) ? p.languages : [];
-    if (!langs.length) { log('  ℹ️ Langues: pas de données → ignorées'); return; }
-
-    // Mapping niveau fr → Workday
-    const levelMap = {
-      'langue maternelle': 'Native or bilingual',
-      'bilingue':          'Native or bilingual',
-      'courant':           'Professional working',
-      'intermédiaire':     'Limited working',
-      'débutant':          'Elementary',
-    };
-
-    // Trouver la section Languages via le heading
-    async function findLangSection() {
-      return Array.from(document.querySelectorAll('[data-automation-id^="languages"], h3, h4, [class*="sectionTitle"]'))
-        .find(el => /langues?|languages?/i.test(el.textContent || ''));
-    }
-
-    for (let i = 0; i < langs.length; i++) {
-      const { language, level } = langs[i];
-      if (!language) continue;
-
-      // Si ce n'est pas la première langue, cliquer "Ajouter une autre" / "Add Another"
-      if (i > 0) {
-        const addBtn = Array.from(document.querySelectorAll('button')).find(b =>
-          b.offsetWidth > 0 &&
-          /ajouter\s+une\s+autre|ajouter|add\s+another/i.test((b.innerText || '').trim()) &&
-          b.closest('[data-automation-id*="language"]')
-        ) || (() => {
-          const sec = document.querySelector('[data-automation-id="languages"]');
-          if (sec) return sec.querySelector('button[type="button"]');
-          return null;
-        })();
-        if (addBtn) { await clickEl(addBtn); await sleep(800); }
-        else { log(`  ⚠️ Langues: bouton "Ajouter" introuvable pour la langue ${i + 1}`); break; }
-      }
-
-      // Sélectionner la langue dans le listbox de la dernière ligne
-      const langBtns = Array.from(document.querySelectorAll('[data-automation-id^="formField-language"] button[aria-haspopup], [data-automation-id="languages"] button[aria-haspopup]'))
-        .filter(b => b.offsetWidth > 0);
-      const langBtn = langBtns[i] || langBtns[langBtns.length - 1];
-      if (langBtn) {
-        const ok = await selectListbox(langBtn, language, 5000);
-        log(`  ${ok ? '✓' : '⚠️'} Langue ${i + 1}: "${language}"`);
-      }
-
-      // Niveau
-      if (level) {
-        const wdLevel = levelMap[level.toLowerCase()] || level;
-        const levelBtns = Array.from(document.querySelectorAll('[data-automation-id^="formField-languageProficiency"] button[aria-haspopup], [data-automation-id="languages"] [data-automation-id*="proficiency"] button[aria-haspopup]'))
-          .filter(b => b.offsetWidth > 0);
-        const levelBtn = levelBtns[i] || levelBtns[levelBtns.length - 1];
-        if (levelBtn) {
-          const ok = await selectListbox(levelBtn, wdLevel, 4000);
-          log(`  ${ok ? '✓' : '⚠️'} Niveau ${i + 1}: "${wdLevel}"`);
-        }
-      }
-      await sleep(400);
+    if (!confirmed) {
+      setBanner('⚠️ Vérifiez le CV manuellement puis continuez', '#e65100');
+      await sleep(5000); // Laisser le temps à l'utilisateur de vérifier
     }
   }
 
-  // ─── ÉTAPE 4 : Questions liées à la candidature ──────────────────────────────
-  // Workday fr-CA — questions dynamiques selon le poste.
-  // On scanne les formField-* et les labels pour répondre intelligemment.
+  // ─── ÉTAPE 3 : Questions liées à la candidature ──────────────────────────────
+  // Les IDs sont dynamiques (dc48a60e...) → scan par texte du label
+  // Les options sont "Yes" / "No" (anglais même en fr-CA)
   async function fillApplicationQuestions(p, jobLocation) {
-    log('📝 Étape 4 — Questions liées à la candidature');
+    log('📝 Étape 3 — Questions liées à la candidature');
     setBanner('📝 Questions candidature en cours...');
 
-    await sleep(1500); // Laisser React charger les questions
+    await sleep(2000); // Laisser React charger
 
-    // Tous les champs formField-*
     const fields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'));
     log(`  🔍 ${fields.length} question(s) détectée(s)`);
-
-    for (const field of fields) {
-      const fieldId = field.getAttribute('data-automation-id') || '';
-      const legend  = field.querySelector('legend [data-automation-id="richText"]') ||
-                      field.querySelector('legend') || field.querySelector('label');
-      const lower   = (legend?.textContent || '').toLowerCase().trim();
-
-      if (!lower) continue;
-
-      // ── Droit au travail / autorisation ──
-      if (/droit\s+de\s+travailler|right\s+to\s+work|autoris[eé]|travailleur|habilit/i.test(lower)) {
-        const rtwAnswer = deriveRightToWork(p, jobLocation);
-        // Radio Oui/Non
-        const radioYes = field.querySelector('input[type="radio"][value="true"], input[type="radio"][value="1"]') ||
-          Array.from(field.querySelectorAll('input[type="radio"]')).find(r => /oui|yes/i.test(r.nextSibling?.textContent || r.parentElement?.textContent || ''));
-        const radioNo = field.querySelector('input[type="radio"][value="false"], input[type="radio"][value="0"]') ||
-          Array.from(field.querySelectorAll('input[type="radio"]')).find(r => /non|no/i.test(r.nextSibling?.textContent || r.parentElement?.textContent || ''));
-        if (rtwAnswer === 'Yes' && radioYes && !radioYes.checked) {
-          radioYes.click();
-          log(`  ✓ Droit au travail: Oui (${rtwAnswer})`);
-        } else if (rtwAnswer === 'No' && radioNo && !radioNo.checked) {
-          radioNo.click();
-          log(`  ✓ Droit au travail: Non (${rtwAnswer})`);
-        } else {
-          log(`  ⚠️ Droit au travail: réponse="${rtwAnswer}" — vérifiez manuellement`);
-        }
-        continue;
-      }
-
-      // ── Visa / sponsorship requis ──
-      if (/visa|sponsorship|sponsor|parrainage/i.test(lower)) {
-        const needsSponsorship = deriveSponsorship(p, jobLocation);
-        const radio = needsSponsorship
-          ? Array.from(field.querySelectorAll('input[type="radio"]')).find(r => /oui|yes/i.test(r.parentElement?.textContent || ''))
-          : Array.from(field.querySelectorAll('input[type="radio"]')).find(r => /non|no/i.test(r.parentElement?.textContent || ''));
-        if (radio && !radio.checked) {
-          radio.click();
-          log(`  ✓ Sponsorship: ${needsSponsorship ? 'Oui' : 'Non'}`);
-        }
-        continue;
-      }
-
-      // ── Relocation / mobilité ──
-      if (/relocation|mobilit|déménagement/i.test(lower)) {
-        // Par défaut Non
-        const radioNo = Array.from(field.querySelectorAll('input[type="radio"]')).find(r =>
-          /non|no/i.test(r.nextSibling?.textContent || r.parentElement?.textContent || '')
-        );
-        if (radioNo && !radioNo.checked) { radioNo.click(); log(`  ✓ Relocation: Non`); }
-        continue;
-      }
-
-      // ── Dropdown générique ──
-      const dropBtn = field.querySelector('button[aria-haspopup]');
-      if (dropBtn) {
-        const curText = (dropBtn.innerText || '').trim().toLowerCase();
-        if (curText && !['sélectionner', 'select', 'choose', 'choisir'].some(k => curText.includes(k))) {
-          log(`  ✓ ${lower.slice(0, 60)}: déjà "${dropBtn.innerText.trim()}" → skip`);
-          continue;
-        }
-        // Laisser à l'utilisateur
-        log(`  ⚠️ Question dropdown non gérée automatiquement: "${lower.slice(0, 60)}"`);
-        continue;
-      }
-
-      // ── Texte libre ──
-      const textInput = field.querySelector('input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]), textarea');
-      if (textInput && !(textInput.value || '').trim()) {
-        log(`  ⚠️ Champ texte libre non rempli: "${lower.slice(0, 60)}"`);
-      }
-    }
-  }
-
-  // Dériver droit au travail depuis le profil + localisation du poste
-  function deriveRightToWork(p, jobLocation) {
-    const auths = Array.isArray(p.jp_morgan_work_authorizations) ? p.jp_morgan_work_authorizations : [];
-    if (auths.length === 0) return 'Yes'; // Défaut EU
-
-    const loc = (jobLocation || '').toLowerCase();
-    const isUK = /royaume.uni|united.kingdom|\buk\b|\blondon\b/i.test(loc);
-    const isUS = /états.unis|united.states|\bnew.york\b|\bnyc\b/i.test(loc);
-    const isEU = /france|paris|allemagne|espagne|italie|europe/i.test(loc);
-
-    for (const auth of auths) {
-      const country = (auth.country || '').toLowerCase();
-      const authorized = String(auth.work_authorized || '').toLowerCase() !== 'no';
-      if (!authorized) continue;
-      if (isUK && /royaume.uni|united.kingdom|\buk\b/i.test(country)) return 'Yes';
-      if (isUS && /états.unis|united.states|\bus\b/i.test(country)) return 'Yes';
-      if (isEU && /union.europ[eé]enne|eea|europe/i.test(country)) return 'Yes';
-    }
-    if (isUK) return 'No';
-    if (isUS) return 'No';
-    // EU par défaut : oui si travailleur EEA/National
-    const wt = Array.isArray(p.work_authorization_type) ? p.work_authorization_type : [];
-    if (wt.some(t => /national|eea|european/i.test(t))) return 'Yes';
-    return 'Yes';
-  }
-
-  function deriveSponsorship(p, jobLocation) {
-    const auths = Array.isArray(p.jp_morgan_work_authorizations) ? p.jp_morgan_work_authorizations : [];
-    for (const auth of auths) {
-      if (String(auth.sponsorship_required || '').toLowerCase() === 'yes') return true;
-    }
-    return false;
-  }
-
-  // ─── ÉTAPE 5 : Divulgations volontaires ──────────────────────────────────────
-  async function fillDivulgationsVolontaires(p) {
-    log('📝 Étape 5 — Divulgations volontaires');
-    setBanner('📝 Divulgations volontaires en cours...');
-
-    await sleep(1500);
-
-    const fields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'));
-    log(`  🔍 ${fields.length} champ(s) de divulgation`);
 
     for (const field of fields) {
       const legend = field.querySelector('legend [data-automation-id="richText"]') ||
                      field.querySelector('legend') || field.querySelector('label');
       const lower  = (legend?.textContent || '').toLowerCase().trim();
-      if (!lower) continue;
+      const btn    = field.querySelector('button[aria-haspopup]');
+      if (!btn) continue;
 
-      const dropBtn = field.querySelector('button[aria-haspopup]');
+      const cur = (btn.innerText || '').trim();
+      if (cur && !/sélectionnez|select a value/i.test(cur)) {
+        log(`  ✓ ${lower.slice(0, 60)}: déjà "${cur}" → skip`);
+        continue;
+      }
 
-      // ── Genre ──
-      if (/genre|gender|sexe/i.test(lower) && dropBtn) {
-        const genderMap = { 'male': 'Homme', 'female': 'Femme', 'man': 'Homme', 'woman': 'Femme' };
-        const target = genderMap[(p.gender || '').toLowerCase()] || p.gender || 'Homme';
-        const cur = (dropBtn.innerText || '').trim();
-        if (!cur || /sélectionner|select/i.test(cur)) {
-          const ok = await selectListbox(dropBtn, target);
+      let answer = null;
+
+      // Droit au travail → Yes (EU national travaillant en France)
+      if (/légalement autorisé|legally authorized|right to work|autorisé.*travailler/i.test(lower)) {
+        answer = deriveRightToWork(p, jobLocation) === 'No' ? 'No' : 'Yes';
+      }
+      // Sponsorship actuel → Non (citoyen français/UE)
+      else if (/actuellement besoin.*sponsori|currently.*need.*sponsor|parrainage.*visa\s*\?|visa.*work.*now/i.test(lower)) {
+        answer = deriveSponsorship(p) ? 'Yes' : 'No';
+      }
+      // Sponsorship futur → Non
+      else if (/avenir.*parrainage|future.*sponsor|besoin.*futur/i.test(lower)) {
+        answer = 'No';
+      }
+      // Employé gouvernement → Non
+      else if (/employé du gouvernement|government.*official|official.*gouvernement|fonctionnaire/i.test(lower)) {
+        answer = 'No';
+      }
+      // Famille fonctionnaire → Non
+      else if (/famille immédiate|proche associé|immediate family|close associate/i.test(lower)) {
+        answer = 'No';
+      }
+      // Recommandé par fonctionnaire → Non
+      else if (/recommandé.*fonctionnaire|parrainé.*fonctionnaire|sponsored.*government.*official/i.test(lower)) {
+        answer = 'No';
+      }
+      // Consentement communication → Yes
+      else if (/consent.*follow.*communication|recevoir.*communication/i.test(lower)) {
+        answer = 'Yes';
+      }
+      // Défaut compliance → No
+      else {
+        answer = 'No';
+        log(`  ℹ️ Question non reconnue → "No" par défaut: "${lower.slice(0, 60)}"`);
+      }
+
+      const ok = await selectListbox(btn, answer, 3000);
+      log(`  ${ok ? '✓' : '⚠️'} ${lower.slice(0, 60)} → ${answer}`);
+    }
+  }
+
+  function deriveRightToWork(p, jobLocation) {
+    const auths = Array.isArray(p.jp_morgan_work_authorizations) ? p.jp_morgan_work_authorizations : [];
+    if (auths.length === 0) return 'Yes'; // Défaut EU
+
+    const loc  = (jobLocation || '').toLowerCase();
+    const isUK = /royaume.uni|united.kingdom|\buk\b|\blondon\b/i.test(loc);
+    const isUS = /états.unis|united.states|\bnew.york\b|\bnyc\b/i.test(loc);
+
+    for (const auth of auths) {
+      const country    = (auth.country || '').toLowerCase();
+      const authorized = String(auth.work_authorized || '').toLowerCase() !== 'no';
+      if (!authorized) continue;
+      if (isUK && /royaume.uni|united.kingdom|\buk\b/i.test(country)) return 'Yes';
+      if (isUS && /états.unis|united.states|\bus\b/i.test(country))    return 'Yes';
+      if (!isUK && !isUS && /union.europ|eea|europe|national/i.test(country)) return 'Yes';
+    }
+    if (isUK || isUS) return 'No';
+    const wt = Array.isArray(p.work_authorization_type) ? p.work_authorization_type : [];
+    if (wt.some(t => /national|eea|european/i.test(t))) return 'Yes';
+    return 'Yes';
+  }
+
+  function deriveSponsorship(p) {
+    const auths = Array.isArray(p.jp_morgan_work_authorizations) ? p.jp_morgan_work_authorizations : [];
+    return auths.some(a => String(a.sponsorship_required || '').toLowerCase() === 'yes');
+  }
+
+  // ─── ÉTAPE 4 : Divulgations volontaires ──────────────────────────────────────
+  // Réel (exploré) : 1 dropdown genre + 1 checkbox CGU obligatoire
+  async function fillDivulgationsVolontaires(p) {
+    log('📝 Étape 4 — Divulgations volontaires');
+    setBanner('📝 Divulgations volontaires en cours...');
+
+    await sleep(1500);
+
+    // ── Genre (dropdown) ──
+    // Options fr-CA : "Femme" / "Homme" / "Préfère de pas s'identifier"
+    const genderField = document.querySelector('[data-automation-id$="d-gender"]');
+    if (genderField) {
+      const genderBtn = genderField.querySelector('button[aria-haspopup]');
+      if (genderBtn) {
+        const cur = (genderBtn.innerText || '').trim();
+        if (!cur || /sélectionnez|select/i.test(cur)) {
+          // Mapping genre Firebase → option fr-CA
+          const genderMap = {
+            'male':   'Homme',
+            'female': 'Femme',
+            'man':    'Homme',
+            'woman':  'Femme',
+          };
+          const target = genderMap[(p.gender || '').toLowerCase()] || 'Préfère de pas s\'identifier';
+          const ok = await selectListbox(genderBtn, target, 4000);
           log(`  ${ok ? '✓' : '⚠️'} Genre: "${target}"`);
         } else {
           log(`  ✓ Genre: déjà "${cur}" → skip`);
         }
-        continue;
-      }
-
-      // ── Handicap ──
-      if (/handicap|disability|disabled/i.test(lower)) {
-        // Chercher "Je ne souhaite pas répondre" ou "Non" comme option par défaut
-        const noDisability = Array.from(field.querySelectorAll('input[type="radio"]')).find(r => {
-          const txt = (r.nextSibling?.textContent || r.parentElement?.textContent || '').toLowerCase();
-          return /non|no|je ne souhaite pas|decline|prefer not/i.test(txt);
-        });
-        if (noDisability && !noDisability.checked) {
-          noDisability.click();
-          log(`  ✓ Handicap: "Je ne souhaite pas répondre"`);
-        } else if (dropBtn) {
-          const ok = await selectListbox(dropBtn, 'Je ne souhaite pas');
-          if (!ok) await selectListbox(dropBtn, 'Decline');
-          log(`  ✓ Handicap: option par défaut sélectionnée`);
-        }
-        continue;
-      }
-
-      // ── Vétéran / statut militaire ──
-      if (/vétéran|veteran|militaire|military/i.test(lower)) {
-        const notVeteran = Array.from(field.querySelectorAll('input[type="radio"]')).find(r => {
-          const txt = (r.nextSibling?.textContent || r.parentElement?.textContent || '').toLowerCase();
-          return /non.vétéran|not a veteran|je ne suis pas|decline|prefer not/i.test(txt);
-        });
-        if (notVeteran && !notVeteran.checked) {
-          notVeteran.click();
-          log(`  ✓ Vétéran: "Non vétéran"`);
-        } else if (dropBtn) {
-          await selectListbox(dropBtn, 'Je ne souhaite pas');
-          log(`  ✓ Vétéran: option par défaut`);
-        }
-        continue;
-      }
-
-      // ── Origine ethnique / Race ──
-      if (/ethnique|ethnicité|ethnicité|race|origine/i.test(lower) && dropBtn) {
-        const cur = (dropBtn.innerText || '').trim();
-        if (!cur || /sélectionner|select/i.test(cur)) {
-          const ok = await selectListbox(dropBtn, 'Je ne souhaite pas') ||
-                     await selectListbox(dropBtn, 'Decline') ||
-                     await selectListbox(dropBtn, 'Prefer not');
-          log(`  ${ok ? '✓' : '⚠️'} Origine ethnique: option par défaut`);
-        }
-        continue;
-      }
-
-      // ── Champ non reconnu avec dropdown → log ──
-      if (dropBtn) {
-        const cur = (dropBtn.innerText || '').trim();
-        if (!cur || /sélectionner|select/i.test(cur)) {
-          log(`  ⚠️ Divulgation non gérée: "${lower.slice(0, 60)}" → action manuelle requise`);
-        }
       }
     }
 
-    // Lettre de motivation (cover letter) — upload si présente
-    const coverFileInput = Array.from(document.querySelectorAll('input[type="file"]'))
-      .find(f => f.closest('[data-automation-id*="cover"], [data-automation-id*="letter"]'));
-    if (coverFileInput && p.letter_storage_path) {
-      const letterFilename = p.letter_filename || 'cover-letter.pdf';
-      await setFileFromStorage(coverFileInput, p.letter_storage_path, letterFilename);
-      log(`  ✓ Lettre de motivation: "${letterFilename}"`);
+    // ── Checkbox CGU "Oui, j'ai lu et j'accepte les termes et conditions" (OBLIGATOIRE) ──
+    const cguContainer = document.querySelector('[data-automation-id$="reements"]');
+    const cgu = cguContainer?.querySelector('input[type="checkbox"]');
+    if (cgu) {
+      if (!cgu.checked) {
+        cgu.click();
+        await sleep(300);
+        log('  ✓ CGU: cochée');
+      } else {
+        log('  ✓ CGU: déjà cochée → skip');
+      }
+    } else {
+      // Fallback : chercher par texte
+      const allCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+      const cguAlt = allCheckboxes.find(cb => {
+        const lbl = cb.closest('[data-automation-id^="formField-"]')?.textContent || '';
+        return /j'ai lu|termes et conditions|terms and conditions|j'accepte/i.test(lbl);
+      });
+      if (cguAlt && !cguAlt.checked) {
+        cguAlt.click();
+        log('  ✓ CGU (fallback): cochée');
+      }
     }
   }
 
@@ -888,15 +688,38 @@
     return pending;
   }
 
+  // ─── Gérer la page de démarrage ("Commencer sa candidature") ─────────────────
+  // MS Workday affiche une page intermédiaire avec 3 boutons avant le formulaire
+  async function handleStartPage() {
+    const waitMs = 6000;
+    let waited = 0;
+    while (waited < waitMs) {
+      // Déjà sur le formulaire (progressBar présent) → rien à faire
+      if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return;
+
+      // Page "Commencer sa candidature" → cliquer "Postuler manuellement"
+      const manualBtn = Array.from(document.querySelectorAll('button, a')).find(el =>
+        el.offsetWidth > 0 && /postuler manuellement|apply manually/i.test((el.innerText || '').trim())
+      );
+      if (manualBtn) {
+        log('🖱️ Clic sur "Postuler manuellement"...');
+        await clickEl(manualBtn);
+        await sleep(2000);
+        return;
+      }
+      await sleep(500); waited += 500;
+    }
+  }
+
   // ─── Main ────────────────────────────────────────────────────────────────────
   async function main() {
-    log('🚀 Morgan Stanley Workday Filler démarré');
+    log('🚀 Morgan Stanley Workday Filler v2 démarré');
 
     const pending = await loadProfile();
     if (!pending) return;
 
-    const p           = pending.profile || pending;
-    const authEmail   = pending.email    || p.email;
+    const p            = pending.profile || pending;
+    const authEmail    = pending.email    || p.email;
     const authPassword = pending.password;
     const jobLocation  = pending.location || pending.jobLocation || '';
 
@@ -906,24 +729,19 @@
     const loggedIn = await handleSignIn(authEmail, authPassword);
     if (!loggedIn) return;
 
-    // Attendre que le formulaire de candidature soit chargé
+    // ── Page de démarrage (Postuler manuellement) ──
+    await handleStartPage();
+
+    // ── Attendre le formulaire ──
     let waitForm = 0;
-    while (waitForm < 15000) {
+    while (waitForm < 20000) {
       if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) break;
-      // Gérer le popup "Postuler manuellement" / "Commencer sa candidature"
-      const manualBtn = Array.from(document.querySelectorAll('button, a')).find(el =>
-        el.offsetWidth > 0 && /postuler manuellement|apply manually/i.test((el.innerText || '').trim())
-      );
-      if (manualBtn) { await clickEl(manualBtn); await sleep(2000); }
       await sleep(500); waitForm += 500;
     }
 
-    let step = currentStep();
-    log(`🔍 Étape courante détectée: "${step}"`);
-
     // ── Boucle sur les étapes ──
     for (let iter = 0; iter < 10; iter++) {
-      step = currentStep();
+      const step = currentStep();
       log(`\n▶ Étape: ${step}`);
 
       if (step === 'my_information') {
@@ -947,13 +765,12 @@
         await waitForStep('review');
 
       } else if (step === 'review') {
-        setBanner('✅ Candidature prête — Vérifiez puis soumettez manuellement', '#1b5e20');
-        log('✅ Étape Réviser atteinte — soumission manuelle requise');
+        setBanner('✅ Candidature prête — Vérifiez et cliquez "Soumettre" manuellement', '#1b5e20');
+        log('✅ Étape Réviser atteinte — soumission manuelle requise (bouton "Soumettre")');
         return;
 
       } else {
-        // Étape inconnue (account creation, etc.)
-        log(`⚠️ Étape inconnue: "${step}" — tentative de continuer`);
+        log(`⚠️ Étape inconnue "${step}" — tentative de continuer`);
         const progressed = await saveAndContinue();
         if (!progressed) { await sleep(2000); }
       }
