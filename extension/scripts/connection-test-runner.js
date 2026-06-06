@@ -439,16 +439,19 @@
           accountBtn.click();
           return { done: false, needRetry: true, phase: 'signout_step2', retryDelayMs: 900 };
         }
-        // Étape 2 : cliquer Sign Out — couvre en-US "Sign Out" et fr-CA "Fermer la session" / "Se déconnecter"
+        // Étape 2 : cliquer Sign Out — Workday affiche le menu comme spans css-1kj610j
+        // en-US "Sign Out" (BofA) | fr-CA "Fermer la session" (Morgan Stanley)
         const signOutEl =
-          document.querySelector('[aria-label="Sign Out"][role="menuitem"], button[aria-label="Sign Out"]') ||
-          document.querySelector('[aria-label="Fermer la session"][role="menuitem"], button[aria-label="Fermer la session"]') ||
-          document.querySelector('[aria-label="Se déconnecter"][role="menuitem"], button[aria-label="Se déconnecter"]') ||
-          // Fallback générique : chercher par texte dans le menu déroulant ouvert
-          Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, [role="menu"] [role="button"]'))
-            .find(el => /sign out|fermer la session|se d[ée]connecter|d[ée]connexion|log out/i.test(el.textContent?.trim()));
+          // Sélecteur principal : span Workday avec classe connue (stable cross-locale)
+          Array.from(document.querySelectorAll('span.css-1kj610j'))
+            .find(el => /sign out|fermer la session|se d[ée]connecter|d[ée]connexion|log out/i.test(el.textContent?.trim())) ||
+          // Fallbacks aria-label (si Workday change la classe CSS)
+          document.querySelector('[aria-label="Sign Out"], [aria-label="Fermer la session"], [aria-label="Se déconnecter"]') ||
+          // Fallback texte générique sur tout le DOM
+          Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] *'))
+            .find(el => /sign out|fermer la session|se d[ée]connecter/i.test(el.textContent?.trim()));
         if (!signOutEl) {
-          // Dernier recours : naviguer directement vers la page de logout Workday
+          // Dernier recours : navigation directe vers la page de logout Workday
           window.location.href = window.location.origin + '/d/logout';
           return { done: false, needRetry: true, phase: 'signout', retryDelayMs: 3000 };
         }
