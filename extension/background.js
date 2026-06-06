@@ -94,7 +94,8 @@ const BANK_SCRIPT_MAP = {
   axa: 'content/axa-careers-filler.js',
   hsbc: 'content/hsbc-careers-filler.js',
   nomura: 'content/nomura-careers-filler.js',
-  bank_of_america_workday: 'content/bank-of-america-workday-filler.js'
+  bank_of_america_workday: 'content/bank-of-america-workday-filler.js',
+  morgan_stanley_workday:  'content/morgan-stanley-workday-filler.js'
 };
 
 function hasBankAutomation(bankId) {
@@ -183,6 +184,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'hsbc') return 'taleos_pending_hsbc';
   if (bid === 'nomura') return 'taleos_pending_nomura';
   if (bid === 'bank_of_america_workday') return 'taleos_pending_bank_of_america_workday';
+  if (bid === 'morgan_stanley_workday')  return 'taleos_pending_morgan_stanley_workday';
   return null;
 }
 
@@ -222,6 +224,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'hsbc') keys.push('taleos_pending_hsbc', 'taleos_hsbc_tab_id');
   if (bid === 'nomura') keys.push('taleos_pending_nomura', 'taleos_nomura_tab_id');
   if (bid === 'bank_of_america_workday') keys.push('taleos_pending_bank_of_america_workday', 'taleos_bank_of_america_workday_tab_id');
+  if (bid === 'morgan_stanley_workday')  keys.push('taleos_pending_morgan_stanley_workday',  'taleos_morgan_stanley_workday_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -2844,6 +2847,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'hsbc' || url.includes('portal.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
   if (bid === 'nomura' || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
   if (bid === 'bank_of_america_workday' || url.includes('ghr.wd1.myworkdayjobs.com')) return 'bank_of_america_workday';
+  if (bid === 'morgan_stanley_workday'  || url.includes('ms.wd5.myworkdayjobs.com'))  return 'morgan_stanley_workday';
   return 'other';
 }
 
@@ -3709,6 +3713,80 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }
     };
     chrome.tabs.onUpdated.addListener(_bofaInitListener);
+    await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'morgan_stanley_workday') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    // Fermer un onglet MS mort s'il en existe un
+    try {
+      const { taleos_morgan_stanley_workday_tab_id: existingMsTabId } = await chrome.storage.local.get(['taleos_morgan_stanley_workday_tab_id']);
+      if (existingMsTabId) {
+        const existingTab = await chrome.tabs.get(existingMsTabId).catch(() => null);
+        if (existingTab) {
+          console.log(`[Taleos MS] Fermeture onglet mort #${existingMsTabId} avant relance`);
+          await chrome.tabs.remove(existingMsTabId).catch(() => {});
+        }
+        await chrome.storage.local.remove(['taleos_morgan_stanley_workday_tab_id', 'taleos_pending_morgan_stanley_workday']).catch(() => {});
+      }
+    } catch (_) {}
+
+    const msCreateOpts = { url: offerUrl, active: true };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) msCreateOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const msPendingBase = {
+      profile:      { ...profile },
+      email:        profile.auth_email || profile.email,
+      password:     profile.auth_password,
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName:  companyName || 'Morgan Stanley',
+      location:     offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId:        null,
+      timestamp:    Date.now()
+    };
+    await chrome.storage.local.set({ taleos_pending_morgan_stanley_workday: msPendingBase });
+    const msTab = await chrome.tabs.create(msCreateOpts);
+    await registerApplyRunForTab(msTab.id, runMeta);
+    msPendingBase.tabId = msTab.id;
+    await chrome.storage.local.set({
+      taleos_pending_morgan_stanley_workday: msPendingBase,
+      taleos_morgan_stanley_workday_tab_id:  msTab.id
+    });
+    if (taleosTabId) {
+      chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+    }
+    const _msTabId    = msTab.id;
+    const _msDeadline = Date.now() + 10 * 60 * 1000;
+    const _msInitListener = async (tid, info, updatedTab) => {
+      if (tid !== _msTabId || info.status !== 'complete') return;
+      if (Date.now() > _msDeadline) { chrome.tabs.onUpdated.removeListener(_msInitListener); return; }
+      const tabUrl = (updatedTab?.url || '').toLowerCase();
+      if (!tabUrl.includes('ms.wd5.myworkdayjobs.com')) return;
+      chrome.tabs.onUpdated.removeListener(_msInitListener);
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const guardCheck = await chrome.scripting.executeScript({
+          target: { tabId: _msTabId },
+          func: () => globalThis.__TALEOS_MS_FILLER_RUNNING__
+        });
+        if (guardCheck?.[0]?.result === true) {
+          console.log(`[Taleos MS] Guard actif — filler déjà en cours`);
+          return;
+        }
+        await chrome.scripting.executeScript({ target: { tabId: _msTabId }, files: ['scripts/taleos-automation-banner.js'] });
+        await chrome.scripting.executeScript({ target: { tabId: _msTabId }, files: ['content/morgan-stanley-workday-filler.js'] });
+        console.log(`[Taleos MS] Injection initiale OK (tabId=${_msTabId})`);
+      } catch (e) {
+        console.error('[Taleos MS] Injection initiale échouée:', e);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(_msInitListener);
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos

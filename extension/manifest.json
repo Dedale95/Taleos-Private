@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.225",
-  "version_name": "1.2.225-workday-signout-span-css",
+  "version": "1.2.226",
+  "version_name": "1.2.226-morgan-stanley-workday-filler",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -214,6 +214,16 @@
       "js": [
         "scripts/taleos-automation-banner.js",
         "content/bank-of-america-workday-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://ms.wd5.myworkdayjobs.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/morgan-stanley-workday-filler.js"
       ],
       "run_at": "document_idle"
     },
