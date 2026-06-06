@@ -385,8 +385,14 @@ jobs:
           git commit -m "chore: mise à jour quotidienne des offres (pipeline parallèle)"
           # -X theirs : en cas de conflit sur les JSONs de données (summary, live…),
           # garder la version générée par ce run CI (pas l'ancienne version du repo)
-          git pull --rebase -X theirs --autostash origin main
-          git push origin main
+          # Retry jusqu'à 3 fois en cas de "cannot lock ref" (push concurrent)
+          for attempt in 1 2 3; do
+            git pull --rebase -X theirs --autostash origin main && \
+            git push origin main && break || {
+              echo "⚠️  Push échoué (tentative $attempt/3) — retry dans 10s"
+              sleep 10
+            }
+          done
 
       - name: Déclencher Publish Public Site
         if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
