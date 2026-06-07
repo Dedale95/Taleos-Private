@@ -552,7 +552,7 @@
 
     // ── Section Études : cliquer "Ajouter" si champs pas encore visibles ──────
     const hasSchoolField = !!document.querySelector('[data-automation-id="formField-school"]');
-    if (!hasSchoolField && (p.ms_school || p.ms_degree)) {
+    if (!hasSchoolField && (p.establishment || p.education_school || p.ms_school || p.education_degree || p.ms_degree)) {
       // Trouver le bouton "Ajouter" de la section Études
       const sections = Array.from(document.querySelectorAll('h3, h4, [data-automation-id*="sectionTitle"]'));
       const etudesH = sections.find(h => /étude|education|formation/i.test(h.textContent || ''));
@@ -580,10 +580,10 @@
     // ── École ─────────────────────────────────────────────────────────────────
     // Le champ school est un combobox de recherche
     const schoolContainer = document.querySelector('[data-automation-id="formField-school"]');
-    if (schoolContainer && p.ms_school) {
+    if (schoolContainer && (p.establishment || p.education_school || p.ms_school)) {
       const alreadySet = !!schoolContainer.querySelector('[data-automation-id="selectedItem"]');
       if (!alreadySet) {
-        await fillCombobox('formField-school', p.ms_school, 'École');
+        await fillCombobox('formField-school', p.establishment || p.education_school || p.ms_school, 'École');
       } else {
         log('  ✓ École: déjà remplie → skip');
       }
@@ -591,29 +591,29 @@
 
     // ── Diplôme : select-button (id=education-N--degree) ─────────────────────
     const degreeContainer = document.querySelector('[data-automation-id="formField-degree"]');
-    if (degreeContainer && p.ms_degree) {
+    if (degreeContainer && (p.education_degree || p.ms_degree)) {
       const degreeBtn = degreeContainer.querySelector('button[id]');
       if (degreeBtn) {
-        await fillSelectButton(degreeBtn, p.ms_degree, 'Diplôme');
+        await fillSelectButton(degreeBtn, p.education_degree || p.ms_degree, 'Diplôme');
       }
     }
 
     // ── Champ d'études : combobox ──────────────────────────────────────────────
     const fosContainer = document.querySelector('[data-automation-id="formField-fieldOfStudy"]');
-    if (fosContainer && p.ms_field_of_study) {
+    if (fosContainer && (p.field_of_study || p.education_field_of_study || p.ms_field_of_study)) {
       const alreadySet = !!fosContainer.querySelector('[data-automation-id="selectedItem"]');
       if (!alreadySet) {
-        await fillCombobox('formField-fieldOfStudy', p.ms_field_of_study, 'Champ d\'études');
+        await fillCombobox('formField-fieldOfStudy', p.field_of_study || p.education_field_of_study || p.ms_field_of_study, 'Champ d\'études');
       } else {
         log('  ✓ Champ d\'études: déjà rempli → skip');
       }
     }
 
     // ── Habiletés / Skills ─────────────────────────────────────────────────────
-    if (p.ms_skills) {
+    if (p.skills || p.ms_skills) {
       const skillsInput = document.querySelector('[data-automation-id="formField-skills"] input:not([type="hidden"])');
       if (skillsInput) {
-        const skills = String(p.ms_skills).split(',').map(s => s.trim()).filter(Boolean);
+        const skills = String(p.skills || p.ms_skills).split(',').map(s => s.trim()).filter(Boolean);
         for (const skill of skills) {
           reactSet(skillsInput, skill);
           await sleep(400);
@@ -627,7 +627,7 @@
           }
           await sleep(300);
         }
-        log(`  ✓ Habiletés: "${p.ms_skills}"`);
+        log(`  ✓ Habiletés: "${p.skills || p.ms_skills}"`);
       }
     }
 
