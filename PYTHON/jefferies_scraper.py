@@ -201,6 +201,7 @@ def fetch_all_listings(session: requests.Session) -> list:
     while True:
         params = {
             "onlyData": "true",
+            "expand": "requisitionList",
             "finder": f"findReqs;siteNumber={SITE_NUMBER},limit={PAGE_SIZE},offset={offset}",
         }
         resp = session.get(API_LISTING, params=params, headers=HEADERS, timeout=30)

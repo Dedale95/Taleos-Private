@@ -45,13 +45,13 @@ WD_HOST      = "https://moelis.wd1.myworkdayjobs.com"
 WD_COMPANY   = "moelis"
 BOARDS       = ["Experienced-Hires", "University-Hires"]
 DB_PATH      = Path(__file__).parent / "moelis_jobs.db"
-PAGE_SIZE    = 100
+PAGE_SIZE    = 20   # Moelis Workday: max 20/page
 REQUEST_PAUSE = 0.4
 COMPANY_NAME = "Moelis & Company"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json,text/html,*/*",
     "Content-Type": "application/json",
 }
 
@@ -184,6 +184,7 @@ def fetch_board_jobs(session: requests.Session, board: str) -> list:
     api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{board}/jobs"
     all_jobs = []
     offset = 0
+    total = None
     while True:
         payload = {"appliedFacets": {}, "limit": PAGE_SIZE, "offset": offset, "searchText": ""}
         resp = session.post(api_url, json=payload, headers=HEADERS, timeout=30)
@@ -191,9 +192,10 @@ def fetch_board_jobs(session: requests.Session, board: str) -> list:
         data = resp.json()
         batch = data.get("jobPostings") or []
         all_jobs.extend(batch)
-        total = data.get("total", 0)
+        if total is None:
+            total = data.get("total", 0)
         logger.info(f"   [{board}] offset={offset} → {len(batch)} offres (total: {total})")
-        if offset + PAGE_SIZE >= total or not batch:
+        if not batch or offset + PAGE_SIZE >= total:
             break
         offset += PAGE_SIZE
         time.sleep(REQUEST_PAUSE)
@@ -202,8 +204,9 @@ def fetch_board_jobs(session: requests.Session, board: str) -> list:
 
 def fetch_detail(session: requests.Session, board: str, external_path: str) -> Optional[dict]:
     try:
-        api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{board}/job{external_path}"
-        resp = session.post(api_url, json={}, headers=HEADERS, timeout=30)
+        # external_path is already like "/job/City/Title_REQxxx" — no need to add "job"
+        api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{board}{external_path}"
+        resp = session.get(api_url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         return data.get("jobPostingInfo") or data

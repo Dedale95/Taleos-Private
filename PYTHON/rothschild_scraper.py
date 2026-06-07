@@ -50,8 +50,8 @@ REQUEST_PAUSE = 0.4
 COMPANY_NAME = "Rothschild & Co"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json,text/html,*/*",
     "Content-Type": "application/json",
 }
 
@@ -210,8 +210,9 @@ def fetch_all_jobs(session: requests.Session) -> list:
 
 def fetch_detail(session: requests.Session, external_path: str) -> Optional[dict]:
     try:
-        api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{BOARD}/job{external_path}"
-        resp = session.post(api_url, json={}, headers=HEADERS, timeout=30)
+        # external_path already starts with "/job/..." — no prefix needed
+        api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{BOARD}{external_path}"
+        resp = session.get(api_url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         return data.get("jobPostingInfo") or data

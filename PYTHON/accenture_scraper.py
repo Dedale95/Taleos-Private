@@ -46,14 +46,14 @@ WD_HOST      = "https://accenture.wd103.myworkdayjobs.com"
 WD_COMPANY   = "accenture"
 BOARD        = "AccentureCareers"
 DB_PATH      = Path(__file__).parent / "accenture_jobs.db"
-PAGE_SIZE    = 100
+PAGE_SIZE    = 20    # Accenture Workday: max 20/page
 REQUEST_PAUSE = 0.3
 DETAIL_CAP   = 500   # max descriptions par run (volume élevé)
 COMPANY_NAME = "Accenture"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json,text/html,*/*",
     "Content-Type": "application/json",
 }
 
@@ -200,6 +200,7 @@ def fetch_all_jobs(session: requests.Session) -> list:
     api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{BOARD}/jobs"
     all_jobs = []
     offset = 0
+    total = None  # Récupéré uniquement à la 1ère page
     while True:
         payload = {"appliedFacets": {}, "limit": PAGE_SIZE, "offset": offset, "searchText": ""}
         resp = session.post(api_url, json=payload, headers=HEADERS, timeout=30)
@@ -207,9 +208,10 @@ def fetch_all_jobs(session: requests.Session) -> list:
         data = resp.json()
         batch = data.get("jobPostings") or []
         all_jobs.extend(batch)
-        total = data.get("total", 0)
+        if total is None:
+            total = data.get("total", 0)
         logger.info(f"   offset={offset} → {len(batch)} offres (total: {total})")
-        if offset + PAGE_SIZE >= total or not batch:
+        if not batch or offset + PAGE_SIZE >= total:
             break
         offset += PAGE_SIZE
         time.sleep(REQUEST_PAUSE)
@@ -218,8 +220,9 @@ def fetch_all_jobs(session: requests.Session) -> list:
 
 def fetch_detail(session: requests.Session, external_path: str) -> Optional[dict]:
     try:
-        api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{BOARD}/job{external_path}"
-        resp = session.post(api_url, json={}, headers=HEADERS, timeout=30)
+        # external_path already starts with "/job/..." — no prefix needed
+        api_url = f"{WD_HOST}/wday/cxs/{WD_COMPANY}/{BOARD}{external_path}"
+        resp = session.get(api_url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         return data.get("jobPostingInfo") or data
