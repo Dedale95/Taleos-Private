@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.2.229",
+    "date": "2026-06-07T12:00:00Z",
+    "text": "Nouveaux scrapers : Stripe (Greenhouse, ~500 offres), Adyen (Greenhouse, ~200), Jefferies (Oracle HCM, 192), Moelis & Co (Workday), Rothschild & Co (Workday), Accenture (Workday). +6 logos SVG."
+  },
+  {
     "version": "1.2.228",
     "date": "2026-06-06T23:15:00Z",
     "text": "Morgan Stanley — fix consentement SMS/WhatsApp → Yes (lu depuis ms_sms_consent). Nouveaux champs profil : ms_sms_consent, ms_previously_employed, ms_source."

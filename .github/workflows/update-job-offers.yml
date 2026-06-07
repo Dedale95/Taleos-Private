@@ -231,6 +231,42 @@ jobs:
             db_file: lazard_jobs.db
             timeout_minutes: 5
             playwright_browser: ""
+          - name: Stripe
+            key: stripe
+            script: stripe_scraper.py
+            db_file: stripe_jobs.db
+            timeout_minutes: 10
+            playwright_browser: ""
+          - name: Adyen
+            key: adyen
+            script: adyen_scraper.py
+            db_file: adyen_jobs.db
+            timeout_minutes: 10
+            playwright_browser: ""
+          - name: Jefferies
+            key: jefferies
+            script: jefferies_scraper.py
+            db_file: jefferies_jobs.db
+            timeout_minutes: 10
+            playwright_browser: ""
+          - name: Moelis
+            key: moelis
+            script: moelis_scraper.py
+            db_file: moelis_jobs.db
+            timeout_minutes: 5
+            playwright_browser: ""
+          - name: Rothschild
+            key: rothschild
+            script: rothschild_scraper.py
+            db_file: rothschild_jobs.db
+            timeout_minutes: 10
+            playwright_browser: ""
+          - name: Accenture
+            key: accenture
+            script: accenture_scraper.py
+            db_file: accenture_jobs.db
+            timeout_minutes: 30
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
