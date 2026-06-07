@@ -219,6 +219,18 @@ jobs:
             db_file: morgan_stanley_jobs.db
             timeout_minutes: 30
             playwright_browser: ""
+          - name: Mazars
+            key: mazars
+            script: mazars_scraper.py
+            db_file: mazars_jobs.db
+            timeout_minutes: 10
+            playwright_browser: ""
+          - name: Lazard
+            key: lazard
+            script: lazard_scraper.py
+            db_file: lazard_jobs.db
+            timeout_minutes: 5
+            playwright_browser: ""
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONUNBUFFERED: 1
