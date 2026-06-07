@@ -590,11 +590,37 @@
     }
 
     // ── Diplôme : select-button (id=education-N--degree) ─────────────────────
+    // Priorité : education_degree (format MS exact) → dérivé de education_level + institution_type
     const degreeContainer = document.querySelector('[data-automation-id="formField-degree"]');
-    if (degreeContainer && (p.education_degree || p.ms_degree)) {
+    if (degreeContainer) {
       const degreeBtn = degreeContainer.querySelector('button[id]');
       if (degreeBtn) {
-        await fillSelectButton(degreeBtn, p.education_degree || p.ms_degree, 'Diplôme');
+        // 1. Valeur directe (format MS exact)
+        let degreeValue = p.education_degree || p.ms_degree || '';
+        // 2. Dérivation depuis education_level + institution_type (champs Taleos existants)
+        if (!degreeValue) {
+          const lvl  = (p.education_level || '').toLowerCase();
+          const type = (p.institution_type || '').toLowerCase();
+          if (lvl.includes('bac + 5') || lvl.includes('m2') || lvl.includes('master')) {
+            // École de commerce/ingénieurs → Professional Degree, université → Master's
+            degreeValue = (type.includes('commerce') || type.includes('ingénieur') || type.includes('spécialis'))
+              ? "Professional Degree"
+              : "Master's Degree";
+          } else if (lvl.includes('bac + 3') || lvl.includes('l3') || lvl.includes('bachelor')) {
+            degreeValue = "Bachelor's Degree";
+          } else if (lvl.includes('doctorat') || lvl.includes('phd')) {
+            degreeValue = "Doctorat";
+          } else if (lvl.includes('bac + 2') || lvl.includes('bts') || lvl.includes('dut')) {
+            degreeValue = "Diploma";
+          } else if (lvl.includes('bac') && !lvl.includes('+')) {
+            degreeValue = "High School or High School Equivalent";
+          } else if (lvl.includes('cours') || lvl.includes('progress')) {
+            degreeValue = "Degree in Progress";
+          }
+        }
+        if (degreeValue) {
+          await fillSelectButton(degreeBtn, degreeValue, 'Diplôme');
+        }
       }
     }
 
