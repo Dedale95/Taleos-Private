@@ -1,5 +1,6 @@
 /**
  * Cloud Functions (2nd gen) — Taleos
+ * Forcer redéploiement 2026-06-09 (instances GCP en mauvais état)
  *
  * Déploiement : GitHub Actions (voir .github/workflows/deploy-firebase-functions.yml)
  *   ou en local : cd functions && npm install && cd .. && firebase deploy --only functions
