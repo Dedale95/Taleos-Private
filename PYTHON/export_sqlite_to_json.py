@@ -70,6 +70,7 @@ JEFFERIES_DB         = PYTHON_DIR / "jefferies_jobs.db"
 MOELIS_DB            = PYTHON_DIR / "moelis_jobs.db"
 ROTHSCHILD_DB        = PYTHON_DIR / "rothschild_jobs.db"
 ACCENTURE_DB         = PYTHON_DIR / "accenture_jobs.db"
+BLOOMBERG_DB         = PYTHON_DIR / "bloomberg_jobs.db"
 
 
 def write_json(path: Path, data, pretty: bool = False):
@@ -1894,6 +1895,7 @@ def main():
             ("moelis",            MOELIS_DB),
             ("rothschild",        ROTHSCHILD_DB),
             ("accenture",         ACCENTURE_DB),
+            ("bloomberg",         BLOOMBERG_DB),
         ]
         print("\n📦 Export par source (fichiers individuels)...")
 
