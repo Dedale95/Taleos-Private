@@ -4197,7 +4197,11 @@ async function fetchProfile(uid, bankId, token) {
   let creds = null;
   // Pour bank_of_america_workday, les identifiants peuvent être stockés sous bank_of_america
   // (l'ancien bankId utilisé par la page Connexions) — on essaie les deux.
-  const bankIdAliases = normalizedBankId === 'bank_of_america_workday'
+  
+  // morgan_stanley_workday : identifiants stockés sous "morgan_stanley" dans Connexions
+  const bankIdAliases = normalizedBankId === 'morgan_stanley_workday'
+    ? ['morgan_stanley_workday', 'morgan_stanley']
+    : normalizedBankId === 'bank_of_america_workday'
     ? ['bank_of_america_workday', 'bank_of_america']
     : [bankId];
   for (const alias of bankIdAliases) {
