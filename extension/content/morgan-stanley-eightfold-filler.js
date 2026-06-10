@@ -148,56 +148,73 @@
       return;
     }
 
-    // ── Le bouton est un <button> sans href — son handler JS appelle window.open() ──
-    // On patch window.open AVANT le clic pour intercepter l'URL et naviguer dans l'onglet courant.
-    log('ℹ️ Bouton sans href — interception window.open avant clic');
+    // ── Le bouton est un <button> React sans href — son handler appelle window.open() ──
+    // Les content scripts s'exécutent dans un monde isolé : il faut injecter dans le
+    // main world via une <script> tag pour patcher le vrai window.open de la page.
+    log('ℹ️ Bouton sans href — injection main-world pour intercepter window.open');
     setBanner('🖱️ Ouverture de la candidature...', '#002D62');
 
-    await new Promise((resolve) => {
-      const _origOpen = window.open;
-      let _resolved = false;
+    const workdayUrlFromMainWorld = await new Promise((resolve) => {
+      const EVENT_NAME = '__taleos_ms_open_url__';
+      let _done = false;
 
-      window.open = function (url, target, features) {
-        if (_resolved) return _origOpen.apply(this, arguments);
-        _resolved = true;
-        window.open = _origOpen; // restaurer immédiatement
+      // Écouter le CustomEvent émis par le script injecté dans le main world
+      window.addEventListener(EVENT_NAME, function handler(e) {
+        window.removeEventListener(EVENT_NAME, handler);
+        if (!_done) { _done = true; resolve(e.detail || ''); }
+      });
 
-        const rawUrl = String(url || '');
-        log(`🔗 window.open intercepté : ${rawUrl}`);
+      // Injecter un <script> dans le main world qui patche window.open
+      const script = document.createElement('script');
+      script.textContent = `
+(function() {
+  var _orig = window.open;
+  var _done = false;
+  window.open = function(url, target, features) {
+    if (!_done) {
+      _done = true;
+      window.open = _orig;
+      window.dispatchEvent(new CustomEvent('${EVENT_NAME}', { detail: url || '' }));
+      return null; // empêcher l'ouverture du nouvel onglet
+    }
+    return _orig.apply(this, arguments);
+  };
+})();
+      `;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
 
-        // Extraire l'URL Workday depuis le paramètre n= du lien de tracking Eightfold
-        let targetUrl = rawUrl;
-        try {
-          const u = new URL(rawUrl, location.origin);
-          const n = u.searchParams.get('n');
-          if (n) {
-            targetUrl = decodeURIComponent(n);
-            log(`🔗 URL Workday extraite du param n= : ${targetUrl}`);
-          }
-        } catch (_) {}
-
-        setBanner('⏳ Redirection vers Workday — chargement du formulaire...', '#002D62');
-        window.location.href = targetUrl;
-        resolve();
-        return null; // ne pas ouvrir de nouvel onglet
-      };
-
-      // Déclencher le clic
+      // Déclencher le clic après injection
       applyBtn.scrollIntoView({ block: 'center' });
       setTimeout(() => {
         applyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         applyBtn.click();
-        // Si window.open n'est pas appelé dans les 5s, restaurer et résoudre quand même
-        setTimeout(() => {
-          if (!_resolved) {
-            _resolved = true;
-            window.open = _origOpen;
-            log('⚠️ window.open non appelé après clic — navigation inchangée');
-            resolve();
-          }
-        }, 5000);
-      }, 200);
+      }, 100);
+
+      // Timeout 8s
+      setTimeout(() => {
+        if (!_done) { _done = true; resolve(''); }
+      }, 8000);
     });
+
+    if (workdayUrlFromMainWorld) {
+      log(`🔗 window.open intercepté : ${workdayUrlFromMainWorld}`);
+      // Extraire l'URL Workday depuis le param n= du lien de tracking Eightfold
+      let targetUrl = workdayUrlFromMainWorld;
+      try {
+        const u = new URL(workdayUrlFromMainWorld, location.origin);
+        const n = u.searchParams.get('n');
+        if (n) {
+          targetUrl = decodeURIComponent(n);
+          log(`🔗 URL Workday extraite du param n= : ${targetUrl}`);
+        }
+      } catch (_) {}
+      setBanner('⏳ Redirection vers Workday — chargement du formulaire...', '#002D62');
+      window.location.href = targetUrl;
+    } else {
+      log('⚠️ window.open non intercepté — navigation inchangée');
+      setBanner('📝 Cliquez manuellement sur "Postuler maintenant"', '#c47900');
+    }
   }
 
   if (document.readyState === 'loading') {
