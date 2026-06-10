@@ -4187,7 +4187,7 @@ async function fetchProfile(uid, bankId, token) {
   const base = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
   const headers = { Authorization: `Bearer ${token}` };
   const normalizedBankId = String(bankId || '').toLowerCase().trim();
-  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs', 'hsbc'].includes(normalizedBankId);
+  const requiresCareerCredentials = !['credit_mutuel', 'bpifrance', 'jp_morgan', 'goldman_sachs', 'hsbc', 'morgan_stanley_workday', 'nomura', 'bank_of_america_workday'].includes(normalizedBankId);
 
   const profileRes = await fetch(`${base}/profiles/${uid}`, { headers });
   if (!profileRes.ok) throw new Error('Profil introuvable');
@@ -4880,6 +4880,7 @@ function normalizeSite(site, offerUrl) {
   if (url.includes('societegenerale') || url.includes('socgen.taleo.net')) return 'societe_generale';
   if (url.includes('recrutement.bpce.fr') || url.includes('oraclecloud.com') || url.includes('recruitmentplatform.com')) return 'bpce';
   if (url.includes('myworkdayjobs.com') || url.includes('deloitte.com')) return 'deloitte';
+  if (url.includes('morganstanley.eightfold.ai') || (url.includes('ms.wd5.myworkdayjobs.com'))) return 'morgan_stanley_workday';
   if (raw.includes('hsbc') || url.includes('portal.careers.hsbc.com') || url.includes('apply.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
   if (raw.includes('nomura') || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
   return 'unknown';

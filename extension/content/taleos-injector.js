@@ -260,6 +260,7 @@
     if (lowerUrl.includes('portal.careers.hsbc.com') || lowerUrl.includes('apply.careers.hsbc.com') || (lowerUrl.includes('career2.successfactors.eu') && lowerUrl.includes('hsbcholdin'))) return 'hsbc';
     if (lowerUrl.includes('career4.successfactors.com') && lowerUrl.includes('nomurahold')) return 'nomura';
     if (lowerUrl.includes('ghr.wd1.myworkdayjobs.com') && (lowerUrl.includes('lateral-emea') || lowerUrl.includes('lateral-us'))) return 'bank_of_america_workday';
+    if (lowerUrl.includes('morganstanley.eightfold.ai') || lowerUrl.includes('ms.wd5.myworkdayjobs.com')) return 'morgan_stanley_workday';
     return null;
   }
 
@@ -293,6 +294,7 @@
     if (normalized.includes('hsbc')) return 'hsbc';
     if (normalized.includes('nomura') || normalized.includes('instinet')) return 'nomura';
     if (normalized.includes('bank of america') || normalized.includes('bofa')) return 'bank_of_america_workday';
+    if (normalized.includes('morgan stanley')) return 'morgan_stanley_workday';
     return null;
   }
 
