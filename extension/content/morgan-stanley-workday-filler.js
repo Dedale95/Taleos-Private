@@ -265,6 +265,10 @@
     if (name.includes('questions liées')    || name.includes('application quest'))  return 'application_questions';
     if (name.includes('divulgations')       || name.includes('voluntary'))          return 'voluntary_disclosures';
     if (name.includes('réviser')            || name.includes('review'))             return 'review';
+    // Étape 1 login : "Créer un compte/Ouvrir une session" ou présence d'un champ password
+    if (name.includes('créer un compte') || name.includes('ouvrir une session') ||
+        name.includes('create account')  || name.includes('sign in') ||
+        !!document.querySelector('input[type="password"]')) return 'login';
     return 'unknown';
   }
 
@@ -291,14 +295,15 @@
 
   // ─── Connexion ───────────────────────────────────────────────────────────────
   function isLoggedIn() {
-    // Connecté si : pas de formulaire login, pas de lien "Ouvrir une session"
-    const hasLoginForm = !!document.querySelector('input[type="password"]');
-    if (!hasLoginForm) return true;
-    // La page "Créer un compte/Ouvrir une session" est la page de login
-    const hasLoginBtn = Array.from(document.querySelectorAll('button')).some(b =>
-      b.offsetWidth > 0 && /ouvrir une session/i.test(b.textContent || '')
+    // Pas connecté si un champ password est présent (page login ou création de compte)
+    if (document.querySelector('input[type="password"]')) return false;
+    // Pas connecté si on est sur la page "Start Your Application" (pas encore Apply Manually)
+    const isStartPage = Array.from(document.querySelectorAll('button,a')).some(el =>
+      el.offsetWidth > 0 && /apply manually|postuler manuellement/i.test(el.innerText || '')
     );
-    return !hasLoginBtn;
+    if (isStartPage) return false;
+    // Connecté si formulaire candidature visible (barre de progression ou champs)
+    return true;
   }
 
   async function handleSignIn(authEmail, authPassword) {
@@ -942,6 +947,13 @@
         setBanner('✅ Candidature prête — Vérifiez puis cliquez "Soumettre" manuellement', '#1b5e20');
         log('✅ Étape Réviser atteinte — soumission manuelle uniquement');
         return;
+
+      } else if (step === 'login') {
+        // Arrivé sur "Créer un compte/Ouvrir une session" après "Apply Manually"
+        log('🔐 Étape login détectée après Apply Manually — connexion');
+        const loginOk = await handleSignIn(authEmail, authPassword);
+        if (!loginOk) return;
+        await sleep(2000);
 
       } else {
         log(`⚠️ Étape inconnue "${step}" — attente et retry`);
