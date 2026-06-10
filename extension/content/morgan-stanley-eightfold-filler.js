@@ -148,38 +148,56 @@
       return;
     }
 
-    // ── Fallback : clic normal et observation de la navigation ───────────────
-    log('ℹ️ URL Workday non extraite — clic normal sur le bouton');
+    // ── Le bouton est un <button> sans href — son handler JS appelle window.open() ──
+    // On patch window.open AVANT le clic pour intercepter l'URL et naviguer dans l'onglet courant.
+    log('ℹ️ Bouton sans href — interception window.open avant clic');
     setBanner('🖱️ Ouverture de la candidature...', '#002D62');
 
-    // Bloquer l'ouverture de nouvel onglet (target="_blank") en interceptant le clic
-    const _blockNewTab = (e) => {
-      if (e.target.closest('a[target="_blank"]') || applyBtn.target === '_blank') {
-        e.preventDefault();
-        e.stopPropagation();
-        const href = e.target.closest('a')?.href || applyBtn.href || '';
-        const targetUrl = extractTargetUrl(e.target.closest('a') || applyBtn) || href;
-        if (targetUrl) {
-          log(`🔗 Nouvel onglet intercepté → navigation dans l'onglet courant : ${targetUrl}`);
-          window.location.href = targetUrl;
-        }
-      }
-    };
-    document.addEventListener('click', _blockNewTab, { capture: true, once: true });
+    await new Promise((resolve) => {
+      const _origOpen = window.open;
+      let _resolved = false;
 
-    applyBtn.scrollIntoView({ block: 'center' });
-    await sleep(150);
-    applyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-    applyBtn.click();
+      window.open = function (url, target, features) {
+        if (_resolved) return _origOpen.apply(this, arguments);
+        _resolved = true;
+        window.open = _origOpen; // restaurer immédiatement
 
-    await sleep(2000);
+        const rawUrl = String(url || '');
+        log(`🔗 window.open intercepté : ${rawUrl}`);
 
-    if (location.href.includes('myworkdayjobs.com')) {
-      setBanner('⏳ Workday chargé — lancement du formulaire...', '#002D62');
-    } else if (location.href === location.href) {
-      // URL inchangée
-      setBanner('📝 Suivez les instructions à l\'écran — Taleos a préparé vos données', '#4a5568');
-    }
+        // Extraire l'URL Workday depuis le paramètre n= du lien de tracking Eightfold
+        let targetUrl = rawUrl;
+        try {
+          const u = new URL(rawUrl, location.origin);
+          const n = u.searchParams.get('n');
+          if (n) {
+            targetUrl = decodeURIComponent(n);
+            log(`🔗 URL Workday extraite du param n= : ${targetUrl}`);
+          }
+        } catch (_) {}
+
+        setBanner('⏳ Redirection vers Workday — chargement du formulaire...', '#002D62');
+        window.location.href = targetUrl;
+        resolve();
+        return null; // ne pas ouvrir de nouvel onglet
+      };
+
+      // Déclencher le clic
+      applyBtn.scrollIntoView({ block: 'center' });
+      setTimeout(() => {
+        applyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        applyBtn.click();
+        // Si window.open n'est pas appelé dans les 5s, restaurer et résoudre quand même
+        setTimeout(() => {
+          if (!_resolved) {
+            _resolved = true;
+            window.open = _origOpen;
+            log('⚠️ window.open non appelé après clic — navigation inchangée');
+            resolve();
+          }
+        }, 5000);
+      }, 200);
+    });
   }
 
   if (document.readyState === 'loading') {
