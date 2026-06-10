@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.237",
-  "version_name": "1.2.237",
+  "version": "1.2.238",
+  "version_name": "1.2.238",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -217,6 +217,16 @@
         "content/bank-of-america-workday-filler.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://morganstanley.eightfold.ai/*"
+      ],
+      "js": [
+        "content/morgan-stanley-eightfold-main-world.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
     },
     {
       "matches": [

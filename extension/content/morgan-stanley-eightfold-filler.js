@@ -149,51 +149,38 @@
     }
 
     // ── Le bouton est un <button> React sans href — son handler appelle window.open() ──
-    // Les content scripts s'exécutent dans un monde isolé : il faut injecter dans le
-    // main world via une <script> tag pour patcher le vrai window.open de la page.
-    log('ℹ️ Bouton sans href — injection main-world pour intercepter window.open');
+    // Le script morgan-stanley-eightfold-main-world.js (world: MAIN) patche window.open.
+    // On pose le flag data-taleos-ms-intercept="1" sur <html> pour l'activer,
+    // puis on clique. Le main-world script émet un CustomEvent avec l'URL Workday.
+    log('ℹ️ Bouton sans href — activation flag main-world et clic');
     setBanner('🖱️ Ouverture de la candidature...', '#002D62');
 
     const workdayUrlFromMainWorld = await new Promise((resolve) => {
       const EVENT_NAME = '__taleos_ms_open_url__';
       let _done = false;
 
-      // Écouter le CustomEvent émis par le script injecté dans le main world
       window.addEventListener(EVENT_NAME, function handler(e) {
         window.removeEventListener(EVENT_NAME, handler);
         if (!_done) { _done = true; resolve(e.detail || ''); }
       });
 
-      // Injecter un <script> dans le main world qui patche window.open
-      const script = document.createElement('script');
-      script.textContent = `
-(function() {
-  var _orig = window.open;
-  var _done = false;
-  window.open = function(url, target, features) {
-    if (!_done) {
-      _done = true;
-      window.open = _orig;
-      window.dispatchEvent(new CustomEvent('${EVENT_NAME}', { detail: url || '' }));
-      return null; // empêcher l'ouverture du nouvel onglet
-    }
-    return _orig.apply(this, arguments);
-  };
-})();
-      `;
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
+      // Activer l'intercepteur main-world
+      document.documentElement.setAttribute('data-taleos-ms-intercept', '1');
 
-      // Déclencher le clic après injection
+      // Déclencher le clic
       applyBtn.scrollIntoView({ block: 'center' });
       setTimeout(() => {
         applyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         applyBtn.click();
       }, 100);
 
-      // Timeout 8s
+      // Timeout 8s — retirer le flag si pas de réponse
       setTimeout(() => {
-        if (!_done) { _done = true; resolve(''); }
+        if (!_done) {
+          _done = true;
+          document.documentElement.removeAttribute('data-taleos-ms-intercept');
+          resolve('');
+        }
       }, 8000);
     });
 
