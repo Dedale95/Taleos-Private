@@ -1,14 +1,12 @@
 /**
- * Taleos — Morgan Stanley Eightfold Filler  v1
+ * Taleos — Morgan Stanley Eightfold Filler  v2
  * Portail : morganstanley.eightfold.ai/careers/job/*
  *
- * Ce script gère la phase 1 du flux Morgan Stanley :
- *   1. Page offre Eightfold → clic automatique sur le bouton Apply
- *   2. Si Apply redirige vers ms.wd5.myworkdayjobs.com (même onglet ou nouvel onglet),
- *      le background.js injecte morgan-stanley-workday-filler.js automatiquement.
- *   3. Si Apply ouvre un formulaire inline Eightfold, une bannière guide l'utilisateur.
- *
- * Données en attente : chrome.storage.local.taleos_pending_morgan_stanley_workday
+ * Flux :
+ *   1. Page offre Eightfold → trouve le bouton "Postuler maintenant"
+ *   2. Extrait l'URL Workday depuis le href du lien (param ?n=) ou depuis l'attribut href direct
+ *   3. Navigue l'onglet courant vers Workday (évite l'ouverture d'un nouvel onglet)
+ *   4. Le background.js injecte morgan-stanley-workday-filler.js dès que la page Workday est chargée
  */
 (function () {
   'use strict';
@@ -60,16 +58,38 @@
     return null;
   }
 
-  async function clickEl(el) {
-    if (!el) return;
-    el.scrollIntoView({ block: 'center' });
-    await sleep(150);
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-    el.click();
+  /**
+   * Extrait l'URL cible depuis un élément bouton/lien Eightfold.
+   * Eightfold utilise un lien de tracking : /r?...&n=<url_encodée>
+   * On extrait le paramètre `n` pour obtenir l'URL Workday directe.
+   */
+  function extractTargetUrl(el) {
+    const href = el?.href || el?.getAttribute?.('href') || '';
+    if (!href) {
+      // Chercher un <a> parent ou enfant
+      const anchor = el.closest('a') || el.querySelector('a');
+      if (anchor) return extractTargetUrl(anchor);
+      return null;
+    }
+    try {
+      const url = new URL(href, location.origin);
+      // Pattern Eightfold : /r?...&n=<encoded_workday_url>
+      const n = url.searchParams.get('n');
+      if (n) {
+        const decoded = decodeURIComponent(n);
+        log(`🔗 URL cible extraite du paramètre n= : ${decoded}`);
+        return decoded;
+      }
+      // Href direct vers Workday
+      if (href.includes('myworkdayjobs.com') || href.includes('wd5.myworkdayjobs')) {
+        return href;
+      }
+    } catch (_) {}
+    return null;
   }
 
   async function main() {
-    log('🚀 Eightfold Filler v1 démarré — ' + location.href);
+    log('🚀 Eightfold Filler v2 démarré — ' + location.href);
 
     // Vérifier qu'il y a une candidature en attente
     const local = await chrome.storage.local.get([PENDING_KEY]).catch(() => ({}));
@@ -79,33 +99,29 @@
       return;
     }
 
-    setBanner('⏳ Taleos — Morgan Stanley : recherche du bouton "Apply"...');
+    setBanner('⏳ Taleos — Morgan Stanley : recherche du bouton "Postuler maintenant"...');
     log('📋 Candidature en attente trouvée');
 
-    // Attendre que la page soit complètement chargée
     await sleep(2000);
 
-    // ── Trouver le bouton Apply ──────────────────────────────────────────────
-    // Eightfold utilise typiquement [data-test-id="apply-button"] ou un bouton
-    // avec le texte Apply / Postuler / Apply Now
+    // ── Trouver le bouton / lien Apply ──────────────────────────────────────
     const _applyTextRe = /^(apply|postuler|apply now|postuler maintenant|candidater|soumettre ma candidature|appliquer|je postule)$/i;
     const _findApplyBtn = () => {
       // 1. Sélecteurs data-test-id (Eightfold standard)
       const byTestId = document.querySelector('[data-test-id="apply-button"], [data-test-id="job-apply-button"]');
       if (byTestId && byTestId.offsetWidth > 0) return byTestId;
-      // 2. Bouton dont le texte direct ou celui d'un span enfant correspond
-      for (const el of document.querySelectorAll('button, a[role="button"]')) {
+      // 2. Liens <a> dont le texte ou span enfant correspond (le bouton est souvent un <a>)
+      for (const el of document.querySelectorAll('a, button, a[role="button"]')) {
         if (!el.offsetWidth) continue;
         const txt = (el.textContent || '').trim();
         if (_applyTextRe.test(txt)) return el;
-        // Chercher via span enfant (ex: <button><span>Postuler maintenant</span></button>)
         const span = el.querySelector('span');
         if (span && _applyTextRe.test((span.textContent || '').trim())) return el;
       }
-      // 3. Fallback : span portant directement le texte → remonter au bouton parent
+      // 3. Fallback : span → remonter au lien parent
       for (const span of document.querySelectorAll('span')) {
         if (_applyTextRe.test((span.textContent || '').trim())) {
-          const btn = span.closest('button, a[role="button"]');
+          const btn = span.closest('a, button');
           if (btn && btn.offsetWidth > 0) return btn;
         }
       }
@@ -114,57 +130,54 @@
     const applyBtn = await waitFor(_findApplyBtn, 15000);
 
     if (!applyBtn) {
-      log('⚠️ Bouton Apply introuvable — affichage bannière manuelle');
-      setBanner('⏸️ Cliquez sur "Apply" pour postuler — Taleos prendra le relai automatiquement', '#c47900');
-      // Attendre que l'utilisateur navigue vers Workday manuellement
-      // Le background listener _msInitListener s'en chargera
+      log('⚠️ Bouton Apply introuvable — bannière manuelle');
+      setBanner('⏸️ Cliquez sur "Postuler maintenant" — Taleos prendra le relai automatiquement', '#c47900');
       return;
     }
 
-    log(`✅ Bouton Apply trouvé : "${(applyBtn.textContent || '').trim()}"`);
-    setBanner('🖱️ Clic sur Apply en cours...', '#002D62');
+    log(`✅ Bouton trouvé : "${(applyBtn.textContent || '').trim()}" | tag=${applyBtn.tagName} | href=${applyBtn.href || '(none)'}`);
 
-    // Observer la navigation avant de cliquer
-    // Eightfold peut naviguer dans le même onglet ou ouvrir un nouvel onglet
-    const beforeUrl = location.href;
+    // ── Extraire l'URL Workday cible ─────────────────────────────────────────
+    const workdayUrl = extractTargetUrl(applyBtn);
 
-    await clickEl(applyBtn);
+    if (workdayUrl && workdayUrl.includes('myworkdayjobs.com')) {
+      log(`🚀 Navigation directe vers Workday : ${workdayUrl}`);
+      setBanner('⏳ Redirection vers Workday — chargement du formulaire...', '#002D62');
+      // Naviguer dans le même onglet — le background listener injectera le Workday filler
+      window.location.href = workdayUrl;
+      return;
+    }
+
+    // ── Fallback : clic normal et observation de la navigation ───────────────
+    log('ℹ️ URL Workday non extraite — clic normal sur le bouton');
+    setBanner('🖱️ Ouverture de la candidature...', '#002D62');
+
+    // Bloquer l'ouverture de nouvel onglet (target="_blank") en interceptant le clic
+    const _blockNewTab = (e) => {
+      if (e.target.closest('a[target="_blank"]') || applyBtn.target === '_blank') {
+        e.preventDefault();
+        e.stopPropagation();
+        const href = e.target.closest('a')?.href || applyBtn.href || '';
+        const targetUrl = extractTargetUrl(e.target.closest('a') || applyBtn) || href;
+        if (targetUrl) {
+          log(`🔗 Nouvel onglet intercepté → navigation dans l'onglet courant : ${targetUrl}`);
+          window.location.href = targetUrl;
+        }
+      }
+    };
+    document.addEventListener('click', _blockNewTab, { capture: true, once: true });
+
+    applyBtn.scrollIntoView({ block: 'center' });
+    await sleep(150);
+    applyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    applyBtn.click();
+
     await sleep(2000);
 
-    const afterUrl = location.href;
-
-    if (afterUrl !== beforeUrl) {
-      log(`✅ Navigation détectée : ${afterUrl}`);
-      if (afterUrl.includes('ms.wd5.myworkdayjobs.com')) {
-        setBanner('⏳ Workday détecté — chargement du formulaire...', '#002D62');
-        // Le background listener va injecter le Workday filler dès que la page est chargée
-      } else if (afterUrl.includes('morganstanley.eightfold.ai')) {
-        // Même domaine — formulaire inline Eightfold
-        setBanner('📝 Formulaire Eightfold détecté — remplissage à venir...', '#002D62');
-        log('ℹ️ Application inline Eightfold — pas de redirection Workday');
-        // Pour l'instant, on guide l'utilisateur manuellement
-        await sleep(3000);
-        setBanner('📝 Remplissez le formulaire — Taleos ne supporte pas encore l\'application inline Eightfold MS', '#c47900');
-      }
-    } else {
-      // La page n'a pas changé — peut-être un modal ou une popup
-      log('ℹ️ URL inchangée après clic Apply — vérification modal...');
-      await sleep(1000);
-
-      // Chercher un bouton "Continue" ou modal d'application
-      const continueBtn = document.querySelector('[data-test-id="continue-button"]') ||
-        document.querySelector('[data-test-id="submit-button"]') ||
-        Array.from(document.querySelectorAll('button')).find(el =>
-          el.offsetWidth > 0 && /^(continue|continuer|next|suivant)$/i.test((el.textContent || '').trim())
-        );
-
-      if (continueBtn) {
-        log(`🖱️ Bouton "Continue" trouvé — clic`);
-        setBanner('🖱️ Ouverture du formulaire de candidature...', '#002D62');
-        await clickEl(continueBtn);
-        await sleep(2000);
-      }
-
+    if (location.href.includes('myworkdayjobs.com')) {
+      setBanner('⏳ Workday chargé — lancement du formulaire...', '#002D62');
+    } else if (location.href === location.href) {
+      // URL inchangée
       setBanner('📝 Suivez les instructions à l\'écran — Taleos a préparé vos données', '#4a5568');
     }
   }
