@@ -88,16 +88,30 @@
     // ── Trouver le bouton Apply ──────────────────────────────────────────────
     // Eightfold utilise typiquement [data-test-id="apply-button"] ou un bouton
     // avec le texte Apply / Postuler / Apply Now
-    const applyBtn = await waitFor(() =>
-      document.querySelector('[data-test-id="apply-button"]') ||
-      document.querySelector('[data-test-id="job-apply-button"]') ||
-      document.querySelector('button[class*="apply"i]') ||
-      Array.from(document.querySelectorAll('button, a[role="button"]')).find(el =>
-        el.offsetWidth > 0 &&
-        /^(apply|postuler|apply now|candidater|soumettre ma candidature)$/i.test((el.textContent || '').trim())
-      ),
-      15000
-    );
+    const _applyTextRe = /^(apply|postuler|apply now|postuler maintenant|candidater|soumettre ma candidature|appliquer|je postule)$/i;
+    const _findApplyBtn = () => {
+      // 1. Sélecteurs data-test-id (Eightfold standard)
+      const byTestId = document.querySelector('[data-test-id="apply-button"], [data-test-id="job-apply-button"]');
+      if (byTestId && byTestId.offsetWidth > 0) return byTestId;
+      // 2. Bouton dont le texte direct ou celui d'un span enfant correspond
+      for (const el of document.querySelectorAll('button, a[role="button"]')) {
+        if (!el.offsetWidth) continue;
+        const txt = (el.textContent || '').trim();
+        if (_applyTextRe.test(txt)) return el;
+        // Chercher via span enfant (ex: <button><span>Postuler maintenant</span></button>)
+        const span = el.querySelector('span');
+        if (span && _applyTextRe.test((span.textContent || '').trim())) return el;
+      }
+      // 3. Fallback : span portant directement le texte → remonter au bouton parent
+      for (const span of document.querySelectorAll('span')) {
+        if (_applyTextRe.test((span.textContent || '').trim())) {
+          const btn = span.closest('button, a[role="button"]');
+          if (btn && btn.offsetWidth > 0) return btn;
+        }
+      }
+      return null;
+    };
+    const applyBtn = await waitFor(_findApplyBtn, 15000);
 
     if (!applyBtn) {
       log('⚠️ Bouton Apply introuvable — affichage bannière manuelle');
