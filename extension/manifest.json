@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.231",
+  "version": "1.2.232",
   "version_name": "1.2.231-ms-filler-v3-final",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
@@ -42,6 +42,7 @@
     "https://career2.successfactors.eu/*",
     "https://portal.careers.hsbc.com/*",
     "https://apply.careers.hsbc.com/*",
+    "https://morganstanley.eightfold.ai/*",
     "https://www.labanquepostale.com/*",
     "https://*.labanquepostale.com/*",
     "https://careers.axa.com/*",
@@ -214,6 +215,16 @@
       "js": [
         "scripts/taleos-automation-banner.js",
         "content/bank-of-america-workday-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://morganstanley.eightfold.ai/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/morgan-stanley-eightfold-filler.js"
       ],
       "run_at": "document_idle"
     },

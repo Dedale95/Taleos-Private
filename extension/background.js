@@ -2847,7 +2847,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'hsbc' || url.includes('portal.careers.hsbc.com') || (url.includes('career2.successfactors.eu') && url.includes('hsbcholdin'))) return 'hsbc';
   if (bid === 'nomura' || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
   if (bid === 'bank_of_america_workday' || url.includes('ghr.wd1.myworkdayjobs.com')) return 'bank_of_america_workday';
-  if (bid === 'morgan_stanley_workday'  || url.includes('ms.wd5.myworkdayjobs.com'))  return 'morgan_stanley_workday';
+  if (bid === 'morgan_stanley_workday'  || url.includes('ms.wd5.myworkdayjobs.com') || url.includes('morganstanley.eightfold.ai'))  return 'morgan_stanley_workday';
   return 'other';
 }
 
@@ -3763,30 +3763,79 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     }
     const _msTabId    = msTab.id;
     const _msDeadline = Date.now() + 10 * 60 * 1000;
+
+    // Injecter le bon filler selon l'URL (Eightfold ou Workday direct)
+    const _msInjectFiller = async (tabId, tabUrl) => {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        if (tabUrl.includes('morganstanley.eightfold.ai')) {
+          // Phase 1 : page Eightfold → cliquer Apply automatiquement
+          const guardEf = await chrome.scripting.executeScript({
+            target: { tabId }, func: () => globalThis.__TALEOS_MS_EF_RUNNING__
+          });
+          if (guardEf?.[0]?.result === true) {
+            console.log(`[Taleos MS] Guard Eightfold actif — déjà en cours`); return;
+          }
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/taleos-automation-banner.js'] });
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['content/morgan-stanley-eightfold-filler.js'] });
+          console.log(`[Taleos MS] Injection Eightfold OK (tabId=${tabId})`);
+        } else {
+          // Phase 2 : page Workday → filler complet
+          const guardWd = await chrome.scripting.executeScript({
+            target: { tabId }, func: () => globalThis.__TALEOS_MS_FILLER_RUNNING__
+          });
+          if (guardWd?.[0]?.result === true) {
+            console.log(`[Taleos MS] Guard Workday actif — filler déjà en cours`); return;
+          }
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['scripts/taleos-automation-banner.js'] });
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['content/morgan-stanley-workday-filler.js'] });
+          console.log(`[Taleos MS] Injection Workday OK (tabId=${tabId})`);
+        }
+      } catch (e) {
+        console.error('[Taleos MS] Injection échouée:', e);
+      }
+    };
+
+    // Listener sur l'onglet principal (navigation dans le même onglet : Eightfold → Workday)
     const _msInitListener = async (tid, info, updatedTab) => {
       if (tid !== _msTabId || info.status !== 'complete') return;
       if (Date.now() > _msDeadline) { chrome.tabs.onUpdated.removeListener(_msInitListener); return; }
       const tabUrl = (updatedTab?.url || '').toLowerCase();
-      if (!tabUrl.includes('ms.wd5.myworkdayjobs.com')) return;
-      chrome.tabs.onUpdated.removeListener(_msInitListener);
-      await new Promise(r => setTimeout(r, 1500));
-      try {
-        const guardCheck = await chrome.scripting.executeScript({
-          target: { tabId: _msTabId },
-          func: () => globalThis.__TALEOS_MS_FILLER_RUNNING__
-        });
-        if (guardCheck?.[0]?.result === true) {
-          console.log(`[Taleos MS] Guard actif — filler déjà en cours`);
-          return;
-        }
-        await chrome.scripting.executeScript({ target: { tabId: _msTabId }, files: ['scripts/taleos-automation-banner.js'] });
-        await chrome.scripting.executeScript({ target: { tabId: _msTabId }, files: ['content/morgan-stanley-workday-filler.js'] });
-        console.log(`[Taleos MS] Injection initiale OK (tabId=${_msTabId})`);
-      } catch (e) {
-        console.error('[Taleos MS] Injection initiale échouée:', e);
-      }
+      const isEightfold = tabUrl.includes('morganstanley.eightfold.ai');
+      const isWorkday   = tabUrl.includes('ms.wd5.myworkdayjobs.com');
+      if (!isEightfold && !isWorkday) return;
+      if (isWorkday) chrome.tabs.onUpdated.removeListener(_msInitListener); // Workday = étape finale
+      await _msInjectFiller(_msTabId, tabUrl);
     };
     chrome.tabs.onUpdated.addListener(_msInitListener);
+
+    // Listener pour le cas où Apply ouvre un NOUVEL onglet Workday (depuis Eightfold)
+    let _msNewTabHandled = false;
+    const _msNewTabListener = (newTab) => {
+      if (_msNewTabHandled) return;
+      const newUrl = (newTab.url || newTab.pendingUrl || '').toLowerCase();
+      if (!newUrl.includes('ms.wd5.myworkdayjobs.com')) return;
+      _msNewTabHandled = true;
+      chrome.tabs.onCreated.removeListener(_msNewTabListener);
+      console.log(`[Taleos MS] Nouvel onglet Workday détecté #${newTab.id}`);
+      // Stocker le nouveau tabId comme onglet MS actif
+      chrome.storage.local.set({ taleos_morgan_stanley_workday_tab_id: newTab.id }).catch(() => {});
+      const _msNewTabId = newTab.id;
+      const _msNewListener = async (tid, info, updatedTab2) => {
+        if (tid !== _msNewTabId || info.status !== 'complete') return;
+        chrome.tabs.onUpdated.removeListener(_msNewListener);
+        chrome.tabs.onUpdated.removeListener(_msInitListener);
+        const url2 = (updatedTab2?.url || '').toLowerCase();
+        if (url2.includes('ms.wd5.myworkdayjobs.com')) {
+          await _msInjectFiller(_msNewTabId, url2);
+        }
+      };
+      chrome.tabs.onUpdated.addListener(_msNewListener);
+    };
+    chrome.tabs.onCreated.addListener(_msNewTabListener);
+    // Nettoyage du listener new-tab après deadline
+    setTimeout(() => chrome.tabs.onCreated.removeListener(_msNewTabListener), 10 * 60 * 1000);
+
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
