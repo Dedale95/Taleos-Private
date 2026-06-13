@@ -56,6 +56,9 @@
  * Champs Firebase utilisés :
  *   first_name, last_name, address, city, postal_code, phone_number,
  *   linkedin_url, cv_storage_path, cv_filename, gender,
+ *   job_title            (ex: "Associate") — intitulé du poste actuel
+ *   current_employer     (ex: "NatWest Markets")
+ *   current_role_start_date (ex: "2022-08-08") — format YYYY-MM ou YYYY-MM-DD
  *   ms_source            (défaut: "Site de carrière de Morgan Stanley")
  *   ms_previously_employed (défaut: "No")
  *   ms_sms_consent       (défaut: "Yes")
@@ -550,10 +553,139 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // ÉTAPE 2 — Mon expérience
   // ═══════════════════════════════════════════════════════════════════════════
+  // ─── Remplir l'expérience professionnelle ────────────────────────────────────
+  // Champs : job_title, current_employer, current_role_start_date
+  // Workday IDs : workExperience-N--jobTitle, workExperience-N--company,
+  //               workExperience-N--location, workExperience-N--startDate--month
+  async function fillWorkExperience(p) {
+    const jobTitle  = p.job_title || p.jobTitle || '';
+    const company   = p.current_employer || p.employer || p.company || '';
+    const startDate = p.current_role_start_date || p.start_date || '';
+
+    if (!jobTitle && !company) {
+      log('  ⏭️  Expérience pro: aucune donnée (job_title, current_employer) → skip');
+      return;
+    }
+
+    // Trouver les champs de la première expérience professionnelle (index 0 ou 1)
+    // Les IDs Workday sont : workExperience-N--jobTitle (N = nombre variable)
+    const jobTitleInput = document.querySelector('[id*="workExperience"][id*="jobTitle"]') ||
+      document.querySelector('[data-automation-id="formField-jobTitle"] input:not([type="hidden"])');
+
+    if (!jobTitleInput) {
+      log('  ⚠️  Expérience pro: champ jobTitle introuvable');
+      return;
+    }
+
+    // Titre d'emploi
+    if (jobTitle) {
+      const cur = (jobTitleInput.value || '').trim();
+      if (cur.toLowerCase() !== jobTitle.toLowerCase()) {
+        reactSet(jobTitleInput, jobTitle);
+        await sleep(300);
+        // Fermer le dropdown s'il s'ouvre
+        const escKey = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true });
+        document.dispatchEvent(escKey);
+        log(`  ✓ Titre d'emploi: "${jobTitle}"`);
+      } else {
+        log(`  ✓ Titre d'emploi: déjà "${cur}" → skip`);
+      }
+    }
+
+    // Société / Employeur
+    if (company) {
+      const companyInput = document.querySelector('[id*="workExperience"][id*="company"]') ||
+        document.querySelector('[data-automation-id="formField-company"] input:not([type="hidden"])');
+      if (companyInput) {
+        const cur = (companyInput.value || '').trim();
+        if (!cur || cur.toLowerCase() !== company.toLowerCase()) {
+          reactSet(companyInput, company);
+          await sleep(300);
+          const escKey = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true });
+          document.dispatchEvent(escKey);
+          log(`  ✓ Société: "${company}"`);
+        } else {
+          log(`  ✓ Société: déjà "${cur}" → skip`);
+        }
+      }
+    }
+
+    // Emplacement (location) — si disponible dans le profil
+    const location = p.work_location || p.current_location || p.location || '';
+    if (location) {
+      const locationInput = document.querySelector('[id*="workExperience"][id*="location"]') ||
+        document.querySelector('[data-automation-id="formField-location"] input:not([type="hidden"])');
+      if (locationInput) {
+        const cur = (locationInput.value || '').trim();
+        if (!cur || cur.toLowerCase() !== location.toLowerCase()) {
+          reactSet(locationInput, location);
+          await sleep(300);
+          const escKey = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true });
+          document.dispatchEvent(escKey);
+          log(`  ✓ Emplacement: "${location}"`);
+        } else {
+          log(`  ✓ Emplacement: déjà "${cur}" → skip`);
+        }
+      }
+    }
+
+    // Date de début — format YYYY-MM ou YYYY-MM-DD → mois + année séparés
+    if (startDate) {
+      const parts = startDate.split('-');
+      const yyyy = parts[0];       // ex: "2022"
+      const mm   = parts[1] || ''; // ex: "08"
+
+      // Année
+      const yearInput = document.querySelector('[id*="workExperience"][id*="startDate"][id*="year"]') ||
+        document.querySelector('[id*="workExperience"][id*="startYear"]');
+      if (yearInput && yyyy) {
+        const cur = (yearInput.value || '').trim();
+        if (cur !== yyyy) { reactSet(yearInput, yyyy); await sleep(200); log(`  ✓ Début année: "${yyyy}"`); }
+        else log(`  ✓ Début année: déjà "${yyyy}" → skip`);
+      }
+
+      // Mois (combobox select-button ou input)
+      if (mm) {
+        const monthBtn = document.querySelector('[id*="workExperience"][id*="startDate"][id*="month"]') ||
+          document.querySelector('[id*="workExperience"][id*="startMonth"]');
+        if (monthBtn && monthBtn.tagName === 'BUTTON') {
+          // Mois en texte anglais pour le dropdown Workday
+          const monthNames = ['','January','February','March','April','May','June',
+                              'July','August','September','October','November','December'];
+          const monthText = monthNames[parseInt(mm, 10)] || '';
+          if (monthText) await fillSelectButton(monthBtn, monthText, `Mois début`);
+        } else if (monthBtn) {
+          reactSet(monthBtn, mm);
+          await sleep(200);
+          log(`  ✓ Début mois: "${mm}"`);
+        }
+      }
+    }
+
+    // Case "Emploi occupé actuellement" → cocher si c'est l'emploi actuel
+    const currentJobCheckbox = document.querySelector('[id*="workExperience"][id*="currentlyWorking"]') ||
+      document.querySelector('[data-automation-id="formField-currentJob"] input[type="checkbox"]') ||
+      [...document.querySelectorAll('input[type="checkbox"]')].find(cb => {
+        const id = cb.id || '';
+        return id.includes('currentlyWorking') || id.includes('currentJob') || id.includes('isCurrent');
+      });
+    if (currentJobCheckbox && !currentJobCheckbox.checked) {
+      await clickEl(currentJobCheckbox);
+      await sleep(300);
+      log('  ✓ Emploi actuel: coché');
+    } else if (currentJobCheckbox?.checked) {
+      log('  ✓ Emploi actuel: déjà coché → skip');
+    }
+  }
+
   async function fillMonExperience(p) {
     log('📝 Étape 2 — Mon expérience');
     setBanner('📝 Mon expérience en cours...');
     await sleep(1000);
+
+    // ── Expérience professionnelle ──────────────────────────────────────────────
+    await fillWorkExperience(p);
+    await sleep(500);
 
     // ── Section Études : cliquer "Ajouter" si champs pas encore visibles ──────
     const hasSchoolField = !!document.querySelector('[data-automation-id="formField-school"]');
