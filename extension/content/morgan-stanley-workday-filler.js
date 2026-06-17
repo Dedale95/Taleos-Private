@@ -515,9 +515,30 @@
     await fillTextField('formField-addressLine2', p.address_line2 || '',      'Adresse 2');
     await fillTextField('formField-city',         p.city,                     'Ville');
     await fillTextField('formField-postalCode',   p.postal_code || p.zipcode, 'Code postal');
-    // countryRegion (Département) — optionnel, souvent vide
-    if (p.region || p.department_number) {
-      await fillTextField('formField-countryRegion', p.region || p.department_number, 'Département');
+    // countryRegion (Département) — effacer systématiquement si vide pour éviter
+    // qu'une valeur par défaut Workday (ex: "Non") apparaisse dans la comparaison d'adresse.
+    {
+      const regionContainer = document.querySelector('[data-automation-id="formField-countryRegion"]');
+      if (regionContainer) {
+        const regionValue = p.region || p.department_number || '';
+        const regionInput = regionContainer.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea');
+        if (regionInput) {
+          if (regionValue) {
+            reactSet(regionInput, regionValue);
+            log('  ✓ Département: ' + regionValue);
+          } else if (regionInput.value && regionInput.value !== '') {
+            reactSet(regionInput, '');
+            log('  ✓ Département: effacé (valeur par défaut supprimée)');
+          }
+        }
+        // Cas select/dropdown (ex: Workday affiche un menu déroulant avec "Non" par défaut)
+        const regionSelect = regionContainer.querySelector('select');
+        if (regionSelect && !regionValue && regionSelect.value) {
+          regionSelect.value = '';
+          regionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          log('  ✓ Département (select): réinitialisé');
+        }
+      }
     }
 
     // ── Type de téléphone → Mobile / Cellulaire ────────────────────────────────
