@@ -1136,9 +1136,24 @@
     }
 
     // ── Ethnicity ─────────────────────────────────────────────────────────────
-    // Oracle HCM UK affiche souvent un combobox (cx-select) avec des options texte.
-    // On essaie d'abord jpm_ethnicity, puis gs_race_ethnicity comme fallback.
-    const ethnicity = profile.jpm_ethnicity || profile.gs_race_ethnicity || '';
+    // Oracle JPM options (from DOM): Aboriginal/Indigenous/Native, Asian, Black,
+    // Hispanic or Latino, Middle Eastern or Arab, Not Specified, Pacific Islander,
+    // Two or More Ethnicities, White.
+    // On mappe gs_race_ethnicity vers ces valeurs Oracle.
+    const GS_TO_JPM_ETHNICITY = {
+      'White': 'White',
+      'Arab': 'Middle Eastern or Arab',
+      'Asian - Bangladeshi': 'Asian', 'Asian - Chinese': 'Asian', 'Asian - Indian': 'Asian',
+      'Asian - Japanese': 'Asian', 'Asian - Korean': 'Asian', 'Asian - Other': 'Asian',
+      'Asian - Pakistani': 'Asian', 'Asian - Vietnamese': 'Asian',
+      'Black - African': 'Black', 'Black - Caribbean': 'Black', 'Black - Other': 'Black',
+      'Hispanic or Latino': 'Hispanic or Latino',
+      'Two or more races': 'Two or More Ethnicities',
+      'Other': 'Not Specified',
+      'Prefer not to say': 'Not Specified',
+    };
+    const gsEthnicity = profile.gs_race_ethnicity || '';
+    const ethnicity = GS_TO_JPM_ETHNICITY[gsEthnicity] || '';
     if (ethnicity) {
       const ethnicityRow = findQuestionRow('ethnicity') || findQuestionRow('ethnic origin');
       if (ethnicityRow) {
