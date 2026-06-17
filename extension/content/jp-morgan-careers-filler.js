@@ -1019,6 +1019,140 @@
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Questions de sélection (screener) spécifiques au poste JP Morgan
+  // Ces questions n'apparaissent pas sur tous les postes — le handler est
+  // idempotent : si la question n'est pas dans le DOM, on skip silencieusement.
+  //
+  // Champs Firebase utilisés :
+  //   jpm_trades_experience         ("None"|"Less than one year"|"One to three years"|"Three to five years"|"More than five years")
+  //   jpm_financial_products_experience ("Yes"|"No") — mutual funds, equities, hedge funds, fixed income
+  //   jpm_financial_services_experience (même options que trades)
+  //   jpm_regulations_experience    (même options que trades)
+  //   jpm_derivatives_experience    (même options que trades)
+  //   jpm_office_5_days             ("Yes"|"No")
+  //   salary_expectations           (montant brut, ex: "125000")
+  //   salary_currency               (devise ISO, ex: "GBP", "EUR", "USD")
+  //   notice_period                 (ex: "3 months", "1 month", "Immediately available")
+  //   jpm_ethnicity                 (valeur texte correspondant à l'option Oracle)
+  //     → fallback: gs_race_ethnicity
+  // ═══════════════════════════════════════════════════════════════════════════
+  async function handleScreenerQuestions(profile) {
+    log('🔍 JP Morgan → screener questions (scan contextuel)');
+
+    // ── Helpers locaux ──────────────────────────────────────────────────────
+    function trySelectButton(label, needle, value) {
+      if (!value) return false;
+      const container = findQuestionContainer(needle);
+      if (!container) { log(`   ⏭️  "${label}" : question absente du DOM → skip`); return false; }
+      return auditAndSelectButton(label, container, value);
+    }
+
+    // ── Questions expérience (boutons pilule) ───────────────────────────────
+    trySelectButton(
+      'Trades / transaction processing',
+      'trades and transaction processing',
+      profile.jpm_trades_experience
+    );
+
+    trySelectButton(
+      'Mutual funds / equities / hedge funds / fixed income',
+      'mutual funds, equities, hedge funds',
+      profile.jpm_financial_products_experience
+    );
+
+    trySelectButton(
+      'Financial Services / Client Services',
+      'financial services or client services',
+      profile.jpm_financial_services_experience
+    );
+
+    trySelectButton(
+      'Interpretation of regulations',
+      'interpretation of regulations',
+      profile.jpm_regulations_experience
+    );
+
+    trySelectButton(
+      'Derivatives',
+      'years of experience do you have in derivatives',
+      profile.jpm_derivatives_experience
+    );
+
+    trySelectButton(
+      'Office 5 days per week',
+      'work in the office 5 days per week',
+      profile.jpm_office_5_days
+    );
+
+    // ── Salary expectations ─────────────────────────────────────────────────
+    // Oracle HCM peut présenter soit un champ texte libre, soit un combobox devise + montant.
+    const salaryVal = profile.salary_expectations || profile.jpm_salary || '';
+    const salaryCurrency = profile.salary_currency || profile.current_salary_currency || '';
+    const salaryRow = salaryVal
+      ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
+      : null;
+    if (salaryRow) {
+      // Champ montant (texte ou numérique)
+      const salaryInput = Array.from(salaryRow.querySelectorAll('input')).find(
+        el => el.type !== 'hidden' && !/currency|curr/i.test(el.name || el.id || el.getAttribute('aria-label') || '')
+      );
+      if (salaryInput) auditAndFill('Salary expectations', salaryInput, salaryVal);
+
+      // Champ devise (combobox si présent)
+      if (salaryCurrency) {
+        const currencyInput = salaryRow.querySelector(
+          'input[name*="currency" i], input[id*="currency" i], input[aria-label*="currency" i]'
+        );
+        if (currencyInput) {
+          await selectCxDropdownInForm('Salary currency', currencyInput, salaryCurrency, [salaryCurrency]);
+        }
+      }
+    } else if (salaryVal) {
+      log('   ⏭️  "Salary expectations" : question absente du DOM → skip');
+    }
+
+    // ── Notice period ────────────────────────────────────────────────────────
+    // La réponse peut être des boutons pilule OU un combobox selon le poste.
+    const noticePeriod = profile.notice_period || '';
+    const noticeRow = noticePeriod
+      ? (findQuestionRow('notice period') || findQuestionContainer('notice period'))
+      : null;
+    if (noticeRow) {
+      // Essai bouton pilule d'abord (cx-select-pill ou [role="radio"])
+      const hasPills = noticeRow.querySelector('button, [role="radio"], [aria-pressed]');
+      if (hasPills) {
+        auditAndSelectButton('Notice period', noticeRow, noticePeriod);
+      } else {
+        // Combobox ou dropdown Oracle
+        await selectDropdownValue('Notice period', noticePeriod);
+      }
+    } else if (noticePeriod) {
+      log('   ⏭️  "Notice period" : question absente du DOM → skip');
+    }
+
+    // ── Ethnicity ─────────────────────────────────────────────────────────────
+    // Oracle HCM UK affiche souvent un combobox (cx-select) avec des options texte.
+    // On essaie d'abord jpm_ethnicity, puis gs_race_ethnicity comme fallback.
+    const ethnicity = profile.jpm_ethnicity || profile.gs_race_ethnicity || '';
+    if (ethnicity) {
+      const ethnicityRow = findQuestionRow('ethnicity') || findQuestionRow('ethnic origin');
+      if (ethnicityRow) {
+        const ethnicityInput = ethnicityRow.querySelector(
+          'input[role="combobox"], input[name*="ethnicity" i], input[id*="ethnicity" i], input[name*="ORA_ETHNICITY" i], input[name*="RACE" i]'
+        );
+        if (ethnicityInput) {
+          await selectCxDropdownInForm('Ethnicity', ethnicityInput, ethnicity, [ethnicity]);
+        } else {
+          // Fallback : boutons pilule
+          auditAndSelectButton('Ethnicity', ethnicityRow, ethnicity);
+        }
+      } else {
+        log('   ⏭️  "Ethnicity" : question absente du DOM → skip');
+      }
+    }
+  }
+
   async function handleSection2(profile, pending) {
     ensureBanner(getBannerApi()?.getText() || '⏳ Automatisation Taleos en cours — Ne touchez à rien.');
     const report = blueprint?.getStructureReport?.('section_2');
@@ -1090,6 +1224,12 @@
           immigrationSupportReady = false;
         }
       }
+    }
+
+    // Questions de sélection spécifiques au poste (présentes sur certains postes uniquement)
+    if (!state.screenerDoneSection2) {
+      await handleScreenerQuestions(profile);
+      state.screenerDoneSection2 = true;
     }
 
     const nextBtn = findButtonByText('Next');
@@ -1636,6 +1776,12 @@
     // Supprimer TOUS les attachments existants avant de recharger CV + lettre
     // → évite les doublons. Guard one-shot : on ne refait pas ça à chaque appel
     //   (handleSection4 est appelé plusieurs fois par le mutation observer).
+    // Questions de sélection spécifiques au poste (peut apparaître en section 4 sur certains postes)
+    if (!state.screenerDoneSection4) {
+      await handleScreenerQuestions(profile);
+      state.screenerDoneSection4 = true;
+    }
+
     if (!state.attachmentsCleared) {
       state.resumeUploadToken = '';
       state.coverUploadToken = '';
