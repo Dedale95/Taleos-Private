@@ -1113,8 +1113,12 @@
     }
 
     // ── Notice period ────────────────────────────────────────────────────────
-    // La réponse peut être des boutons pilule OU un combobox selon le poste.
-    const noticePeriod = profile.notice_period || '';
+    // Priorité : notice_period (texte libre) → fallback mapping depuis sg_notice_period.
+    const SG_NOTICE_MAP = {
+      none: '', '1_month': '1 month', '2_months': '2 months',
+      '3_months': '3 months', 'more_than_3_months': 'More than 3 months',
+    };
+    const noticePeriod = profile.notice_period || SG_NOTICE_MAP[profile.sg_notice_period] || '';
     const noticeRow = noticePeriod
       ? (findQuestionRow('notice period') || findQuestionContainer('notice period'))
       : null;
