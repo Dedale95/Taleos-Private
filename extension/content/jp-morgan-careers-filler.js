@@ -227,7 +227,7 @@
   function auditAndSelectButton(label, container, desiredText) {
     if (!container || !desiredText) return false;
     const target = norm(desiredText);
-    const options = Array.from(container.querySelectorAll('button, [role="radio"], [aria-pressed], [aria-checked]'));
+    const options = Array.from(container.querySelectorAll(OPTION_SEL));
     for (const option of options) {
       const text = norm(option.textContent || option.getAttribute('aria-label') || '');
       if (!text || text !== target) continue;
@@ -455,6 +455,10 @@
     return true;
   }
 
+  // Sélecteur étendu : couvre buttons, radios ARIA, pilules Oracle cx-select-pill-section (div/span),
+  // et [role="option"] utilisé dans certains composants Oracle HCM.
+  const OPTION_SEL = 'button, [role="radio"], [role="option"], [aria-pressed], [aria-checked], .cx-select-pill-section';
+
   function findQuestionContainer(textNeedle) {
     const target = norm(textNeedle);
     const nodes = Array.from(document.querySelectorAll('label, legend, h1, h2, h3, h4, h5, h6, p, span, div'));
@@ -464,11 +468,11 @@
       if (!text || !text.includes(target)) continue;
       let current = node;
       for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
-        const hasButtons = current.querySelector('button, [role="radio"], [aria-pressed], [aria-checked]');
+        const hasButtons = current.querySelector(OPTION_SEL);
         if (!hasButtons) continue;
         const currentText = norm(current.textContent || '');
         if (!currentText.includes(target)) continue;
-        const optionCount = current.querySelectorAll('button, [role="radio"], [aria-pressed], [aria-checked]').length;
+        const optionCount = current.querySelectorAll(OPTION_SEL).length;
         candidates.push({ node: current, textLength: currentText.length, optionCount });
       }
     }
@@ -1042,7 +1046,7 @@
 
     // ── Helpers locaux ──────────────────────────────────────────────────────
     function trySelectButton(label, needle, value) {
-      if (!value) return false;
+      if (!value) { log(`   ⏭️  "${label}" : valeur Firebase vide → skip`); return false; }
       const container = findQuestionContainer(needle);
       if (!container) { log(`   ⏭️  "${label}" : question absente du DOM → skip`); return false; }
       return auditAndSelectButton(label, container, value);
@@ -1083,6 +1087,12 @@
       'Office 5 days per week',
       'work in the office 5 days per week',
       profile.jpm_office_5_days
+    );
+
+    trySelectButton(
+      'Asset servicing / securities operations',
+      'asset servicing or securities operations',
+      profile.jpm_asset_servicing_experience
     );
 
     // ── Salary expectations ─────────────────────────────────────────────────
@@ -1152,8 +1162,9 @@
       'Other': 'Not Specified',
       'Prefer not to say': 'Not Specified',
     };
+    // Priorité : jpm_ethnicity (valeur Oracle directe) → fallback mapping depuis gs_race_ethnicity
     const gsEthnicity = profile.gs_race_ethnicity || '';
-    const ethnicity = GS_TO_JPM_ETHNICITY[gsEthnicity] || '';
+    const ethnicity = profile.jpm_ethnicity || GS_TO_JPM_ETHNICITY[gsEthnicity] || '';
     if (ethnicity) {
       const ethnicityRow = findQuestionRow('ethnicity') || findQuestionRow('ethnic origin');
       if (ethnicityRow) {
