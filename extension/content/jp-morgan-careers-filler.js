@@ -1103,8 +1103,8 @@
       ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
       : null;
     if (salaryRow) {
-      // Champ montant (texte ou numérique)
-      const salaryInput = Array.from(salaryRow.querySelectorAll('input')).find(
+      // Champ montant (texte ou numérique) — peut être un textarea Oracle
+      const salaryInput = Array.from(salaryRow.querySelectorAll('input, textarea')).find(
         el => el.type !== 'hidden' && !/currency|curr/i.test(el.name || el.id || el.getAttribute('aria-label') || '')
       );
       if (salaryInput) auditAndFill('Salary expectations', salaryInput, salaryVal);
@@ -1133,12 +1133,14 @@
       ? (findQuestionRow('notice period') || findQuestionContainer('notice period'))
       : null;
     if (noticeRow) {
-      // Essai bouton pilule d'abord (cx-select-pill ou [role="radio"])
-      const hasPills = noticeRow.querySelector('button, [role="radio"], [aria-pressed]');
-      if (hasPills) {
+      // Peut être un textarea (texte libre), des pills, ou un dropdown selon le poste
+      const noticeTextarea = noticeRow.querySelector('textarea');
+      const hasPills = noticeRow.querySelector('button.cx-select-pill-section, [role="radio"], [aria-pressed]');
+      if (noticeTextarea) {
+        auditAndFill('Notice period', noticeTextarea, noticePeriod);
+      } else if (hasPills) {
         auditAndSelectButton('Notice period', noticeRow, noticePeriod);
       } else {
-        // Combobox ou dropdown Oracle
         await selectDropdownValue('Notice period', noticePeriod);
       }
     } else if (noticePeriod) {
