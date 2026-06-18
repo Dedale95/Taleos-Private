@@ -4332,7 +4332,6 @@ async function fetchProfile(uid, bankId, token) {
     jpm_derivatives_experience: (profile.jpm_derivatives_experience || '').trim(),
     jpm_office_5_days: (profile.jpm_office_5_days || '').trim(),
     jpm_asset_servicing_experience: (profile.jpm_asset_servicing_experience || '').trim(),
-    jpm_notice_period: (profile.jpm_notice_period || '').trim(),
     // Goldman Sachs — diversité & identité
     gender: (profile.gender || '').trim(),
     pronouns: (profile.pronouns || '').trim(),

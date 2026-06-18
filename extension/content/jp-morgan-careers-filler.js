@@ -1141,12 +1141,12 @@
     }
 
     // ── Notice period ────────────────────────────────────────────────────────
-    // Priorité : jpm_notice_period (champ dédié) → notice_period → mapping depuis sg_notice_period.
+    // Mapping depuis le champ "Préavis de départ" commun (sg_notice_period).
     const SG_NOTICE_MAP = {
       none: '', '1_month': '1 month', '2_months': '2 months',
       '3_months': '3 months', 'more_than_3_months': 'More than 3 months',
     };
-    const noticePeriod = profile.jpm_notice_period || profile.notice_period || SG_NOTICE_MAP[profile.sg_notice_period] || '';
+    const noticePeriod = SG_NOTICE_MAP[profile.sg_notice_period] || '';
     const noticeRow = noticePeriod
       ? (findQuestionRow('notice period') || findQuestionContainer('notice period'))
       : null;
@@ -1164,7 +1164,7 @@
     } else if (noticePeriod) {
       log('   ⏭️  "Notice period" : question absente du DOM → skip');
     } else {
-      log('   ⚠️  "Notice period" : aucune valeur configurée dans le profil (jpm_notice_period vide)');
+      log('   ⚠️  "Notice period" : sg_notice_period vide dans le profil → skip');
     }
 
     // ── Ethnicity ─────────────────────────────────────────────────────────────
