@@ -894,10 +894,9 @@
     }
 
     const nextBtn = findButtonByText('Next');
-    if (nextBtn) {
-      // Pas de guard one-shot : si Oracle tarde à transitionner (lent, hcaptcha…),
-      // on réessaie au run suivant jusqu'à ce que la page change.
-      // Le blueprint arrête d'appeler handleEmailStep dès que la page passe sur 'pin'.
+    if (nextBtn && !state.emailSubmitted) {
+      // Guard one-shot : on ne clique qu'une seule fois pour éviter qu'un 2e run
+      // (pendant la transition SPA vers la page PIN) envoie un 2e code email.
       state.emailSubmitted = true;
       nextBtn.click();
       log('➡️ JP Morgan : clic sur Next après email/consentement');

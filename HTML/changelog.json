@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.2.245",
+    "date": "2026-06-18",
+    "changes": [
+      "fix(jpm): double code email — guard one-shot sur le clic Next de la page email Oracle"
+    ]
+  },
+  {
     "version": "1.2.244",
     "date": "2026-06-18T00:30:00Z",
     "text": "JP Morgan Oracle — fix screener questions : salary et notice period sont des textarea Oracle (pas des inputs ni des pills). Le notice period détecte le textarea en priorité, puis les pills, puis le dropdown. Le salary inclut désormais les textarea dans sa recherche."
