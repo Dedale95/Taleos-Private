@@ -1095,46 +1095,21 @@
     );
 
     // ── Salary expectations ─────────────────────────────────────────────────
-    // Oracle HCM peut présenter soit un champ texte libre, soit un combobox devise + montant.
-    // Certains postes JPM ajoutent un sélecteur "hourly / yearly" à côté du montant.
+    // Le champ JPM est un textarea texte libre : on compose "EUR 125,000 yearly".
     const salaryVal = profile.salary_expectations || profile.jpm_salary || '';
-    const salaryCurrency = profile.salary_currency || profile.current_salary_currency || '';
+    const salaryCurrency = (profile.salary_currency || profile.current_salary_currency || '').trim();
     const salaryRow = salaryVal
       ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
       : null;
     if (salaryRow) {
-      // Sélecteur "hourly / yearly" (radio ou combobox) — à remplir avant le montant
-      const unitInput = salaryRow.querySelector(
-        'input[aria-label*="hourly" i], input[aria-label*="yearly" i], input[aria-label*="per year" i], input[aria-label*="per hour" i],' +
-        'select[aria-label*="hourly" i], select[aria-label*="yearly" i], select[aria-label*="frequency" i]'
-      );
-      if (unitInput) {
-        await selectCxDropdownInForm('Salary frequency', unitInput, 'yearly', ['yearly', 'per year', 'annual', 'annually']);
-      } else {
-        // Cherche un bouton radio / pill "yearly"
-        const yearlyBtn = Array.from(salaryRow.querySelectorAll('button, [role="radio"], [aria-pressed]'))
-          .find(el => /yearly|per year|annual/i.test(el.textContent));
-        if (yearlyBtn && yearlyBtn.getAttribute('aria-pressed') !== 'true') {
-          yearlyBtn.click();
-          await new Promise(r => setTimeout(r, 300));
-          log('   ✅ Salary frequency : sélectionné "yearly"');
-        }
-      }
-
-      // Champ montant (texte ou numérique) — peut être un textarea Oracle
       const salaryInput = Array.from(salaryRow.querySelectorAll('input, textarea')).find(
-        el => el.type !== 'hidden' && !/currency|curr|hourly|yearly|frequency/i.test(el.name || el.id || el.getAttribute('aria-label') || '')
+        el => el.type !== 'hidden'
       );
-      if (salaryInput) auditAndFill('Salary expectations', salaryInput, salaryVal);
-
-      // Champ devise (combobox si présent)
-      if (salaryCurrency) {
-        const currencyInput = salaryRow.querySelector(
-          'input[name*="currency" i], input[id*="currency" i], input[aria-label*="currency" i]'
-        );
-        if (currencyInput) {
-          await selectCxDropdownInForm('Salary currency', currencyInput, salaryCurrency, [salaryCurrency]);
-        }
+      if (salaryInput) {
+        const amount = Number(salaryVal.replace(/[^0-9.]/g, ''));
+        const formatted = amount ? amount.toLocaleString('en-US') : salaryVal;
+        const salaryString = [salaryCurrency, formatted, 'yearly'].filter(Boolean).join(' ');
+        auditAndFill('Salary expectations', salaryInput, salaryString);
       }
     } else if (salaryVal) {
       log('   ⏭️  "Salary expectations" : question absente du DOM → skip');
