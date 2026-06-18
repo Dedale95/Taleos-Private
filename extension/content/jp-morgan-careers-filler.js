@@ -1096,15 +1096,34 @@
 
     // ── Salary expectations ─────────────────────────────────────────────────
     // Oracle HCM peut présenter soit un champ texte libre, soit un combobox devise + montant.
+    // Certains postes JPM ajoutent un sélecteur "hourly / yearly" à côté du montant.
     const salaryVal = profile.salary_expectations || profile.jpm_salary || '';
     const salaryCurrency = profile.salary_currency || profile.current_salary_currency || '';
     const salaryRow = salaryVal
       ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
       : null;
     if (salaryRow) {
+      // Sélecteur "hourly / yearly" (radio ou combobox) — à remplir avant le montant
+      const unitInput = salaryRow.querySelector(
+        'input[aria-label*="hourly" i], input[aria-label*="yearly" i], input[aria-label*="per year" i], input[aria-label*="per hour" i],' +
+        'select[aria-label*="hourly" i], select[aria-label*="yearly" i], select[aria-label*="frequency" i]'
+      );
+      if (unitInput) {
+        await selectCxDropdownInForm('Salary frequency', unitInput, 'yearly', ['yearly', 'per year', 'annual', 'annually']);
+      } else {
+        // Cherche un bouton radio / pill "yearly"
+        const yearlyBtn = Array.from(salaryRow.querySelectorAll('button, [role="radio"], [aria-pressed]'))
+          .find(el => /yearly|per year|annual/i.test(el.textContent));
+        if (yearlyBtn && yearlyBtn.getAttribute('aria-pressed') !== 'true') {
+          yearlyBtn.click();
+          await new Promise(r => setTimeout(r, 300));
+          log('   ✅ Salary frequency : sélectionné "yearly"');
+        }
+      }
+
       // Champ montant (texte ou numérique) — peut être un textarea Oracle
       const salaryInput = Array.from(salaryRow.querySelectorAll('input, textarea')).find(
-        el => el.type !== 'hidden' && !/currency|curr/i.test(el.name || el.id || el.getAttribute('aria-label') || '')
+        el => el.type !== 'hidden' && !/currency|curr|hourly|yearly|frequency/i.test(el.name || el.id || el.getAttribute('aria-label') || '')
       );
       if (salaryInput) auditAndFill('Salary expectations', salaryInput, salaryVal);
 
@@ -1122,12 +1141,12 @@
     }
 
     // ── Notice period ────────────────────────────────────────────────────────
-    // Priorité : notice_period (texte libre) → fallback mapping depuis sg_notice_period.
+    // Priorité : jpm_notice_period (champ dédié) → notice_period → mapping depuis sg_notice_period.
     const SG_NOTICE_MAP = {
       none: '', '1_month': '1 month', '2_months': '2 months',
       '3_months': '3 months', 'more_than_3_months': 'More than 3 months',
     };
-    const noticePeriod = profile.notice_period || SG_NOTICE_MAP[profile.sg_notice_period] || '';
+    const noticePeriod = profile.jpm_notice_period || profile.notice_period || SG_NOTICE_MAP[profile.sg_notice_period] || '';
     const noticeRow = noticePeriod
       ? (findQuestionRow('notice period') || findQuestionContainer('notice period'))
       : null;
@@ -1144,6 +1163,8 @@
       }
     } else if (noticePeriod) {
       log('   ⏭️  "Notice period" : question absente du DOM → skip');
+    } else {
+      log('   ⚠️  "Notice period" : aucune valeur configurée dans le profil (jpm_notice_period vide)');
     }
 
     // ── Ethnicity ─────────────────────────────────────────────────────────────
