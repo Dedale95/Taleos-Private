@@ -6,7 +6,7 @@
   'use strict';
 
   const BANNER_ID = 'taleos-bpce-oracle-banner';
-  try { chrome.storage.local.set({ taleos_bpce_script_ping: { script: 'bpce-oracle-filler.js', url: location.href, at: new Date().toISOString() } }); } catch (_) {}
+  try { chrome.storage.local.set({ taleos_bpce_script_ping: { script: 'oracle-hcm-filler.js', url: location.href, at: new Date().toISOString() } }); } catch (_) {}
   let isAutomationRunning = false;
   let loggedMessages = new Set();
   let filledFields = new Set();
@@ -28,7 +28,7 @@
     const prefix = stepNum ? `[STEP ${stepNum}] ` : '';
     const fullMsg = `${prefix}${msg}`;
     if (!loggedMessages.has(fullMsg)) {
-      console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BPCE Oracle] ${fullMsg}`);
+      console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Oracle HCM] ${fullMsg}`);
       loggedMessages.add(fullMsg);
     }
   }

@@ -1,7 +1,7 @@
 /**
  * Taleos - La Banque Postale (offre → formulaire Lumesse)
  * Étape 1 : détecte la page offre LBP et navigue vers le formulaire Lumesse/TalentLink.
- * Le remplissage du formulaire est ensuite géré par bpce-lumesse-filler.js.
+ * Le remplissage du formulaire est ensuite géré par lumesse-filler.js.
  */
 (function () {
   'use strict';

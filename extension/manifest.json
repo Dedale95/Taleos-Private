@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.245",
+  "version": "1.2.246",
   "version_name": "1.2.244",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
@@ -124,14 +124,13 @@
     },
     {
       "matches": [
-        "https://*.fa.em2.oraclecloud.com/*",
-        "https://*.oraclecloud.com/*"
+        "https://*.fa.em2.oraclecloud.com/*"
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
-        "scripts/bpce_blueprint.js",
-        "content/bpce-oracle-filler.js",
-        "content/bpce-lumesse-filler.js"
+        "scripts/oracle_lumesse_blueprint.js",
+        "content/oracle-hcm-filler.js",
+        "content/lumesse-filler.js"
       ],
       "run_at": "document_idle",
       "all_frames": true
@@ -143,9 +142,9 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
-        "scripts/bpce_blueprint.js",
+        "scripts/oracle_lumesse_blueprint.js",
         "content/bpce-careers-filler.js",
-        "content/bpce-lumesse-filler.js"
+        "content/lumesse-filler.js"
       ],
       "run_at": "document_idle",
       "all_frames": true
@@ -156,9 +155,9 @@
       ],
       "js": [
         "scripts/taleos-automation-banner.js",
-        "scripts/bpce_blueprint.js",
+        "scripts/oracle_lumesse_blueprint.js",
         "scripts/la_banque_postale_blueprint.js",
-        "content/bpce-lumesse-filler.js"
+        "content/lumesse-filler.js"
       ],
       "run_at": "document_idle",
       "all_frames": true

@@ -1,7 +1,7 @@
 /**
  * Taleos - Remplissage automatique BPCE (recrutement.bpce.fr)
  * Étape 1 : Clic sur "Postuler directement" pour ouvrir le formulaire Oracle
- * (Le formulaire email/CGU/Suivant est géré par bpce-oracle-filler.js sur Oracle Cloud)
+ * (Le formulaire email/CGU/Suivant est géré par oracle-hcm-filler.js sur Oracle Cloud)
  */
 (function() {
   'use strict';

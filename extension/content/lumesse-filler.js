@@ -24,7 +24,7 @@
     try {
       chrome.runtime.sendMessage({
         action: 'extension_run_log',
-        source: 'bpce-lumesse-filler',
+        source: 'lumesse-filler',
         level: 'info',
         message: String(message || ''),
         ts: new Date().toISOString()
@@ -53,7 +53,7 @@
   function setPing(phase, detail) {
     try {
       const payload = {
-        script: "bpce-lumesse-filler.js",
+        script: "lumesse-filler.js",
         url: location.href,
         at: new Date().toISOString(),
         topFrame: isTop,
@@ -127,7 +127,7 @@
   // 2) Utilitaires DOM
   // =========================
   function log(msg) {
-    const line = `[BPCE Lumesse] ${msg}`;
+    const line = `[Taleos Lumesse] ${msg}`;
     console.log(line);
     reportRunLog(line);
   }
@@ -883,7 +883,7 @@
     if (successSent) return;
     if (filling || done) return;
 
-    // Sur oraclecloud.com, bpce-oracle-filler.js gère le remplissage.
+    // Sur oraclecloud.com, oracle-hcm-filler.js gère le remplissage.
     // Le lumesse-filler est chargé ici uniquement pour la détection de succès (déjà faite ci-dessus).
     if (/oraclecloud\.com/i.test(location.hostname || '')) return;
 
