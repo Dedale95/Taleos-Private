@@ -1118,7 +1118,7 @@
     // ── Notice period ────────────────────────────────────────────────────────
     // Mapping depuis le champ "Préavis de départ" commun (sg_notice_period).
     const SG_NOTICE_MAP = {
-      none: '', '1_month': '1 month', '2_months': '2 months',
+      none: 'Immediately available', '1_month': '1 month', '2_months': '2 months',
       '3_months': '3 months', 'more_than_3_months': 'More than 3 months',
     };
     const noticePeriod = SG_NOTICE_MAP[profile.sg_notice_period] || '';
