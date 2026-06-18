@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.2.247",
+    "date": "2026-06-18",
+    "changes": [
+      "refactor: préfixes de log unifiés au format [ATS — Banque] sur tous les fillers"
+    ]
+  },
+  {
     "version": "1.2.246",
     "date": "2026-06-18",
     "changes": [

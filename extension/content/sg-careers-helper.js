@@ -26,7 +26,7 @@
     if (!api?.validateExpectedPage) return true;
     const result = await api.validateExpectedPage(expected);
     if (result.ok) return true;
-    console.warn('[Taleos SG Careers] Blueprint mismatch:', reason || '', result);
+    console.warn('[Oracle Taleo — Société Générale] Blueprint mismatch:', reason || '', result);
     return false;
   }
 
@@ -35,7 +35,7 @@
     if (!api?.validateOfferStructure) return true;
     const result = await api.validateOfferStructure();
     if (result.ok) return true;
-    console.warn('[Taleos SG Careers] Offre SG non conforme au blueprint:', result);
+    console.warn('[Oracle Taleo — Société Générale] Offre SG non conforme au blueprint:', result);
     return false;
   }
 
@@ -79,11 +79,11 @@
     const currentTabId = await getCurrentTabId();
     const { taleos_pending_sg, taleos_sg_tab_id } = await chrome.storage.local.get(['taleos_pending_sg', 'taleos_sg_tab_id']);
     if (!taleos_pending_sg) {
-      console.log('[Taleos SG Careers] Pas de candidature en cours (taleos_pending_sg absent).');
+      console.log('[Oracle Taleo — Société Générale] Pas de candidature en cours (taleos_pending_sg absent).');
       return;
     }
     if (!currentTabId || !taleos_sg_tab_id || currentTabId !== taleos_sg_tab_id) {
-      console.log('[Taleos SG Careers] Onglet ouvert manuellement ou non armé → skip.');
+      console.log('[Oracle Taleo — Société Générale] Onglet ouvert manuellement ou non armé → skip.');
       return;
     }
     const age = Date.now() - (taleos_pending_sg.timestamp || 0);
@@ -150,7 +150,7 @@
           return taleoUrl ? matchesApplyUrl(href) : /socgen\.taleo\.net\/careersection\/sgcareers\/jobapply\.ftl/i.test(href);
         });
       if (btn && btn.offsetParent !== null) {
-        console.log('[Taleos SG Careers] Clic sur Postuler...');
+        console.log('[Oracle Taleo — Société Générale] Clic sur Postuler...');
         btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
         await delay(500);
         await snapshot('sg_public_offer_before_apply_click', { taleoUrl });
@@ -159,8 +159,8 @@
       }
       await delay(500);
     }
-    console.warn('[Taleos SG Careers] Bouton Postuler non trouvé après 15s.');
+    console.warn('[Oracle Taleo — Société Générale] Bouton Postuler non trouvé après 15s.');
   }
 
-  run().catch(e => console.error('[Taleos SG Careers]', e));
+  run().catch(e => console.error('[Oracle Taleo — Société Générale]', e));
 })();

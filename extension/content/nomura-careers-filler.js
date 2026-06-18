@@ -19,9 +19,9 @@
   // 0. Garde-fous et initialisation
   // ══════════════════════════════════════════════════════════════════════════════
   // Log immédiat AVANT tout guard — visible même si le script est déjà en cours.
-  console.log(`[Nomura Filler] ▶ script chargé | url=${location.href} | guard=${!!globalThis.__TALEOS_NOMURA_FILLER_RUNNING__}`);
+  console.log(`[SAP SuccessFactors — Nomura] ▶ script chargé | url=${location.href} | guard=${!!globalThis.__TALEOS_NOMURA_FILLER_RUNNING__}`);
   if (globalThis.__TALEOS_NOMURA_FILLER_RUNNING__) {
-    console.log('[Nomura Filler] ⛔ Déjà en cours (__TALEOS_NOMURA_FILLER_RUNNING__=true) — exit');
+    console.log('[SAP SuccessFactors — Nomura] ⛔ Déjà en cours (__TALEOS_NOMURA_FILLER_RUNNING__=true) — exit');
     return;
   }
   // NOTE: guard activé APRÈS vérification de la session en attente (§12) pour ne pas bloquer
@@ -35,7 +35,7 @@
   // 1. Utilitaires
   // ══════════════════════════════════════════════════════════════════════════════
   function log(msg) {
-    const line = `[Nomura Filler] ${msg}`;
+    const line = `[SAP SuccessFactors — Nomura] ${msg}`;
     console.log(line);
     try {
       chrome.runtime.sendMessage({

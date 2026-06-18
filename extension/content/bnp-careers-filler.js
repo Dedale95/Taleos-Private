@@ -22,7 +22,7 @@
   }
 
   function log(msg) {
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BNP] ${msg}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Portail maison — BNP Paribas] ${msg}`;
     console.log(line);
     reportRunLog(line);
   }

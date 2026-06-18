@@ -78,7 +78,7 @@
   const PENDING_KEY = 'taleos_pending_morgan_stanley_workday';
   const TAB_KEY     = 'taleos_morgan_stanley_workday_tab_id';
   const BANNER_ID   = 'taleos-ms-banner';
-  const LOG_PREFIX  = '[Taleos MS]';
+  const LOG_PREFIX  = '[Workday — Morgan Stanley]';
   const logged      = new Set();
 
   // ─── Utilitaires ────────────────────────────────────────────────────────────

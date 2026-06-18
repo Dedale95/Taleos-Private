@@ -71,7 +71,7 @@
   }
 
   function log(message) {
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Crédit Mutuel] ${String(message || '')}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Portail maison — Crédit Mutuel] ${String(message || '')}`;
     console.log(line);
     reportRunLog(line);
   }

@@ -7,7 +7,7 @@
   const BANNER_ID   = 'taleos-gs-banner';
   const PENDING_KEY = 'taleos_pending_goldman_sachs';
   const TAB_KEY     = 'taleos_gs_tab_id';
-  const LOG_PREFIX  = '[Taleos Goldman Sachs]';
+  const LOG_PREFIX  = '[Oracle HCM — Goldman Sachs]';
   const blueprint   = globalThis.__TALEOS_GOLDMAN_SACHS_BLUEPRINT__ || null;
 
   let isRunning = false;

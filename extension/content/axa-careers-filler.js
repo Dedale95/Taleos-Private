@@ -38,7 +38,7 @@
   }
 
   function log(message) {
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos AXA] ${message}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [iCIMS — AXA] ${message}`;
     console.log(line);
     const level = /❌/.test(message) ? 'error' : /⚠️/.test(message) ? 'warn' : 'info';
     reportRunLog(line, level);

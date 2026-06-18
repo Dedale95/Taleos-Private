@@ -127,7 +127,7 @@
   // 2) Utilitaires DOM
   // =========================
   function log(msg) {
-    const line = `[Taleos Lumesse] ${msg}`;
+    const line = `[Lumesse — BPCE] ${msg}`;
     console.log(line);
     reportRunLog(line);
   }

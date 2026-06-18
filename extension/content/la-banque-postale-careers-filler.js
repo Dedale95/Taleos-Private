@@ -29,7 +29,7 @@
   }
 
   function log(msg) {
-    const line = `[Taleos LBP] ${msg}`;
+    const line = `[Lumesse — La Banque Postale] ${msg}`;
     console.log(line);
     reportRunLog(line);
   }

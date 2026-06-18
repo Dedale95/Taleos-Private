@@ -34,7 +34,7 @@
   // 1. Utilitaires de base
   // ══════════════════════════════════════════════════════════════════════════════
   function log(msg) {
-    const line = `[HSBC Filler] ${msg}`;
+    const line = `[SAP SuccessFactors — HSBC] ${msg}`;
     console.log(line);
     try {
       chrome.runtime.sendMessage({

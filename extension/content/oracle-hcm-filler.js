@@ -28,7 +28,7 @@
     const prefix = stepNum ? `[STEP ${stepNum}] ` : '';
     const fullMsg = `${prefix}${msg}`;
     if (!loggedMessages.has(fullMsg)) {
-      console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Oracle HCM] ${fullMsg}`);
+      console.log(`[${new Date().toLocaleTimeString('fr-FR')}] [Oracle HCM — BPCE] ${fullMsg}`);
       loggedMessages.add(fullMsg);
     }
   }

@@ -9,7 +9,7 @@
   const PENDING_KEY = 'taleos_pending_bank_of_america_workday';
   const TAB_KEY     = 'taleos_bank_of_america_workday_tab_id';
   const BANNER_ID   = 'taleos-bofa-banner';
-  const LOG_PREFIX  = '[Taleos BofA]';
+  const LOG_PREFIX  = '[Workday — Bank of America]';
   const logged      = new Set();
 
   // ─── Utilities ─────────────────────────────────────────────────────────────

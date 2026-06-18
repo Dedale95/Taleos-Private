@@ -6,7 +6,7 @@
   const BANNER_ID = 'taleos-jp-morgan-banner';
   const PENDING_KEY = 'taleos_pending_jp_morgan';
   const TAB_KEY = 'taleos_jp_morgan_tab_id';
-  const LOG_PREFIX = '[Taleos JP Morgan]';
+  const LOG_PREFIX = '[Oracle HCM — JP Morgan]';
   const blueprint = globalThis.__TALEOS_JP_MORGAN_BLUEPRINT__ || null;
   let isRunning = false;
   let currentTabIdPromise = null;

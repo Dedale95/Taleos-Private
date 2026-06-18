@@ -16,7 +16,7 @@
   globalThis.__TALEOS_MS_EF_RUNNING__ = true;
 
   const PENDING_KEY = 'taleos_pending_morgan_stanley_workday';
-  const LOG_PREFIX  = '[Taleos MS Eightfold]';
+  const LOG_PREFIX  = '[Eightfold — Morgan Stanley]';
 
   function log(msg) {
     console.log(`${LOG_PREFIX} ${msg}`);

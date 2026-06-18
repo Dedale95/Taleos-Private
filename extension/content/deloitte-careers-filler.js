@@ -39,7 +39,7 @@
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {
     const prefix = stepNum != null ? STEP(stepNum, '') : '';
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos Deloitte] ${prefix}${msg}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Workday — Deloitte] ${prefix}${msg}`;
     console.log(line);
     reportRunLog(line);
   }

@@ -35,7 +35,7 @@
   const STEP = (n, msg) => `[STEP ${n}] ${msg}`;
   function log(msg, stepNum) {
     const prefix = stepNum != null ? STEP(stepNum, '') : '';
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos BPCE] ${prefix}${msg}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Oracle HCM — BPCE] ${prefix}${msg}`;
     console.log(line);
     reportRunLog(line);
   }

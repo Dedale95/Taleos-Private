@@ -141,7 +141,7 @@
         return;
       }
       if (url && url.includes('groupecreditagricole.jobs') && !isOfferPage && !isCandidaturePage) {
-        console.log('[Taleos CA Connexion] Redirection vers l\'offre après connexion (page d\'accueil détectée)...');
+        console.log('[Portail maison — Crédit Agricole] Redirection vers l\'offre après connexion (page d\'accueil détectée)...');
         window.location.replace(url);
       } else if (isOfferPage && s.taleos_pending_offer?.profile) {
         chrome.runtime.sendMessage({ action: 'ca_offer_page_ready' }).catch(() => {});
@@ -166,7 +166,7 @@
   }
 
   function log(msg) {
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleos CA Connexion] ${msg}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Portail maison — Crédit Agricole] ${msg}`;
     console.log(line);
     reportRunLog(line);
   }
@@ -372,5 +372,5 @@
     window.location.href = offerUrl;
   }
 
-  run().catch(e => console.error('[Taleos CA Connexion]', e));
+  run().catch(e => console.error('[Portail maison — Crédit Agricole]', e));
 })();

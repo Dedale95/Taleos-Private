@@ -5,7 +5,7 @@
 (function() {
   'use strict';
   const DEBUG = false;
-  const log = (msg) => { if (DEBUG) console.log(`[Taleos SG Runner] ${msg}`); };
+  const log = (msg) => { if (DEBUG) console.log(`[Oracle Taleo — Société Générale] ${msg}`); };
 
   async function getCurrentTabId() {
     try {
