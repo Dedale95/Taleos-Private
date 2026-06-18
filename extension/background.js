@@ -4325,6 +4325,13 @@ async function fetchProfile(uid, bankId, token) {
     sg_handicap_accommodation: profile.sg_handicap_accommodation || '',
     jp_morgan_military_service: profile.jp_morgan_military_service || '',
     jp_morgan_work_authorizations: Array.isArray(profile.jp_morgan_work_authorizations) ? profile.jp_morgan_work_authorizations : [],
+    jpm_trades_experience: (profile.jpm_trades_experience || '').trim(),
+    jpm_financial_products_experience: (profile.jpm_financial_products_experience || '').trim(),
+    jpm_financial_services_experience: (profile.jpm_financial_services_experience || '').trim(),
+    jpm_regulations_experience: (profile.jpm_regulations_experience || '').trim(),
+    jpm_derivatives_experience: (profile.jpm_derivatives_experience || '').trim(),
+    jpm_office_5_days: (profile.jpm_office_5_days || '').trim(),
+    jpm_asset_servicing_experience: (profile.jpm_asset_servicing_experience || '').trim(),
     // Goldman Sachs — diversité & identité
     gender: (profile.gender || '').trim(),
     pronouns: (profile.pronouns || '').trim(),
