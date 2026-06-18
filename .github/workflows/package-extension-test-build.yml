@@ -26,9 +26,9 @@ jobs:
       - name: Build ZIP
         run: |
           mkdir -p build
-          cp -R extension build/taleos-extension
+          cp -R extension "build/taleos-extension-${{ steps.manifest.outputs.version }}"
           cd build
-          zip -qr "taleos-extension-${{ steps.manifest.outputs.version }}.zip" taleos-extension
+          zip -qr "taleos-extension-${{ steps.manifest.outputs.version }}.zip" "taleos-extension-${{ steps.manifest.outputs.version }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
