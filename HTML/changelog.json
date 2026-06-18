@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.2.248",
+    "date": "2026-06-18",
+    "changes": [
+      "refactor: préfixes de log ATS identifiés — Taleez (Bpifrance), Cegid Talent (Crédit Mutuel), Bwelcome (BNP), WordPress custom (CA)"
+    ]
+  },
+  {
     "version": "1.2.247",
     "date": "2026-06-18",
     "changes": [

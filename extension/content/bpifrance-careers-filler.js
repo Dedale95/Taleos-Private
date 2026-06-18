@@ -29,7 +29,7 @@
   }
 
   function log(message) {
-    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Portail maison — Bpifrance] ${String(message || '')}`;
+    const line = `[${new Date().toLocaleTimeString('fr-FR')}] [Taleez — Bpifrance] ${String(message || '')}`;
     console.log(line);
     reportRunLog(line);
   }
