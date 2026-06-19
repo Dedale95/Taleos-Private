@@ -1102,14 +1102,13 @@
       ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
       : null;
     if (salaryRow) {
-      const salaryInput = Array.from(salaryRow.querySelectorAll('input, textarea')).find(
-        el => el.type !== 'hidden'
-      );
-      if (salaryInput) {
+      const salaryTextarea = salaryRow.querySelector('textarea')
+        || Array.from(salaryRow.querySelectorAll('input')).find(el => el.type !== 'hidden');
+      if (salaryTextarea) {
         const amount = Number(salaryVal.replace(/[^0-9.]/g, ''));
         const formatted = amount ? amount.toLocaleString('en-US') : salaryVal;
         const salaryString = [salaryCurrency, formatted, 'yearly'].filter(Boolean).join(' ');
-        auditAndFill('Salary expectations', salaryInput, salaryString);
+        auditAndFill('Salary expectations', salaryTextarea, salaryString);
       }
     } else if (salaryVal) {
       log('   ⏭️  "Salary expectations" : question absente du DOM → skip');
