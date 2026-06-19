@@ -801,8 +801,19 @@
     const selected = exact || euFallback || null;
 
     if (!selected) {
+      // Fallback : sg_eu_work_authorization (champ commun renseigné dans le profil Taleos)
+      // Si le pays cible est dans l'UE et que ce champ est renseigné, on l'utilise.
+      if (EUROPEAN_UNION_COUNTRIES.has(normForEuCheck)) {
+        const sgEuAuth = String(profile.sg_eu_work_authorization || '').trim().toLowerCase();
+        if (sgEuAuth === 'yes') {
+          log(`ℹ️ JP Morgan section 2 : '${targetCountry}' non trouvé dans jp_morgan_work_authorizations → fallback sg_eu_work_authorization=yes (pays UE)`, 1);
+          return { country: targetCountry, workAuthorized: 'Yes', sponsorshipRequired: 'No', hasData: true };
+        } else if (sgEuAuth === 'no') {
+          log(`ℹ️ JP Morgan section 2 : '${targetCountry}' non trouvé → fallback sg_eu_work_authorization=no (pays UE)`, 1);
+          return { country: targetCountry, workAuthorized: 'No', sponsorshipRequired: 'Yes', hasData: true };
+        }
+      }
       // Pays absent de Firebase → l'utilisateur n'est pas autorisé à y travailler sans sponsoring.
-      // Règle métier : si un pays n'est pas renseigné, c'est qu'il n'y a pas de droit de travail.
       return {
         country: targetCountry,
         workAuthorized: 'No',
