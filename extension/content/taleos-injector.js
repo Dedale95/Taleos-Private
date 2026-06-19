@@ -284,7 +284,7 @@
     if (normalized.includes('credit agricole') || normalized.includes('crédit agricole') || normalized.includes('amundi') || normalized.includes('lcl') || normalized.includes('bforbank') || normalized.includes('caceis') || normalized.includes('indosuez') || normalized.includes('idia')) return 'credit_agricole';
     if (normalized.includes('societe generale') || normalized.includes('société générale')) return 'societe_generale';
     if (normalized.includes('deloitte')) return 'deloitte';
-    if (normalized.includes('bpce')) return 'bpce';
+    if (normalized.includes('bpce') || normalized.includes('bedl') || normalized.includes('la banque postale') || normalized.includes('natixis') || normalized.includes('banque populaire') || normalized.includes('caisse d\'epargne') || normalized.includes('caisse d epargne') || normalized.includes('oney') || normalized.includes('palatine')) return 'bpce';
     if (normalized.includes('bnp paribas') || normalized.includes('arval') || normalized.includes('cardif') || normalized.includes('hello bank') || normalized.includes('nickel')) return 'bnp_paribas';
     if (normalized.includes('credit mutuel') || normalized.includes('crédit mutuel') || normalized.includes('cic') || normalized.includes('euro information')) return 'credit_mutuel';
     if (normalized.includes('bpifrance')) return 'bpifrance';
