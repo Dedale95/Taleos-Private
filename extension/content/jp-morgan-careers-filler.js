@@ -1108,7 +1108,33 @@
         const amount = Number(salaryVal.replace(/[^0-9.]/g, ''));
         const formatted = amount ? amount.toLocaleString('en-US') : salaryVal;
         const salaryString = [salaryCurrency, formatted, 'yearly'].filter(Boolean).join(' ');
-        auditAndFill('Salary expectations', salaryTextarea, salaryString);
+        const currentVal = (salaryTextarea.value || '').trim();
+        if (currentVal === salaryString) {
+          log(`   ✅ Salary expectations : formulaire='${currentVal}' | Firebase='${salaryString}' -> Skip`, 1);
+        } else {
+          log(`   ✏️ Salary expectations : formulaire='${currentVal || '(vide)'}' | Firebase='${salaryString}' -> Frappe caractère par caractère`, 1);
+          salaryTextarea.focus();
+          await new Promise(r => setTimeout(r, 100));
+          // Vider le champ existant
+          const proto = HTMLTextAreaElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          if (setter) setter.call(salaryTextarea, '');
+          salaryTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise(r => setTimeout(r, 50));
+          // Taper caractère par caractère pour déclencher la validation Oracle/KnockoutJS
+          for (const char of salaryString) {
+            salaryTextarea.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+            salaryTextarea.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+            const newVal = salaryTextarea.value + char;
+            if (setter) setter.call(salaryTextarea, newVal);
+            salaryTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+            salaryTextarea.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+            await new Promise(r => setTimeout(r, 20));
+          }
+          salaryTextarea.dispatchEvent(new Event('change', { bubbles: true }));
+          salaryTextarea.blur();
+          await new Promise(r => setTimeout(r, 200));
+        }
       }
     } else if (salaryVal) {
       log('   ⏭️  "Salary expectations" : question absente du DOM → skip');
