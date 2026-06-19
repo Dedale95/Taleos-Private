@@ -546,8 +546,10 @@
         // retente Entrée sur password + clic sur bouton
         setTimeout(() => {
           const pass = document.querySelector('input[data-automation-id="password"]');
-          const btn  = document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]')
+          const btn  = document.querySelector('[data-automation-id="click_filter"][aria-label="Connexion"]')
+                    || document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]')
                     || document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                    || document.querySelector('[aria-label="Connexion"][role="button"]')
                     || document.querySelector('[aria-label="Ouvrir une session"][role="button"]')
                     || document.querySelector('[aria-label="Sign In"][role="button"]');
           if (pass) {
