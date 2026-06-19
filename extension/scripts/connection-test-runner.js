@@ -177,22 +177,22 @@
       }
     },
     rothschild: {
-      // Portail Workday — même moteur que Bank of America / Morgan Stanley
+      // Portail Workday en français — aria-label "Connexion" (pas "Sign In")
       loginUrl: 'https://rothschildandco.wd3.myworkdayjobs.com/Rothschildandco_Lateral/login',
       emailSel: 'input[data-automation-id="email"]',
       passwordSel: 'input[data-automation-id="password"]',
-      submitSel: '[data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
+      submitSel: '[data-automation-id="click_filter"][aria-label="Connexion"], [data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Connexion"][role="button"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
       cookieSel: null,
       successCheck: (url, content) => {
-        return /welcome to candidate home|my applications|candidate home/i.test(content) ||
+        return /bienvenue dans l.accueil candidat|mes candidatures|accueil candidat|welcome to candidate home|my applications|candidate home/i.test(content) ||
           !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
           !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
-          /candidate-home|my-applications/i.test(url) ||
+          /userHome|candidate-home|my-applications/i.test(url) ||
           !!document.querySelector('span.css-1xtbc5b');
       },
       failureCheck: (url, content) => {
         return !!document.querySelector('p.css-1hqkimk') ||
-          /you may have entered the wrong email address|wrong email/i.test(content) ||
+          /l.adresse e-mail ou le mot de passe saisi est erron|you may have entered the wrong email address|wrong email/i.test(content) ||
           /data-automation-id="errorMessage"/i.test(content) ||
           /incorrect.*credentials|invalid.*password|login.*failed/i.test(content);
       }
@@ -487,8 +487,10 @@
         // Le bouton Sign In est un <div data-automation-id="click_filter" role="button">
         // → libellé "Sign In" (en-US, BofA) ou "Ouvrir une session" (fr-CA, Morgan Stanley)
         // → simple .click() ignoré par React ; il faut mousedown+mouseup+click
-        const submitEl = document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]')
+        const submitEl = document.querySelector('[data-automation-id="click_filter"][aria-label="Connexion"]')
+                      || document.querySelector('[data-automation-id="click_filter"][aria-label="Ouvrir une session"]')
                       || document.querySelector('[data-automation-id="click_filter"][aria-label="Sign In"]')
+                      || document.querySelector('[aria-label="Connexion"][role="button"]')
                       || document.querySelector('[aria-label="Ouvrir une session"][role="button"]')
                       || document.querySelector('[aria-label="Sign In"][role="button"]')
                       || document.querySelector('[data-automation-id="signInSubmitButton"]');
