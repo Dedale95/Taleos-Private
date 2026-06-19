@@ -176,6 +176,27 @@
           /incorrect.*credentials|invalid.*password|login.*failed/i.test(content);
       }
     },
+    rothschild: {
+      // Portail Workday — même moteur que Bank of America / Morgan Stanley
+      loginUrl: 'https://rothschildandco.wd3.myworkdayjobs.com/Rothschildandco_Lateral/login',
+      emailSel: 'input[data-automation-id="email"]',
+      passwordSel: 'input[data-automation-id="password"]',
+      submitSel: '[data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
+      cookieSel: null,
+      successCheck: (url, content) => {
+        return /welcome to candidate home|my applications|candidate home/i.test(content) ||
+          !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
+          !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
+          /candidate-home|my-applications/i.test(url) ||
+          !!document.querySelector('span.css-1xtbc5b');
+      },
+      failureCheck: (url, content) => {
+        return !!document.querySelector('p.css-1hqkimk') ||
+          /you may have entered the wrong email address|wrong email/i.test(content) ||
+          /data-automation-id="errorMessage"/i.test(content) ||
+          /incorrect.*credentials|invalid.*password|login.*failed/i.test(content);
+      }
+    },
     nomura: {
       loginUrl: 'https://career4.successfactors.com/career?company=nomurahold&site=VjItclVPaDlpTTV6elVtOTVzYklhTW5Vdz09&lang=en_US&login_ns=login&loginFlowRequired=true&showLogOutMsg=true&brandUrl=Nomura&_s.crb=SNrcB9xhcLpoddiSLBSDMfAXxCyTprMuQj5mKg81yaA%253d',
       emailSel: '#username',
@@ -423,7 +444,7 @@
       }
       return fillAndSubmit(bankId, email, password);
     }
-    if (bankId === 'morgan_stanley' || bankId === 'bank_of_america') {
+    if (bankId === 'morgan_stanley' || bankId === 'bank_of_america' || bankId === 'rothschild') {
       // DOM Workday commun (Morgan Stanley & Bank of America — même moteur Workday React) :
       // - Bouton compte : <button id="accountSettingsButton" data-automation-id="utilityMenuButton">
       // - Après clic → menu : <ul role="menu" aria-labelledby="accountSettingsButton">
