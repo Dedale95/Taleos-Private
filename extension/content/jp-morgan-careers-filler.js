@@ -894,10 +894,17 @@
     }
 
     const nextBtn = findButtonByText('Next');
-    if (nextBtn && !state.emailSubmitted) {
-      // Guard one-shot : on ne clique qu'une seule fois pour éviter qu'un 2e run
-      // (pendant la transition SPA vers la page PIN) envoie un 2e code email.
+    // Guard one-shot : on ne clique qu'une seule fois pour éviter qu'un 2e run
+    // (pendant la transition SPA vers la page PIN) envoie un 2e code email.
+    // Mais si le clic a échoué (Oracle KO pas encore validé), on autorise un retry
+    // après 3 secondes (KO a eu le temps de valider entre deux).
+    const emailSubmittedAt = state.emailSubmittedAt || 0;
+    const retryAllowed = state.emailSubmitted && (Date.now() - emailSubmittedAt > 3000);
+    if (nextBtn && (!state.emailSubmitted || retryAllowed)) {
+      // Attendre que KO valide le champ email avant de cliquer
+      await sleep(400);
       state.emailSubmitted = true;
+      state.emailSubmittedAt = Date.now();
       nextBtn.click();
       log('➡️ JP Morgan : clic sur Next après email/consentement');
     }
