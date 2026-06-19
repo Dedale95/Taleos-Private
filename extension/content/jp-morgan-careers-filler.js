@@ -1113,15 +1113,31 @@
     const _isImmigrationContent = (val) =>
       /visa sponsorship|legally authorized to work|immigration support|work visa/i.test(val || '');
 
+    // Chercher depuis le nœud texte "minimum gross salary" et remonter jusqu'au plus
+    // petit conteneur ayant une textarea SANS contenir d'autres questions (notice period,
+    // immigration). findQuestionRow retourne un conteneur trop large qui englobe plusieurs
+    // questions screener — d'où les confusions salary↔notice period et salary↔immigration.
     const _findSalaryTextarea = () => {
-      const salaryRow = findQuestionRow('minimum gross salary')
-        || findQuestionRow('salary expectations')
-        || findQuestionRow('salary expectation');
-      if (!salaryRow) return null;
-      const candidates = Array.from(salaryRow.querySelectorAll('textarea'))
-        .filter(t => !/oda-work-summary/i.test(t.id) && !_isImmigrationContent(t.value));
-      // Priorité : visible (offsetHeight > 0)
-      return candidates.find(t => t.offsetHeight > 0) || candidates[0] || null;
+      const needles = ['minimum gross salary', 'salary expectations', 'salary expectation'];
+      for (const needle of needles) {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let textNode;
+        while ((textNode = walker.nextNode())) {
+          if (!norm(textNode.nodeValue || '').includes(norm(needle))) continue;
+          let el = textNode.parentElement;
+          for (let d = 0; el && d < 12; d++, el = el.parentElement) {
+            const elText = el.textContent || '';
+            // Ignorer les conteneurs qui englobent d'autres questions
+            if (/immigration support|visa sponsorship/i.test(elText)) continue;
+            if (/notice period|how long is your notice/i.test(elText)) continue;
+            const tas = Array.from(el.querySelectorAll('textarea'))
+              .filter(t => !/oda-work-summary/i.test(t.id) && !_isImmigrationContent(t.value));
+            if (!tas.length) continue;
+            return tas.find(t => t.offsetHeight > 0) || tas[0];
+          }
+        }
+      }
+      return null;
     };
 
     if (salaryVal) {
