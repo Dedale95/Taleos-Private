@@ -94,10 +94,21 @@ def normalize_company_group(company_name: str) -> str:
 
 def main() -> None:
     jobs = json.loads(INPUT_PATH.read_text(encoding="utf-8"))
-    counter = Counter(
+    counter: Counter = Counter(
         normalize_company_group(job.get("company_name") or job.get("companyName"))
         for job in jobs
     )
+
+    # Fraîcheur : date max (first_seen ou last_updated) par groupe
+    freshness: dict[str, str] = {}
+    for job in jobs:
+        group = normalize_company_group(job.get("company_name") or job.get("companyName") or "")
+        dates = [d for d in [job.get("first_seen"), job.get("last_updated")] if d]
+        if not dates:
+            continue
+        job_latest = max(dates)
+        if group not in freshness or job_latest > freshness[group]:
+            freshness[group] = job_latest
 
     total = len(jobs)
 
@@ -120,12 +131,21 @@ def main() -> None:
         if live_jobs:
             counter[group_name] += len(live_jobs)
             total += len(live_jobs)
+            # Fraîcheur pour les sources streaming
+            for job in live_jobs:
+                dates = [d for d in [job.get("first_seen"), job.get("last_updated")] if d]
+                if not dates:
+                    continue
+                job_latest = max(dates)
+                if group_name not in freshness or job_latest > freshness[group_name]:
+                    freshness[group_name] = job_latest
             print(f"   ✅ streaming {key} : {len(live_jobs)} offres ajoutées au summary")
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_jobs": total,
         "counts_by_group": dict(sorted(counter.items())),
+        "freshness_by_group": dict(sorted(freshness.items())),
     }
 
     for output_path in OUTPUT_PATHS:
