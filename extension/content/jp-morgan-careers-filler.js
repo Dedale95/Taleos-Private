@@ -1098,21 +1098,31 @@
     // Le champ JPM est un textarea texte libre : on compose "EUR 125,000 yearly".
     const salaryVal = profile.salary_expectations || profile.jpm_salary || '';
     const salaryCurrency = (profile.salary_currency || profile.current_salary_currency || '').trim();
-    const salaryRow = salaryVal
-      ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
-      : null;
+    // Trouver la textarea salary en excluant :
+    // 1. oda-work-summary (textarea visible de l'immigration support)
+    // 2. Toute textarea dont la valeur actuelle ressemble à du texte immigration
+    //    (Oracle JET rend un textarea KO-model numérique miroir du textarea immigration visible)
     let salaryReady = true;
-    if (salaryRow) {
-      // Exclure oda-work-summary-text-area (textarea immigration support) qui peut apparaître
-      // dans le même conteneur si la salary textarea n'est pas encore rendue par Oracle JET.
-      const candidateSalaryTextareas = Array.from(salaryRow.querySelectorAll('textarea'))
-        .filter(el => !/oda-work-summary/i.test(el.id));
-      // Préférer le textarea visible (offsetHeight > 0)
-      const salaryTextarea = candidateSalaryTextareas.find(el => el.offsetHeight > 0)
-        || candidateSalaryTextareas[0]
-        || null;
-      if (!salaryTextarea || salaryTextarea.offsetHeight === 0) {
-        log(`⏳ Salary expectations : textarea pas encore prêt (${candidateSalaryTextareas.length} candidat(s)) — attente`, 1);
+    const _isImmigrationContent = (val) =>
+      /visa sponsorship|legally authorized to work|immigration support|work visa/i.test(val || '');
+
+    const _findSalaryTextarea = () => {
+      const salaryRow = findQuestionRow('minimum gross salary')
+        || findQuestionRow('salary expectations')
+        || findQuestionRow('salary expectation');
+      if (!salaryRow) return null;
+      const candidates = Array.from(salaryRow.querySelectorAll('textarea'))
+        .filter(t => !/oda-work-summary/i.test(t.id) && !_isImmigrationContent(t.value));
+      // Priorité : visible (offsetHeight > 0)
+      return candidates.find(t => t.offsetHeight > 0) || candidates[0] || null;
+    };
+
+    if (salaryVal) {
+      const salaryTextarea = _findSalaryTextarea();
+      if (!salaryTextarea) {
+        log('   ⏭️  "Salary expectations" : question absente du DOM → skip');
+      } else if (salaryTextarea.offsetHeight === 0) {
+        log(`⏳ Salary expectations : textarea pas encore prêt (id='${salaryTextarea.id}') — attente`, 1);
         salaryReady = false;
       } else {
         log(`   🔎 Salary textarea id='${salaryTextarea.id}' name='${salaryTextarea.name}'`, 1);
@@ -1121,8 +1131,6 @@
         const salaryString = [salaryCurrency, formatted, 'yearly'].filter(Boolean).join(' ');
         auditAndFill('Salary expectations', salaryTextarea, salaryString);
       }
-    } else if (salaryVal) {
-      log('   ⏭️  "Salary expectations" : question absente du DOM → skip');
     }
 
     // ── Notice period ────────────────────────────────────────────────────────
