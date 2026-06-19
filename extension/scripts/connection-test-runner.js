@@ -142,7 +142,8 @@
           !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
           !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
           /candidate-home|my-applications/i.test(url) ||
-          !!document.querySelector('span.css-1xtbc5b');
+          // accountSettingsButton = menu utilisateur fiable dans les deux locales (en-US et fr-CA)
+          !!document.getElementById('accountSettingsButton');
       },
       failureCheck: (url, content) => {
         return !!document.querySelector('p.css-1hqkimk') ||
@@ -159,14 +160,13 @@
       submitSel: '[data-automation-id="click_filter"][aria-label="Sign In"], [aria-label="Sign In"][role="button"], button[data-automation-id="signInSubmitButton"]',
       cookieSel: null,
       successCheck: (url, content) => {
-        const html = (document.body?.innerHTML || '').toLowerCase();
         // Page Candidate Home Workday
         return /welcome to candidate home|my applications|candidate home/i.test(content) ||
           !!document.querySelector('[data-automation-id="navigationItem-My Applications"]') ||
           !!document.querySelector('[data-automation-id="navigationItem-Candidate Home"]') ||
           /candidate-home|my-applications/i.test(url) ||
-          // Présence du menu utilisateur (email visible en haut) = session active
-          !!document.querySelector('span.css-1xtbc5b');
+          // accountSettingsButton = menu utilisateur fiable (span.css-1xtbc5b était le sélecteur de langue → faux positif)
+          !!document.getElementById('accountSettingsButton');
       },
       failureCheck: (url, content) => {
         // Message d'erreur explicite sur la page de login Workday BofA
