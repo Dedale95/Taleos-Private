@@ -2,7 +2,7 @@
  * Taleos - Blueprint BPCE Lumesse/TalentLink
  * ------------------------------------------------------------
  * Source des données:
- * - chrome.storage.local.taleos_pending_bpce.profile (alimenté par background.js)
+ * - chrome.storage.local.taleos_pending_lumesse.profile (alimenté par background.js)
  * - CV récupéré via action background: fetch_storage_file
  */
 (async () => {
@@ -43,11 +43,11 @@
 
   async function getPendingBpceEntry() {
     const currentTabId = await getCurrentTabId();
-    const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get(["taleos_pending_bpce", "taleos_bpce_tab_id"]);
-    if (!taleos_pending_bpce || !taleos_pending_bpce.profile) return null;
-    const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+    const { taleos_pending_lumesse, taleos_lumesse_tab_id } = await chrome.storage.local.get(["taleos_pending_lumesse", "taleos_lumesse_tab_id"]);
+    if (!taleos_pending_lumesse || !taleos_pending_lumesse.profile) return null;
+    const expectedTabId = taleos_pending_lumesse.tabId || taleos_lumesse_tab_id || null;
     if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) return null;
-    return taleos_pending_bpce;
+    return taleos_pending_lumesse;
   }
 
   function setPing(phase, detail) {
@@ -76,11 +76,11 @@
   }
 
   async function getPendingBpceProfile() {
-    const taleos_pending_bpce = await getPendingBpceEntry();
-    if (!taleos_pending_bpce || !taleos_pending_bpce.profile) {
-      throw new Error("Profil BPCE introuvable (taleos_pending_bpce.profile)");
+    const taleos_pending_lumesse = await getPendingBpceEntry();
+    if (!taleos_pending_lumesse || !taleos_pending_lumesse.profile) {
+      throw new Error("Profil BPCE introuvable (taleos_pending_lumesse.profile)");
     }
-    return taleos_pending_bpce.profile;
+    return taleos_pending_lumesse.profile;
   }
 
   function normalizeProfile(raw) {
@@ -654,10 +654,10 @@
 
   async function maybeNotifyLumesseSuccess() {
     if (successSent || !detectLumesseSuccess()) return;
-    const taleos_pending_bpce = await getPendingBpceEntry();
-    if (!taleos_pending_bpce) return; // Onglet non armé — pas notre run
+    const taleos_pending_lumesse = await getPendingBpceEntry();
+    if (!taleos_pending_lumesse) return; // Onglet non armé — pas notre run
     successSent = true;
-    const pending = taleos_pending_bpce;
+    const pending = taleos_pending_lumesse;
     log("🎉 Confirmation Lumesse détectée — notification de succès à Taleos");
     chrome.runtime.sendMessage({
       action: "candidature_success",

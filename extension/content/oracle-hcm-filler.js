@@ -449,18 +449,18 @@
 
     try {
       const currentTabId = await getCurrentTabId();
-      const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get(['taleos_pending_bpce', 'taleos_bpce_tab_id']);
-      if (!taleos_pending_bpce) {
+      const { taleos_pending_lumesse, taleos_lumesse_tab_id } = await chrome.storage.local.get(['taleos_pending_lumesse', 'taleos_lumesse_tab_id']);
+      if (!taleos_pending_lumesse) {
         isAutomationRunning = false;
         return;
       }
-      const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+      const expectedTabId = taleos_pending_lumesse.tabId || taleos_lumesse_tab_id || null;
       if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) {
         logOnce('⏭️  Onglet Oracle non armé par "Candidater" → skip', 1);
         isAutomationRunning = false;
         return;
       }
-      const { profile, jobTitle, jobId } = taleos_pending_bpce;
+      const { profile, jobTitle, jobId } = taleos_pending_lumesse;
       showBanner();
 
       if (bpceBlueprint) {
@@ -476,8 +476,8 @@
             bankId: 'bpce',
             jobId,
             jobTitle,
-            companyName: taleos_pending_bpce.companyName || 'BPCE',
-            offerUrl: taleos_pending_bpce.offerUrl || location.href
+            companyName: taleos_pending_lumesse.companyName || 'BPCE',
+            offerUrl: taleos_pending_lumesse.offerUrl || location.href
           }).catch(() => {});
           return;
         }
@@ -563,9 +563,9 @@
           await bpceBlueprint.logCheck('Structure oracle pin', report);
         }
         logOnce('📋 Étape 1b : Vérification d\'identité (Code PIN)', 1.5);
-        const { taleos_bpce_pin_code } = await chrome.storage.local.get('taleos_bpce_pin_code');
-        if (taleos_bpce_pin_code && String(taleos_bpce_pin_code).length === 6) {
-          const pin = String(taleos_bpce_pin_code);
+        const { taleos_lumesse_pin_code } = await chrome.storage.local.get('taleos_lumesse_pin_code');
+        if (taleos_lumesse_pin_code && String(taleos_lumesse_pin_code).length === 6) {
+          const pin = String(taleos_lumesse_pin_code);
           for (let i = 0; i < 6; i++) {
             const field = document.querySelector(`#pin-code-${i + 1}`);
             if (field) smartFillInput(`Digit ${i+1}`, field, pin[i]);

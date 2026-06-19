@@ -125,21 +125,21 @@
 
   async function runAutomation() {
     const currentTabId = await getCurrentTabId();
-    const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get(['taleos_pending_bpce', 'taleos_bpce_tab_id']);
-    if (!taleos_pending_bpce) {
-      log('⏭️  Pas de candidature BPCE en cours (taleos_pending_bpce absent) → skip', 1);
+    const { taleos_pending_lumesse, taleos_lumesse_tab_id } = await chrome.storage.local.get(['taleos_pending_lumesse', 'taleos_lumesse_tab_id']);
+    if (!taleos_pending_lumesse) {
+      log('⏭️  Pas de candidature BPCE en cours (taleos_pending_lumesse absent) → skip', 1);
       return;
     }
-    const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+    const expectedTabId = taleos_pending_lumesse.tabId || taleos_lumesse_tab_id || null;
     if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) {
       log('⏭️  Onglet BPCE non armé par "Candidater" → skip', 1);
       return;
     }
 
-    const age = Date.now() - (taleos_pending_bpce.timestamp || 0);
+    const age = Date.now() - (taleos_pending_lumesse.timestamp || 0);
     if (age > MAX_PENDING_AGE) {
       log('⏭️  Pending expiré (>10 min) → skip', 1);
-      chrome.storage.local.remove(['taleos_pending_bpce', 'taleos_bpce_tab_id']);
+      chrome.storage.local.remove(['taleos_pending_lumesse', 'taleos_lumesse_tab_id']);
       return;
     }
 
@@ -203,15 +203,15 @@
     if (window.__taleosBpceInit) return;
     window.__taleosBpceInit = true;
 
-    chrome.storage.local.get('taleos_pending_bpce').then((s) => {
-      if (s.taleos_pending_bpce) {
+    chrome.storage.local.get('taleos_pending_lumesse').then((s) => {
+      if (s.taleos_pending_lumesse) {
         setTimeout(runAutomation, 800);
       }
     });
 
     chrome.storage.onChanged.addListener(async (changes, area) => {
       if (area !== 'local') return;
-      const newVal = changes.taleos_pending_bpce?.newValue;
+      const newVal = changes.taleos_pending_lumesse?.newValue;
       if (!newVal) return;
       // Ne s'activer que sur l'onglet ouvert par "Candidater", pas sur les autres onglets BPCE ouverts
       const expectedTabId = newVal.tabId ?? null;

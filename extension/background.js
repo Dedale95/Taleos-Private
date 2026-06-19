@@ -50,7 +50,7 @@ chrome.runtime.onInstalled.addListener((details) => {
     const bankTabKeys = [
       'taleos_jp_morgan_tab_id',
       'taleos_gs_tab_id',
-      'taleos_bpce_tab_id',
+      'taleos_lumesse_tab_id',
       'taleos_bnp_tab_id',
       'taleos_credit_mutuel_tab_id',
       'taleos_axa_tab_id',
@@ -174,7 +174,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'societe_generale') return 'taleos_pending_sg';
   if (bid === 'credit_agricole') return 'taleos_pending_offer';
   if (bid === 'deloitte') return 'taleos_pending_deloitte';
-  if (bid === 'bpce') return 'taleos_pending_bpce';
+  if (bid === 'bpce') return 'taleos_pending_lumesse';
   if (bid === 'bnp_paribas') return 'taleos_pending_bnp';
   if (bid === 'credit_mutuel') return 'taleos_pending_credit_mutuel';
   if (bid === 'jp_morgan') return 'taleos_pending_jp_morgan';
@@ -214,7 +214,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'societe_generale') keys.push('taleos_pending_sg', 'taleos_sg_tab_id');
   if (bid === 'credit_agricole') keys.push('taleos_pending_offer', 'taleos_ca_apply_tab_id');
   if (bid === 'deloitte') keys.push('taleos_pending_deloitte', 'taleos_deloitte_did_login_click');
-  if (bid === 'bpce') keys.push('taleos_pending_bpce', 'taleos_bpce_tab_id');
+  if (bid === 'bpce') keys.push('taleos_pending_lumesse', 'taleos_lumesse_tab_id');
   if (bid === 'bnp_paribas') keys.push('taleos_pending_bnp', 'taleos_bnp_tab_id');
   if (bid === 'credit_mutuel') keys.push('taleos_pending_credit_mutuel', 'taleos_credit_mutuel_tab_id');
   if (bid === 'jp_morgan') keys.push('taleos_pending_jp_morgan', 'taleos_jp_morgan_tab_id');
@@ -519,8 +519,8 @@ async function resolveTabAndMetaForStuckReport() {
   const s = await chrome.storage.local.get([
     'taleos_pending_sg',
     'taleos_sg_tab_id',
-    'taleos_pending_bpce',
-    'taleos_bpce_tab_id',
+    'taleos_pending_lumesse',
+    'taleos_lumesse_tab_id',
     'taleos_pending_bnp',
     'taleos_bnp_tab_id',
     'taleos_pending_credit_mutuel',
@@ -559,14 +559,14 @@ async function resolveTabAndMetaForStuckReport() {
       };
     }
   }
-  if (s.taleos_pending_bpce && s.taleos_bpce_tab_id) {
-    const tab = await chrome.tabs.get(s.taleos_bpce_tab_id).catch(() => null);
+  if (s.taleos_pending_lumesse && s.taleos_lumesse_tab_id) {
+    const tab = await chrome.tabs.get(s.taleos_lumesse_tab_id).catch(() => null);
     if (tab?.id) {
       return {
         tabId: tab.id,
         bankId: 'bpce',
-        jobId: s.taleos_pending_bpce.jobId || '',
-        offerUrl: s.taleos_pending_bpce.offerUrl || ''
+        jobId: s.taleos_pending_lumesse.jobId || '',
+        offerUrl: s.taleos_pending_lumesse.offerUrl || ''
       };
     }
   }
@@ -835,7 +835,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     clearApplyStuckWatchdog();
     return;
   }
-  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_bpce', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs', 'taleos_pending_axa', 'taleos_pending_bpifrance'];
+  const keys = ['taleos_pending_sg', 'taleos_pending_offer', 'taleos_pending_deloitte', 'taleos_pending_lumesse', 'taleos_pending_bnp', 'taleos_pending_jp_morgan', 'taleos_pending_goldman_sachs', 'taleos_pending_axa', 'taleos_pending_bpifrance'];
   for (const k of keys) {
     const ch = changes[k];
     if (ch && (ch.newValue === undefined || ch.newValue === null)) {
@@ -938,14 +938,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     }
     const state = await chrome.storage.local.get([
       'taleos_sg_tab_id',
-      'taleos_bpce_tab_id',
+      'taleos_lumesse_tab_id',
       'taleos_bnp_tab_id',
       'taleos_credit_mutuel_tab_id',
       'taleos_jp_morgan_tab_id',
       'taleos_axa_tab_id',
       'taleos_ca_apply_tab_id',
       'taleos_pending_sg',
-      'taleos_pending_bpce',
+      'taleos_pending_lumesse',
       'taleos_pending_bnp',
       'taleos_pending_credit_mutuel',
       'taleos_pending_jp_morgan',
@@ -966,10 +966,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       keysToRemove.add('taleos_pending_sg');
       keysToRemove.add('taleos_sg_tab_id');
     }
-    if (state.taleos_bpce_tab_id === tabId || state.taleos_pending_bpce?.tabId === tabId) {
-      keysToRemove.add('taleos_pending_bpce');
-      keysToRemove.add('taleos_bpce_tab_id');
-      keysToRemove.add('taleos_bpce_pin_code');
+    if (state.taleos_lumesse_tab_id === tabId || state.taleos_pending_lumesse?.tabId === tabId) {
+      keysToRemove.add('taleos_pending_lumesse');
+      keysToRemove.add('taleos_lumesse_tab_id');
+      keysToRemove.add('taleos_lumesse_pin_code');
     }
     if (state.taleos_bnp_tab_id === tabId || state.taleos_pending_bnp?.tabId === tabId) {
       keysToRemove.add('taleos_pending_bnp');
@@ -1834,7 +1834,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'bpce_pin_code') {
     const pinCode = String(msg.pinCode || '').trim();
     if (/^\d{6}$/.test(pinCode)) {
-      chrome.storage.local.set({ taleos_bpce_pin_code: pinCode });
+      chrome.storage.local.set({ taleos_lumesse_pin_code: pinCode });
       sendResponse({ ok: true });
     } else {
       sendResponse({ ok: false, message: 'PIN invalide' });
@@ -3233,13 +3233,13 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
       }, ms));
     }
     chrome.storage.local.set({
-      taleos_pending_bpce: {
+      taleos_pending_lumesse: {
         profile: { ...profile, __jobId: jobId, __jobTitle: jobTitle, __companyName: companyName || 'BPCE', __offerUrl: offerUrl },
         offerUrl, jobId, jobTitle, companyName: companyName || 'BPCE',
         tabId: tab.id,
         timestamp: Date.now()
       },
-      taleos_bpce_tab_id: tab.id
+      taleos_lumesse_tab_id: tab.id
     });
     scheduleApplyStuckWatchdog();
   } else if (routeAs === 'axa') {
@@ -4584,7 +4584,7 @@ async function checkGmailForBpcePin(tabId) {
         console.log('[Taleos BPCE] Code PIN intercepté :', pinCode);
         chrome.tabs.sendMessage(tabId, { action: 'bpce_pin_code', pinCode });
         // Stockage temporaire pour le content script
-        chrome.storage.local.set({ taleos_bpce_pin_code: pinCode });
+        chrome.storage.local.set({ taleos_lumesse_pin_code: pinCode });
       }
     }
   } catch (e) {
@@ -4609,7 +4609,7 @@ async function checkOutlookForBpcePin(tabId) {
     const pinCode = String(json.pinCode || '').trim();
     if (!/^\d{6}$/.test(pinCode)) return;
     chrome.tabs.sendMessage(tabId, { action: 'bpce_pin_code', pinCode });
-    chrome.storage.local.set({ taleos_bpce_pin_code: pinCode });
+    chrome.storage.local.set({ taleos_lumesse_pin_code: pinCode });
   } catch (_) {}
 }
 

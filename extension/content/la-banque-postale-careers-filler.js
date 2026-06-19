@@ -114,26 +114,26 @@
 
   async function runAutomation() {
     const currentTabId = await getCurrentTabId();
-    const { taleos_pending_bpce, taleos_bpce_tab_id } = await chrome.storage.local.get([
-      'taleos_pending_bpce',
-      'taleos_bpce_tab_id',
+    const { taleos_pending_lumesse, taleos_lumesse_tab_id } = await chrome.storage.local.get([
+      'taleos_pending_lumesse',
+      'taleos_lumesse_tab_id',
     ]);
 
-    if (!taleos_pending_bpce) {
-      log('⏭️  Pas de candidature en cours (taleos_pending_bpce absent) → skip');
+    if (!taleos_pending_lumesse) {
+      log('⏭️  Pas de candidature en cours (taleos_pending_lumesse absent) → skip');
       return;
     }
 
-    const expectedTabId = taleos_pending_bpce.tabId || taleos_bpce_tab_id || null;
+    const expectedTabId = taleos_pending_lumesse.tabId || taleos_lumesse_tab_id || null;
     if (!currentTabId || !expectedTabId || currentTabId !== expectedTabId) {
       log('⏭️  Onglet LBP non armé par "Candidater" → skip');
       return;
     }
 
-    const age = Date.now() - (taleos_pending_bpce.timestamp || 0);
+    const age = Date.now() - (taleos_pending_lumesse.timestamp || 0);
     if (age > MAX_PENDING_AGE) {
       log('⏭️  Pending expiré (>10 min) → skip');
-      chrome.storage.local.remove(['taleos_pending_bpce', 'taleos_bpce_tab_id']);
+      chrome.storage.local.remove(['taleos_pending_lumesse', 'taleos_lumesse_tab_id']);
       return;
     }
 
