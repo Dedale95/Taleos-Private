@@ -395,6 +395,29 @@
     }
   }
 
+  async function waitForFileUploadConfirm(container, label, maxWait = 15000) {
+    const start = Date.now();
+    log(`   ⏳ ${label} : Attente confirmation upload serveur...`);
+    while (Date.now() - start < maxWait) {
+      await delay(500);
+      // Upload terminé si un input hidden avec un ID d'attachement WP apparaît
+      const hiddenId = container?.querySelector('input[type="hidden"][name*="attachment"], input[type="hidden"][name*="file_id"], input[type="hidden"][value]:not([value=""])');
+      const dataId = container?.querySelector('[data-attachment-id], [data-file-id]');
+      const visualOk = container?.querySelector('.uploaded-file, .file-name, .file-preview, [class*="success"][class*="file"], [class*="uploaded"]');
+      if (hiddenId || dataId || visualOk) {
+        log(`   ✅ ${label} : Upload serveur confirmé.`);
+        return;
+      }
+      // Nom de fichier visible dans le texte + pas de spinner = upload OK
+      const txt = (container?.textContent || '').toLowerCase();
+      if (/\.pdf|\.doc/.test(txt) && !container?.querySelector('.spinner, .loading, [class*="progress"][class*="bar"]')) {
+        log(`   ✅ ${label} : Fichier visible dans le DOM.`);
+        return;
+      }
+    }
+    log(`   ⚠️ ${label} : Timeout confirmation upload (${maxWait / 1000}s) — on continue quand même.`);
+  }
+
   async function runAuditAndFill(p) {
     const nextBtn = () => document.querySelector('button.cta.next-step');
     const firstnameEl = document.getElementById('form-apply-firstname');
@@ -433,7 +456,7 @@
       log('   ✏️  CV : Manquant -> Upload depuis Firebase');
       const cvName = p.cv_filename || p.cv_storage_path?.split('/').pop() || 'cv.pdf';
       await setFileInputFromStorage('form-apply-cv', p.cv_storage_path, cvName);
-      await delay(3000);
+      await waitForFileUploadConfirm(cvContainer, 'CV', 15000);
     } else {
       log(`   ✅ CV : ${hasCv ? 'Présent (Firebase identique ou déjà uploadé) -> Skip' : 'Non requis'}`);
     }
@@ -447,7 +470,7 @@
       log('   ✏️  LM : Manquante -> Upload depuis Firebase');
       const lmName = p.lm_filename || p.lm_storage_path?.split('/').pop() || 'lm.pdf';
       await setFileInputFromStorage('form-apply-lm', p.lm_storage_path, lmName);
-      await delay(2000);
+      await waitForFileUploadConfirm(lmContainer, 'LM', 15000);
     } else {
       log(`   ✅ LM : ${hasLm ? 'Présente (Firebase identique ou déjà uploadée) -> Skip' : 'Non requise'}`);
     }
