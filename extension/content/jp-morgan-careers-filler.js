@@ -1101,10 +1101,20 @@
     const salaryRow = salaryVal
       ? (findQuestionRow('minimum gross salary') || findQuestionRow('salary expectations') || findQuestionRow('salary expectation'))
       : null;
+    let salaryReady = true;
     if (salaryRow) {
-      const salaryTextarea = salaryRow.querySelector('textarea')
-        || Array.from(salaryRow.querySelectorAll('input')).find(el => el.type !== 'hidden');
-      if (salaryTextarea) {
+      // Exclure oda-work-summary-text-area (textarea immigration support) qui peut apparaître
+      // dans le même conteneur si la salary textarea n'est pas encore rendue par Oracle JET.
+      const candidateSalaryTextareas = Array.from(salaryRow.querySelectorAll('textarea'))
+        .filter(el => !/oda-work-summary/i.test(el.id));
+      // Préférer le textarea visible (offsetHeight > 0)
+      const salaryTextarea = candidateSalaryTextareas.find(el => el.offsetHeight > 0)
+        || candidateSalaryTextareas[0]
+        || null;
+      if (!salaryTextarea || salaryTextarea.offsetHeight === 0) {
+        log(`⏳ Salary expectations : textarea pas encore prêt (${candidateSalaryTextareas.length} candidat(s)) — attente`, 1);
+        salaryReady = false;
+      } else {
         log(`   🔎 Salary textarea id='${salaryTextarea.id}' name='${salaryTextarea.name}'`, 1);
         const amount = Number(salaryVal.replace(/[^0-9.]/g, ''));
         const formatted = amount ? amount.toLocaleString('en-US') : salaryVal;
@@ -1178,6 +1188,7 @@
         log('   ⏭️  "Ethnicity" : question absente du DOM → skip');
       }
     }
+    return { salaryReady };
   }
 
   async function handleSection2(profile, pending) {
@@ -1254,13 +1265,14 @@
     }
 
     // Questions de sélection spécifiques au poste (présentes sur certains postes uniquement)
+    let salaryReady = true;
     if (!state.screenerDoneSection2) {
-      await handleScreenerQuestions(profile);
-      state.screenerDoneSection2 = true;
+      ({ salaryReady } = await handleScreenerQuestions(profile));
+      if (salaryReady) state.screenerDoneSection2 = true;
     }
 
     const nextBtn = findButtonByText('Next');
-    if (nextBtn && !state.nextSection2 && immigrationSupportReady) {
+    if (nextBtn && !state.nextSection2 && immigrationSupportReady && salaryReady) {
       state.nextSection2 = true;
       nextBtn.click();
       log('➡️ JP Morgan : section 2 validée, clic sur Next');
@@ -1805,8 +1817,8 @@
     //   (handleSection4 est appelé plusieurs fois par le mutation observer).
     // Questions de sélection spécifiques au poste (peut apparaître en section 4 sur certains postes)
     if (!state.screenerDoneSection4) {
-      await handleScreenerQuestions(profile);
-      state.screenerDoneSection4 = true;
+      const { salaryReady: salaryReady4 } = await handleScreenerQuestions(profile);
+      if (salaryReady4) state.screenerDoneSection4 = true;
     }
 
     if (!state.attachmentsCleared) {
