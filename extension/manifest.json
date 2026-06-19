@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.264",
-  "version_name": "1.2.264",
+  "version": "1.2.265",
+  "version_name": "1.2.265",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -244,6 +244,16 @@
       "js": [
         "scripts/taleos-automation-banner.js",
         "content/morgan-stanley-workday-filler.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://rothschildandco.wd3.myworkdayjobs.com/*"
+      ],
+      "js": [
+        "scripts/taleos-automation-banner.js",
+        "content/rothschild-workday-filler.js"
       ],
       "run_at": "document_idle"
     },

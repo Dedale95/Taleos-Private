@@ -95,7 +95,8 @@ const BANK_SCRIPT_MAP = {
   hsbc: 'content/hsbc-careers-filler.js',
   nomura: 'content/nomura-careers-filler.js',
   bank_of_america_workday: 'content/bank-of-america-workday-filler.js',
-  morgan_stanley_workday:  'content/morgan-stanley-workday-filler.js'
+  morgan_stanley_workday:  'content/morgan-stanley-workday-filler.js',
+  rothschild_workday:      'content/rothschild-workday-filler.js'
 };
 
 function hasBankAutomation(bankId) {
@@ -185,6 +186,7 @@ function pendingKeyForBank(bankId) {
   if (bid === 'nomura') return 'taleos_pending_nomura';
   if (bid === 'bank_of_america_workday') return 'taleos_pending_bank_of_america_workday';
   if (bid === 'morgan_stanley_workday')  return 'taleos_pending_morgan_stanley_workday';
+  if (bid === 'rothschild_workday')      return 'taleos_pending_rothschild_workday';
   return null;
 }
 
@@ -225,6 +227,7 @@ async function clearPendingStateForBank(bankId, tabId) {
   if (bid === 'nomura') keys.push('taleos_pending_nomura', 'taleos_nomura_tab_id');
   if (bid === 'bank_of_america_workday') keys.push('taleos_pending_bank_of_america_workday', 'taleos_bank_of_america_workday_tab_id');
   if (bid === 'morgan_stanley_workday')  keys.push('taleos_pending_morgan_stanley_workday',  'taleos_morgan_stanley_workday_tab_id');
+  if (bid === 'rothschild_workday')      keys.push('taleos_pending_rothschild_workday',       'taleos_rothschild_workday_tab_id');
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
@@ -537,7 +540,9 @@ async function resolveTabAndMetaForStuckReport() {
     'taleos_pending_bpifrance',
     'taleos_bpifrance_tab_id',
     'taleos_pending_hsbc',
-    'taleos_hsbc_tab_id'
+    'taleos_hsbc_tab_id',
+    'taleos_pending_rothschild_workday',
+    'taleos_rothschild_workday_tab_id'
   ]);
   if (s.taleos_pending_sg?.profile && s.taleos_sg_tab_id) {
     const tab = await chrome.tabs.get(s.taleos_sg_tab_id).catch(() => null);
@@ -2855,6 +2860,7 @@ function computeLegacyRouteAs(bankId, offerUrl) {
   if (bid === 'nomura' || (url.includes('career4.successfactors.com') && url.includes('nomurahold'))) return 'nomura';
   if (bid === 'bank_of_america_workday' || url.includes('ghr.wd1.myworkdayjobs.com')) return 'bank_of_america_workday';
   if (bid === 'morgan_stanley_workday'  || url.includes('ms.wd5.myworkdayjobs.com') || url.includes('morganstanley.eightfold.ai'))  return 'morgan_stanley_workday';
+  if (bid === 'rothschild_workday'      || url.includes('rothschildandco.wd3.myworkdayjobs.com')) return 'rothschild_workday';
   return 'other';
 }
 
@@ -3843,6 +3849,71 @@ async function handleApply(offerUrl, bankId, jobId, jobTitle, companyName, taleo
     // Nettoyage du listener new-tab après deadline
     setTimeout(() => chrome.tabs.onCreated.removeListener(_msNewTabListener), 10 * 60 * 1000);
 
+    await scheduleApplyStuckWatchdog();
+  } else if (routeAs === 'rothschild_workday') {
+    await chrome.storage.local.set({ taleos_pending_tab: taleosTabId });
+
+    try {
+      const { taleos_rothschild_workday_tab_id: existingRothTabId } = await chrome.storage.local.get(['taleos_rothschild_workday_tab_id']);
+      if (existingRothTabId) {
+        const existingTab = await chrome.tabs.get(existingRothTabId).catch(() => null);
+        if (existingTab) await chrome.tabs.remove(existingRothTabId).catch(() => {});
+        await chrome.storage.local.remove(['taleos_rothschild_workday_tab_id', 'taleos_pending_rothschild_workday']).catch(() => {});
+      }
+    } catch (_) {}
+
+    const rothCreateOpts = { url: offerUrl, active: true };
+    if (taleosTabId) {
+      try {
+        const taleosTab = await chrome.tabs.get(taleosTabId);
+        if (taleosTab?.index != null) rothCreateOpts.index = taleosTab.index + 1;
+      } catch (_) {}
+    }
+    const rothPendingBase = {
+      profile:      { ...profile },
+      email:        profile.auth_email || profile.email,
+      password:     profile.auth_password,
+      offerUrl,
+      jobId,
+      jobTitle,
+      companyName:  companyName || 'Rothschild & Co',
+      location:     offerMeta?.location || '',
+      contractType: offerMeta?.contractType || '',
+      tabId:        null,
+      timestamp:    Date.now()
+    };
+    await chrome.storage.local.set({ taleos_pending_rothschild_workday: rothPendingBase });
+    const rothTab = await chrome.tabs.create(rothCreateOpts);
+    await registerApplyRunForTab(rothTab.id, runMeta);
+    rothPendingBase.tabId = rothTab.id;
+    await chrome.storage.local.set({
+      taleos_pending_rothschild_workday: rothPendingBase,
+      taleos_rothschild_workday_tab_id:  rothTab.id
+    });
+    if (taleosTabId) chrome.tabs.update(taleosTabId, { active: true }).catch(() => {});
+
+    const _rothTabId    = rothTab.id;
+    const _rothDeadline = Date.now() + 10 * 60 * 1000;
+    const _rothInitListener = async (tid, info, updatedTab) => {
+      if (tid !== _rothTabId || info.status !== 'complete') return;
+      if (Date.now() > _rothDeadline) { chrome.tabs.onUpdated.removeListener(_rothInitListener); return; }
+      const tabUrl = (updatedTab?.url || '').toLowerCase();
+      if (!tabUrl.includes('rothschildandco.wd3.myworkdayjobs.com')) return;
+      chrome.tabs.onUpdated.removeListener(_rothInitListener);
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const guard = await chrome.scripting.executeScript({
+          target: { tabId: tid }, func: () => globalThis.__TALEOS_ROTHSCHILD_FILLER_RUNNING__
+        });
+        if (guard?.[0]?.result === true) return;
+        await chrome.scripting.executeScript({ target: { tabId: tid }, files: ['scripts/taleos-automation-banner.js'] });
+        await chrome.scripting.executeScript({ target: { tabId: tid }, files: ['content/rothschild-workday-filler.js'] });
+        console.log(`[Taleos Rothschild] Injection OK (tabId=${tid})`);
+      } catch (e) {
+        console.error('[Taleos Rothschild] Injection échouée:', e);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(_rothInitListener);
     await scheduleApplyStuckWatchdog();
   } else {
     // Ouvrir la candidature dans un sous-onglet, jamais dans la page Taleos
