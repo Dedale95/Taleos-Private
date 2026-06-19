@@ -245,6 +245,7 @@
     if (lowerUrl.includes('groupecreditagricole.jobs') || lowerUrl.includes('creditagricole')) return 'credit_agricole';
     if (lowerUrl.includes('careers.societegenerale.com') || lowerUrl.includes('societegenerale') || lowerUrl.includes('socgen.taleo.net')) return 'societe_generale';
     if (lowerUrl.includes('deloitte.com') || (lowerUrl.includes('myworkdayjobs.com') && lowerUrl.includes('deloitte'))) return 'deloitte';
+    if (lowerUrl.includes('labanquepostale.com')) return 'la_banque_postale';
     if (lowerUrl.includes('recrutement.bpce.fr')) return 'bpce';
     if (lowerUrl.includes('group.bnpparibas') || lowerUrl.includes('bwelcome.hr.bnpparibas')) return 'bnp_paribas';
     if (lowerUrl.includes('recrutement.creditmutuel.fr') || lowerUrl.includes('creditmutuel.fr')) return 'credit_mutuel';
@@ -284,7 +285,8 @@
     if (normalized.includes('credit agricole') || normalized.includes('crédit agricole') || normalized.includes('amundi') || normalized.includes('lcl') || normalized.includes('bforbank') || normalized.includes('caceis') || normalized.includes('indosuez') || normalized.includes('idia')) return 'credit_agricole';
     if (normalized.includes('societe generale') || normalized.includes('société générale')) return 'societe_generale';
     if (normalized.includes('deloitte')) return 'deloitte';
-    if (normalized.includes('bpce') || normalized.includes('bedl') || normalized.includes('la banque postale') || normalized.includes('natixis') || normalized.includes('banque populaire') || normalized.includes('caisse d\'epargne') || normalized.includes('caisse d epargne') || normalized.includes('oney') || normalized.includes('palatine')) return 'bpce';
+    if (normalized.includes('la banque postale') || normalized.includes('bedl')) return 'la_banque_postale';
+    if (normalized.includes('bpce') || normalized.includes('natixis') || normalized.includes('banque populaire') || normalized.includes('caisse d\'epargne') || normalized.includes('caisse d epargne') || normalized.includes('oney') || normalized.includes('palatine')) return 'bpce';
     if (normalized.includes('bnp paribas') || normalized.includes('arval') || normalized.includes('cardif') || normalized.includes('hello bank') || normalized.includes('nickel')) return 'bnp_paribas';
     if (normalized.includes('credit mutuel') || normalized.includes('crédit mutuel') || normalized.includes('cic') || normalized.includes('euro information')) return 'credit_mutuel';
     if (normalized.includes('bpifrance')) return 'bpifrance';
