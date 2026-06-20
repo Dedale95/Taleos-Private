@@ -955,7 +955,11 @@
       jobTitle: d.jobTitle || '',
       companyName: d.companyName || '',
       offerMeta: d.offerMeta || {}
-    }).catch(function () { });
+    }).then(function (res) {
+      window.dispatchEvent(new CustomEvent('taleos-apply-result', { detail: res || { ok: true } }));
+    }).catch(function (err) {
+      window.dispatchEvent(new CustomEvent('taleos-apply-result', { detail: { error: err?.message || 'Extension non disponible' } }));
+    });
   });
 
   window.addEventListener('taleos-request-outlook-unlink', function () {
