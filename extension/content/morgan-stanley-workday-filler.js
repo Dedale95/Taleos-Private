@@ -316,6 +316,14 @@
 
     log('🔐 Connexion à Morgan Stanley Workday...');
 
+    // Attendre que le formulaire soit rendu (React peut tarder)
+    let waitRender = 0;
+    while (waitRender < 8000) {
+      const anyEmail = document.querySelector('[data-automation-id="email"]');
+      if (anyEmail && anyEmail.offsetWidth > 0) break;
+      await sleep(300); waitRender += 300;
+    }
+
     // Si on est sur la page "Commencer sa candidature" (3 choix), cliquer
     // "Utiliser ma dernière candidature" pour accéder au vrai formulaire de login.
     const lastAppBtn = Array.from(document.querySelectorAll('button,a')).find(el =>
