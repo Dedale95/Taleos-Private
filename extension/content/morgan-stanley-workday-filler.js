@@ -298,21 +298,14 @@
 
   // ─── Connexion ───────────────────────────────────────────────────────────────
   function isLoggedIn() {
-    // ── Vérifications "pas connecté" en premier ──────────────────────────────
-    // Pas connecté si le popUpDialog de login est visible
-    const dialog = document.querySelector('[data-automation-id="popUpDialog"]');
-    if (dialog && dialog.offsetWidth > 0) return false;
-    // Pas connecté si un champ password est présent hors du dialog
-    // (formulaire "Créer un compte" ou "Ouvrir une session" plein-page)
-    const bgPwd = [...document.querySelectorAll('input[type="password"]')]
-      .find(i => i.offsetWidth > 0 && !i.closest('[data-automation-id="popUpDialog"]'));
-    if (bgPwd) return false;
-    // Pas connecté si on est sur la page "Start Your Application"
+    // /applyManually = page de login (Créer un compte / Ouvrir une session) → jamais connecté
+    if (location.href.includes('applyManually')) return false;
+    // Page "Start Your Application" (3 choix) → pas connecté
     const isStartPage = Array.from(document.querySelectorAll('button,a')).some(el =>
       el.offsetWidth > 0 && /apply manually|postuler manuellement/i.test(el.innerText || '')
     );
     if (isStartPage) return false;
-    // ── Vérifications "connecté" ─────────────────────────────────────────────
+    // Connecté si formulaire de candidature visible
     if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
     if (document.querySelector('[data-automation-id*="formField"]')) return true;
     return false;
@@ -348,21 +341,17 @@
       await sleep(1500);
     }
 
-    // Attendre que le popUpDialog de login soit présent
+    // Attendre que le champ password soit visible (après le swap DOM signInLink)
     let waited = 0;
     while (waited < 5000) {
-      const dialog = document.querySelector('[data-automation-id="popUpDialog"]');
-      if (dialog && dialog.querySelector('input[type="password"]')) break;
-      // fallback : champ password hors dialog (page de login complète)
-      const bgPwd = [...document.querySelectorAll('input[type="password"]')]
-        .find(i => !i.closest('[data-automation-id="popUpDialog"]'));
-      if (bgPwd) break;
+      const pwd = [...document.querySelectorAll('input[type="password"]')]
+        .find(i => i.offsetWidth > 0);
+      if (pwd) break;
       await sleep(300); waited += 300;
     }
 
-    // Scoper les champs dans le popUpDialog si présent, sinon page entière
-    const loginDialog = document.querySelector('[data-automation-id="popUpDialog"]');
-    const scope = (loginDialog && loginDialog.offsetWidth > 0) ? loginDialog : document;
+    // Toujours scoper sur document (full-page form, pas de popUpDialog)
+    const scope = document;
 
     // Remplir les champs — priorité data-automation-id="email" pour éviter les beecatchers (honeypots)
     const emailEl = scope.querySelector('[data-automation-id="email"]')
@@ -414,10 +403,10 @@
 
   // ─── Page intermédiaire "Postuler manuellement" ───────────────────────────────
   async function handleStartPage() {
+    // Déjà sur /applyManually → rien à faire
+    if (location.href.includes('applyManually')) return;
     let waited = 0;
     while (waited < 8000) {
-      if (document.querySelector('[data-automation-id="progressBarActiveStep"]') ||
-          document.querySelector('[data-automation-id*="formField"]')) return;
       const manualBtn = Array.from(document.querySelectorAll('button, a')).find(el =>
         el.offsetWidth > 0 && /postuler manuellement|apply manually/i.test(el.innerText || '')
       );
