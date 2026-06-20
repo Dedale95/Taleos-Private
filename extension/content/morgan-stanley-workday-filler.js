@@ -298,15 +298,22 @@
 
   // ─── Connexion ───────────────────────────────────────────────────────────────
   function isLoggedIn() {
-    // Pas connecté si un champ password est présent (page login ou création de compte)
-    if (document.querySelector('input[type="password"]')) return false;
+    // Connecté si la barre de progression ou des champs de candidature sont visibles
+    if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
+    if (document.querySelector('[data-automation-id*="formField"]')) return true;
+    // Pas connecté si le popUpDialog de login est visible
+    const dialog = document.querySelector('[data-automation-id="popUpDialog"]');
+    if (dialog && dialog.offsetWidth > 0) return false;
     // Pas connecté si on est sur la page "Start Your Application" (pas encore Apply Manually)
     const isStartPage = Array.from(document.querySelectorAll('button,a')).some(el =>
       el.offsetWidth > 0 && /apply manually|postuler manuellement/i.test(el.innerText || '')
     );
     if (isStartPage) return false;
-    // Connecté si formulaire candidature visible (barre de progression ou champs)
-    return true;
+    // Pas connecté si un champ password plein-page est présent (hors popUpDialog)
+    const bgPwd = [...document.querySelectorAll('input[type="password"]')]
+      .find(i => i.offsetWidth > 0 && !i.closest('[data-automation-id="popUpDialog"]'));
+    if (bgPwd) return false;
+    return false;
   }
 
   async function handleSignIn(authEmail, authPassword) {
@@ -339,20 +346,28 @@
       await sleep(1500);
     }
 
-    // Attendre le formulaire de login
+    // Attendre que le popUpDialog de login soit présent
     let waited = 0;
     while (waited < 5000) {
-      const pwdFields = document.querySelectorAll('input[type="password"]');
-      if (pwdFields.length > 0) break;
+      const dialog = document.querySelector('[data-automation-id="popUpDialog"]');
+      if (dialog && dialog.querySelector('input[type="password"]')) break;
+      // fallback : champ password hors dialog (page de login complète)
+      const bgPwd = [...document.querySelectorAll('input[type="password"]')]
+        .find(i => !i.closest('[data-automation-id="popUpDialog"]'));
+      if (bgPwd) break;
       await sleep(300); waited += 300;
     }
 
+    // Scoper les champs dans le popUpDialog si présent, sinon page entière
+    const loginDialog = document.querySelector('[data-automation-id="popUpDialog"]');
+    const scope = (loginDialog && loginDialog.offsetWidth > 0) ? loginDialog : document;
+
     // Remplir les champs — priorité data-automation-id="email" pour éviter les beecatchers (honeypots)
-    const pwdInputs  = [...document.querySelectorAll('input[type="password"]')];
-    const emailEl = document.querySelector('[data-automation-id="email"]')
-      || [...document.querySelectorAll('input[type="text"],input[type="email"]')]
+    const emailEl = scope.querySelector('[data-automation-id="email"]')
+      || [...scope.querySelectorAll('input[type="text"],input[type="email"]')]
            .find(i => i.offsetWidth > 0 && i.getAttribute('data-automation-id') !== 'beecatcher');
-    const pwdEl   = pwdInputs[pwdInputs.length - 1];  // dernier = celui du formulaire actif
+    const pwdEl = [...scope.querySelectorAll('input[type="password"]')]
+      .find(i => i.offsetWidth > 0);
 
     if (!emailEl || !pwdEl) { log('❌ Formulaire de connexion introuvable'); return false; }
     if (!authEmail || !authPassword) {
@@ -373,8 +388,8 @@
     reactSet(pwdEl, authPassword);
     await sleep(300);
 
-    // Soumettre — chercher le bouton dans le formulaire actif
-    const submitBtn = Array.from(document.querySelectorAll('button')).find(b =>
+    // Soumettre — chercher le bouton dans le scope (dialog ou page)
+    const submitBtn = Array.from(scope.querySelectorAll('button')).find(b =>
       b.offsetWidth > 0 && /ouvrir une session|sign in/i.test(b.textContent || '')
     );
     if (submitBtn) {
@@ -383,15 +398,15 @@
       pwdEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
     }
 
-    // Attendre la disparition du formulaire de login
+    // Attendre la disparition du popUpDialog ou du formulaire de login
     waited = 0;
     while (waited < 15000) {
       await sleep(500); waited += 500;
-      if (!document.querySelector('input[type="password"]') ||
-          !document.querySelector('button[type="submit"]')) break;
+      const dlg = document.querySelector('[data-automation-id="popUpDialog"]');
+      if (!dlg || dlg.offsetWidth === 0) break;
       // Vérifier si on est passé au formulaire de candidature
       if (document.querySelector('[data-automation-id*="formField"]') ||
-          document.querySelector('h2')?.textContent?.includes('renseignements')) break;
+          document.querySelector('[data-automation-id="progressBarActiveStep"]')) break;
     }
 
     const ok = isLoggedIn();
