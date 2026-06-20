@@ -945,6 +945,19 @@
     chrome.runtime.sendMessage({ action: 'reload_extension' }).catch(function () { });
   });
 
+  window.addEventListener('taleos-request-apply', function (e) {
+    var d = e.detail || {};
+    chrome.runtime.sendMessage({
+      action: 'taleos_apply',
+      offerUrl: d.offerUrl || '',
+      bankId: d.bankId || '',
+      jobId: d.jobId || '',
+      jobTitle: d.jobTitle || '',
+      companyName: d.companyName || '',
+      offerMeta: d.offerMeta || {}
+    }).catch(function () { });
+  });
+
   window.addEventListener('taleos-request-outlook-unlink', function () {
     chrome.runtime.sendMessage({ action: 'outlook_unlink' }).then(function (res) {
       window.dispatchEvent(new CustomEvent('taleos-outlook-unlink-result', {
