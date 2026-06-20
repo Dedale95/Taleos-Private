@@ -400,15 +400,11 @@
       pwdEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
     }
 
-    // Attendre la disparition du popUpDialog ou du formulaire de login
+    // Attendre la navigation vers le formulaire de candidature (ou disparition du dialog)
     waited = 0;
     while (waited < 15000) {
       await sleep(500); waited += 500;
-      const dlg = document.querySelector('[data-automation-id="popUpDialog"]');
-      if (!dlg || dlg.offsetWidth === 0) break;
-      // Vérifier si on est passé au formulaire de candidature
-      if (document.querySelector('[data-automation-id*="formField"]') ||
-          document.querySelector('[data-automation-id="progressBarActiveStep"]')) break;
+      if (isLoggedIn()) break;
     }
 
     const ok = isLoggedIn();
@@ -1086,12 +1082,12 @@
 
     setBanner('⏳ Taleos — Morgan Stanley en cours...');
 
-    // Connexion
+    // Page intermédiaire "Postuler manuellement" (avant login)
+    await handleStartPage();
+
+    // Connexion (sur la page /applyManually avec formulaire "Créer un compte")
     const loggedIn = await handleSignIn(authEmail, authPassword);
     if (!loggedIn) return;
-
-    // Page intermédiaire "Postuler manuellement"
-    await handleStartPage();
 
     // Attendre le formulaire (barre de progression ou formFields)
     let waitForm = 0;
