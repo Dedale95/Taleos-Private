@@ -338,36 +338,20 @@
          );
     if (signInLink) {
       await clickEl(signInLink);
-      await sleep(1500);
+      // Attendre que la transition soit complète : "Créer un compte" disparu (verifyPassword absent)
+      let waited = 0;
+      while (waited < 6000) {
+        await sleep(300); waited += 300;
+        const vp = document.querySelector('[data-automation-id="verifyPassword"]');
+        if (!vp || vp.offsetWidth === 0) break;
+      }
+      await sleep(500);
     }
 
-    // Attendre que le formulaire "Ouvrir une session" soit dans le DOM
-    // (les deux forms coexistent : Créer un compte ET Ouvrir une session)
-    let waited = 0;
-    while (waited < 5000) {
-      const pwd = [...document.querySelectorAll('input[type="password"]')]
-        .find(i => i.offsetWidth > 0);
-      if (pwd) break;
-      await sleep(300); waited += 300;
-    }
-
-    // Cibler le formulaire "Ouvrir une session" (après signInLink dans le DOM)
-    // Les deux forms ont les mêmes data-automation-id — on prend celui qui vient APRÈS signInLink
-    const anchorLink = document.querySelector('[data-automation-id="signInLink"]');
-    const allEmails = [...document.querySelectorAll('[data-automation-id="email"]')]
-      .filter(i => i.offsetWidth > 0);
-    const emailEl = anchorLink
-      ? allEmails.find(e => e.compareDocumentPosition(anchorLink) & Node.DOCUMENT_POSITION_PRECEDING)
-        || allEmails[allEmails.length - 1]
-      : allEmails[allEmails.length - 1] || allEmails[0];
-
-    // Le mot de passe associé : trouver celui qui suit emailEl dans le DOM
-    const allPwds = [...document.querySelectorAll('input[type="password"]')]
-      .filter(i => i.offsetWidth > 0 && i.getAttribute('data-automation-id') !== 'verifyPassword');
-    const pwdEl = emailEl
-      ? allPwds.find(p => emailEl.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)
-        || allPwds[allPwds.length - 1]
-      : allPwds[allPwds.length - 1];
+    // Après transition : il ne reste que le formulaire "Ouvrir une session"
+    const emailEl = document.querySelector('[data-automation-id="email"]');
+    const pwdEl = [...document.querySelectorAll('input[type="password"]')]
+      .find(i => i.offsetWidth > 0 && i.getAttribute('data-automation-id') !== 'verifyPassword');
 
     log(`  🎯 Champs login : email=${emailEl?.id}, pwd=${pwdEl?.id}`);
 
@@ -390,14 +374,10 @@
     reactSet(pwdEl, authPassword);
     await sleep(300);
 
-    // Soumettre — prendre le bouton "Ouvrir une session" qui vient APRÈS le pwdEl dans le DOM
-    const allSignInBtns = [...document.querySelectorAll('button')].filter(b =>
+    // Soumettre — après transition, un seul bouton "Ouvrir une session" reste visible
+    const submitBtn = [...document.querySelectorAll('button')].find(b =>
       b.offsetWidth > 0 && /ouvrir une session|sign in/i.test(b.textContent || '')
     );
-    const submitBtn = pwdEl
-      ? allSignInBtns.find(b => pwdEl.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
-        || allSignInBtns[allSignInBtns.length - 1]
-      : allSignInBtns[allSignInBtns.length - 1];
     if (submitBtn) {
       await clickEl(submitBtn);
     } else {
