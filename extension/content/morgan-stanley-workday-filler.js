@@ -314,13 +314,26 @@
 
     log('🔐 Connexion à Morgan Stanley Workday...');
 
+    // Si on est sur la page "Commencer sa candidature" (3 choix), cliquer
+    // "Utiliser ma dernière candidature" pour accéder au vrai formulaire de login.
+    const lastAppBtn = Array.from(document.querySelectorAll('button,a')).find(el =>
+      el.offsetWidth > 0 && /utiliser ma derni|use my last application/i.test(el.innerText || '')
+    );
+    if (lastAppBtn) {
+      log('🖱️ Clic sur "Utiliser ma dernière candidature"...');
+      await clickEl(lastAppBtn);
+      await sleep(2000);
+    }
+
     // La page de login a deux états :
     // a) Formulaire "Créer un compte" avec lien "Ouvrir une session" en bas
     // b) Formulaire "Ouvrir une session" directement
-    // Cliquer "Ouvrir une session" si on est sur la page de création
-    const signInLink = Array.from(document.querySelectorAll('a,button')).find(el =>
-      el.offsetWidth > 0 && /ouvrir une session/i.test(el.textContent || '')
-    );
+    // Cliquer "Ouvrir une session" si on est sur la page de création (data-automation-id="signInLink")
+    const signInLink = document.querySelector('[data-automation-id="signInLink"]')
+      || Array.from(document.querySelectorAll('a,button')).find(el =>
+           el.offsetWidth > 0 && /ouvrir une session|sign in/i.test(el.textContent || '')
+           && el.getAttribute('data-automation-id') !== 'utilityButtonSignIn'
+         );
     if (signInLink) {
       await clickEl(signInLink);
       await sleep(1500);
