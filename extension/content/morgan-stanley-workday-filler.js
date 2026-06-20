@@ -298,21 +298,23 @@
 
   // ─── Connexion ───────────────────────────────────────────────────────────────
   function isLoggedIn() {
-    // Connecté si la barre de progression ou des champs de candidature sont visibles
-    if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
-    if (document.querySelector('[data-automation-id*="formField"]')) return true;
+    // ── Vérifications "pas connecté" en premier ──────────────────────────────
     // Pas connecté si le popUpDialog de login est visible
     const dialog = document.querySelector('[data-automation-id="popUpDialog"]');
     if (dialog && dialog.offsetWidth > 0) return false;
-    // Pas connecté si on est sur la page "Start Your Application" (pas encore Apply Manually)
+    // Pas connecté si un champ password est présent hors du dialog
+    // (formulaire "Créer un compte" ou "Ouvrir une session" plein-page)
+    const bgPwd = [...document.querySelectorAll('input[type="password"]')]
+      .find(i => i.offsetWidth > 0 && !i.closest('[data-automation-id="popUpDialog"]'));
+    if (bgPwd) return false;
+    // Pas connecté si on est sur la page "Start Your Application"
     const isStartPage = Array.from(document.querySelectorAll('button,a')).some(el =>
       el.offsetWidth > 0 && /apply manually|postuler manuellement/i.test(el.innerText || '')
     );
     if (isStartPage) return false;
-    // Pas connecté si un champ password plein-page est présent (hors popUpDialog)
-    const bgPwd = [...document.querySelectorAll('input[type="password"]')]
-      .find(i => i.offsetWidth > 0 && !i.closest('[data-automation-id="popUpDialog"]'));
-    if (bgPwd) return false;
+    // ── Vérifications "connecté" ─────────────────────────────────────────────
+    if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
+    if (document.querySelector('[data-automation-id*="formField"]')) return true;
     return false;
   }
 
