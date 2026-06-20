@@ -334,10 +334,11 @@
       await sleep(300); waited += 300;
     }
 
-    // Remplir les champs (prendre les derniers inputs en cas de modal superposée)
-    const textInputs = [...document.querySelectorAll('input[type="text"],input[type="email"]')];
+    // Remplir les champs — priorité data-automation-id="email" pour éviter les beecatchers (honeypots)
     const pwdInputs  = [...document.querySelectorAll('input[type="password"]')];
-    const emailEl = textInputs[textInputs.length - 1];
+    const emailEl = document.querySelector('[data-automation-id="email"]')
+      || [...document.querySelectorAll('input[type="text"],input[type="email"]')]
+           .find(i => i.offsetWidth > 0 && i.getAttribute('data-automation-id') !== 'beecatcher');
     const pwdEl   = pwdInputs[pwdInputs.length - 1];  // dernier = celui du formulaire actif
 
     if (!emailEl || !pwdEl) { log('❌ Formulaire de connexion introuvable'); return false; }
