@@ -856,12 +856,21 @@
     }
 
     // ── École ─────────────────────────────────────────────────────────────────
-    // Le champ school est un combobox de recherche
+    // Le champ school est un combobox de recherche : React ne réagit pas aux events synthétiques.
+    // Technique : patcher window.fetch (MAIN world via <script> tag) avant de taper dans le champ.
     const schoolContainer = document.querySelector('[data-automation-id="formField-school"]');
     if (schoolContainer && (p.establishment || p.education_school || p.ms_school)) {
       const alreadySet = !!schoolContainer.querySelector('[data-automation-id="selectedItem"]');
       if (!alreadySet) {
-        await fillCombobox('formField-school', p.establishment || p.education_school || p.ms_school, 'École');
+        // Patch fetch MAIN world (ISC Paris ID Workday hardcodé)
+        const patchScript = document.createElement('script');
+        patchScript.textContent = `window._origFetch=window.fetch;window.fetch=async function(...a){const u=typeof a[0]==='string'?a[0]:(a[0]?.url||'');if(u.includes('/schools')){return new Response(JSON.stringify([{"id":"8b850e74612c011b83fa255fdd110fa1","descriptor":"ISC Paris"}]),{status:200,headers:{'Content-Type':'application/json'}});}return window._origFetch.apply(this,a);};`;
+        document.head.appendChild(patchScript); patchScript.remove();
+        await fillCombobox('formField-school', 'ISC', 'École', 8000);
+        // Restaurer fetch immédiatement
+        const restoreScript = document.createElement('script');
+        restoreScript.textContent = `if(window._origFetch){window.fetch=window._origFetch;}`;
+        document.head.appendChild(restoreScript); restoreScript.remove();
       } else {
         log('  ✓ École: déjà remplie → skip');
       }
@@ -902,12 +911,44 @@
       }
     }
 
-    // ── Champ d'études : combobox ──────────────────────────────────────────────
+    // ── Champ d'études : combobox avec virtual list ────────────────────────────
+    // Financial Markets est à l'index ~1173 sur ~2800 entrées (hors des 500 premières visibles).
+    // Technique : ouvrir dropdown → cliquer "Tout" → scroller à l'index → cliquer l'option.
     const fosContainer = document.querySelector('[data-automation-id="formField-fieldOfStudy"]');
-    if (fosContainer && (p.field_of_study || p.education_field_of_study || p.ms_field_of_study)) {
+    const fosValue = p.field_of_study || p.education_field_of_study || p.ms_field_of_study;
+    if (fosContainer && fosValue) {
       const alreadySet = !!fosContainer.querySelector('[data-automation-id="selectedItem"]');
       if (!alreadySet) {
-        await fillCombobox('formField-fieldOfStudy', p.field_of_study || p.education_field_of_study || p.ms_field_of_study, 'Champ d\'études');
+        const fosInput = fosContainer.querySelector('input');
+        if (fosInput) {
+          fosInput.focus(); await sleep(300); fosInput.click(); await sleep(600);
+          // Cliquer "Tout" pour charger toutes les entrées
+          const toutOpt = [...document.querySelectorAll('[role="option"]')]
+            .find(o => o.offsetWidth > 0 && /^tout$|^all$/i.test((o.textContent || '').trim()));
+          if (toutOpt) { toutOpt.click(); await sleep(1500); }
+          // Chercher d'abord via texte dans le champ de recherche
+          reactSet(fosInput, fosValue); await sleep(800);
+          let fosOpt = [...document.querySelectorAll('[role="option"]')]
+            .find(o => o.offsetWidth > 0 && new RegExp(fosValue, 'i').test(o.textContent || ''));
+          if (fosOpt) {
+            await trustedClickEl(fosOpt);
+            log(`  ✓ Champ d'études: "${fosOpt.textContent.trim()}"`);
+          } else {
+            // Fallback : virtual list scroll à l'index 1173 (Financial Markets)
+            const listbox = [...document.querySelectorAll('[role="listbox"]')]
+              .find(el => el.scrollHeight > 3000);
+            if (listbox) {
+              listbox.scrollTop = 1173 * 32; await sleep(1000);
+              const fmOpt = [...document.querySelectorAll('[role="option"]')]
+                .find(o => o.offsetWidth > 0 && new RegExp(fosValue, 'i').test(o.textContent || ''));
+              if (fmOpt) { await trustedClickEl(fmOpt); log(`  ✓ Champ d'études (scroll): "${fmOpt.textContent.trim()}"`); }
+              else { log(`  ⚠️ Champ d'études: "${fosValue}" introuvable`); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); }
+            } else {
+              log(`  ⚠️ Champ d'études: listbox introuvable`);
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+            }
+          }
+        }
       } else {
         log('  ✓ Champ d\'études: déjà rempli → skip');
       }
@@ -1009,8 +1050,10 @@
     setBanner('📝 Questions candidature en cours...');
     await sleep(2000); // Laisser React charger les questions
 
-    // Récupérer tous les formField-dc* (questions dynamiques)
-    const questionFields = Array.from(document.querySelectorAll('[data-automation-id*="formField-dc"]'));
+    // Récupérer tous les formFields contenant un select-button (questions dynamiques)
+    // Les IDs sont des GUIDs (ex: formField-8fa93d37...), pas forcément formField-dc*
+    const questionFields = Array.from(document.querySelectorAll('[data-automation-id^="formField-"]'))
+      .filter(f => f.offsetWidth > 0 && f.querySelector('button[id]'));
     log(`  🔍 ${questionFields.length} question(s) dynamique(s) trouvée(s)`);
 
     for (const field of questionFields) {
@@ -1097,26 +1140,28 @@
     await sleep(1500);
 
     // ── Genre ─────────────────────────────────────────────────────────────────
-    // Sélecteur exact : formField-gender → button id=personalInfoPerson--gender
-    // Options fr-CA : "Femme", "Homme", "Préfère de pas s'identifier"
-    const genderContainer = document.querySelector('[data-automation-id="formField-gender"]');
-    if (genderContainer) {
-      const genderBtn = genderContainer.querySelector('button[id]')
-        || document.getElementById('personalInfoPerson--gender');
-      if (genderBtn) {
-        const genderMap = {
-          'male':   'Homme',
-          'female': 'Femme',
-          'homme':  'Homme',
-          'femme':  'Femme',
-          'man':    'Homme',
-          'woman':  'Femme',
-        };
-        const target = genderMap[(p.gender || '').toLowerCase()] || "Préfère de pas s'identifier";
-        await fillSelectButton(genderBtn, target, 'Genre');
-      }
+    // Le champ gender peut avoir l'ID personalInfoPerson--gender ou personalInfoUS--gender
+    const genderBtn = document.getElementById('personalInfoPerson--gender')
+      || document.getElementById('personalInfoUS--gender')
+      || document.querySelector('[data-automation-id="formField-gender"] button[id]');
+    if (genderBtn) {
+      const genderMap = { 'male':'Homme','female':'Femme','homme':'Homme','femme':'Femme','man':'Homme','woman':'Femme' };
+      const target = genderMap[(p.gender || '').toLowerCase()] || "Préfère de pas s'identifier";
+      await fillSelectButton(genderBtn, target, 'Genre');
     } else {
-      log('  ⚠️ Genre: formField-gender introuvable');
+      log('  ⚠️ Genre: bouton introuvable');
+    }
+
+    // ── Race (US uniquement) ───────────────────────────────────────────────────
+    const raceBtn = document.getElementById('personalInfoUS--ethnicity');
+    if (raceBtn) {
+      await fillSelectButton(raceBtn, 'Prefer not to disclose', 'Race');
+    }
+
+    // ── Veteran status (US uniquement) ────────────────────────────────────────
+    const vetBtn = document.getElementById('personalInfoUS--veteranStatus');
+    if (vetBtn) {
+      await fillSelectButton(vetBtn, 'I AM NOT A VETERAN', 'Veteran status');
     }
 
     // ── Checkbox CGU — OBLIGATOIRE ─────────────────────────────────────────────
@@ -1194,7 +1239,7 @@
     await sleep(1000);
 
     // Boucle sur les étapes
-    for (let iter = 0; iter < 12; iter++) {
+    for (let iter = 0; iter < 20; iter++) {
       const step = currentStep();
       log(`\n▶ Étape courante: "${step}"`);
 
