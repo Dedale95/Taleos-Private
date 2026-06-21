@@ -1225,7 +1225,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'reload_extension') {
     sendResponse({ ok: true });
-    setTimeout(() => { chrome.runtime.reload(); }, 300);
+    chrome.runtime.reload(); // direct, sans setTimeout — le SW MV3 peut être tué avant le timer
+    return true;
+  }
+  // Réinjecte le filler MS Workday dans l'onglet depuis le disque (contourne le cache)
+  if (msg.action === 'reinject_ms_filler') {
+    const tabId = msg.tabId || sender.tab?.id;
+    if (tabId) {
+      // 1. Reset le guard pour autoriser la réinjection
+      chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => { globalThis.__TALEOS_MS_FILLER_RUNNING__ = false; },
+        world: 'ISOLATED'
+      }).then(() => chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content/morgan-stanley-workday-filler.js'],
+        world: 'ISOLATED'
+      })).then(() => sendResponse({ ok: true }))
+        .catch(e => sendResponse({ ok: false, error: String(e) }));
+    } else {
+      sendResponse({ ok: false, error: 'no tabId' });
+    }
     return true;
   }
   if (msg.action === 'taleos_get_current_tab_id') {
@@ -5209,7 +5229,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'reload_extension') {
     console.log('[Taleos] Rechargement extension demandé');
     sendResponse({ ok: true });
-    setTimeout(() => chrome.runtime.reload(), 100);
+    chrome.runtime.reload(); // direct, sans setTimeout
     return true;
   }
 });

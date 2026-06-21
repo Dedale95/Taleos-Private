@@ -974,10 +974,17 @@
     });
   });
 
-  // Relay de rechargement autonome : window.postMessage → background.reload_extension
+  // Relay autonome : window.postMessage → background
   window.addEventListener('message', function (e) {
-    if (e.data && e.data.taleos_action === 'reload_extension') {
+    if (!e.data) return;
+    if (e.data.taleos_action === 'reload_extension') {
       chrome.runtime.sendMessage({ action: 'reload_extension' }).catch(() => {});
+    }
+    // Réinjection du filler MS dans un onglet précis (contourne le cache des content scripts)
+    if (e.data.taleos_action === 'reinject_ms_filler' && e.data.tabId) {
+      chrome.runtime.sendMessage({ action: 'reinject_ms_filler', tabId: e.data.tabId })
+        .then(r => window.dispatchEvent(new CustomEvent('taleos-reinject-result', { detail: r })))
+        .catch(() => {});
     }
   });
 

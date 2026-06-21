@@ -70,9 +70,24 @@
 (function () {
   'use strict';
 
+  console.log('[Workday — Morgan Stanley] VERSION_CHECK: 1.2.286-local');
+
   if (!/ms\.wd5\.myworkdayjobs\.com/i.test(location.hostname || '')) return;
   if (globalThis.__TALEOS_MS_FILLER_RUNNING__) return;
   globalThis.__TALEOS_MS_FILLER_RUNNING__ = true;
+
+  // Fermer immédiatement la bannière cookie (si présente) — bloque sinon tout le reste
+  (function dismissCookieBanner() {
+    const declineBtn = document.querySelector('[data-automation-id="legalNoticeDeclineButton"]');
+    if (declineBtn && declineBtn.offsetWidth > 0) { declineBtn.click(); return; }
+    // Bannière pas encore rendue → observer
+    const obs = new MutationObserver(() => {
+      const btn = document.querySelector('[data-automation-id="legalNoticeDeclineButton"]');
+      if (btn && btn.offsetWidth > 0) { btn.click(); obs.disconnect(); }
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => obs.disconnect(), 15000);
+  })();
 
   // ─── Constantes ─────────────────────────────────────────────────────────────
   const PENDING_KEY = 'taleos_pending_morgan_stanley_workday';
