@@ -304,6 +304,7 @@
       /enregistrer\s+et\s+continuer|save\s+and\s+continue/i.test((b.innerText || '').trim())
     ) || document.querySelector('[data-automation-id="pageFooterNextButton"]');
     if (!btn) { log('⚠️ Bouton "Enregistrer et continuer" introuvable'); return false; }
+    log(`  ▶ Clic "Enregistrer et continuer"...`);
     await trustedClickEl(btn);
     await sleep(3000);
 
@@ -490,13 +491,15 @@
         // Taper pour rechercher → niveau 1 "Site de carrière"
         const sourceInput = sourceContainer.querySelector('input:not([type="hidden"])');
         if (sourceInput) {
-          sourceInput.focus();
-          await sleep(200);
+          // Ouvrir le dropdown avec un vrai clic CDP (isTrusted: true)
+          await trustedClickEl(sourceInput);
+          await sleep(500);
           reactSet(sourceInput, 'Site de carrière');
-          await sleep(800);
+          await sleep(1000);
           // Chercher l'option niveau 1 parent (pas celle avec "de Morgan Stanley")
-          const opts = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
+          let opts = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
             .filter(o => o.offsetWidth > 0);
+          log(`  ℹ️ Source: ${opts.length} option(s) visibles après saisie L1`);
           const parentOpt = opts.find(o =>
             /site de carri[eè]re(?!\s+de)/i.test(o.textContent || '')
           );
@@ -506,6 +509,7 @@
             // Niveau 2 : sélectionner l'option exacte
             const opts2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
               .filter(o => o.offsetWidth > 0);
+            log(`  ℹ️ Source: ${opts2.length} option(s) visibles après L1`);
             const targetOpt = opts2.find(o =>
               new RegExp(msSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(o.textContent || '')
             ) || opts2.find(o => /morgan stanley/i.test(o.textContent || ''));
@@ -514,16 +518,16 @@
               log(`  ✓ Source: "${targetOpt.textContent.trim()}"`);
             } else {
               log(`  ⚠️ Source: option niveau 2 introuvable → essai direct`);
-              sourceInput.focus();
-              await sleep(200);
+              await trustedClickEl(sourceInput);
+              await sleep(300);
               reactSet(sourceInput, msSource);
-              await sleep(800);
+              await sleep(1000);
               const directOpt = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
                 .find(o => o.offsetWidth > 0 && /morgan stanley/i.test(o.textContent || ''));
               if (directOpt) { await trustedClickEl(directOpt); log(`  ✓ Source (direct): "${directOpt.textContent.trim()}"`); }
             }
           } else {
-            log(`  ⚠️ Source: option niveau 1 introuvable`);
+            log(`  ⚠️ Source: option niveau 1 introuvable (opts: ${opts.map(o=>o.textContent.trim().slice(0,30)).join(' | ')})`);
           }
         }
       }
