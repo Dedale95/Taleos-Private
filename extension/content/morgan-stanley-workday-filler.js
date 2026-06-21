@@ -392,8 +392,8 @@
       pwdEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
     }
 
-    // Attendre la navigation vers le formulaire de candidature (ou disparition du dialog)
-    waited = 0;
+    // Attendre la navigation vers le formulaire de candidature
+    let waited = 0;
     while (waited < 15000) {
       await sleep(500); waited += 500;
       if (isLoggedIn()) break;
