@@ -136,6 +136,18 @@
     el.click();
   }
 
+  // Clic CDP via chrome.debugger (isTrusted:true) — pour combobox options et submit
+  async function trustedClickEl(el) {
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    await sleep(200);
+    const rect = el.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    await chrome.runtime.sendMessage({ action: 'trusted_click', x, y }).catch(() => {});
+    await sleep(200);
+  }
+
   // ─── Remplir un champ texte simple (formField-*) ─────────────────────────────
   async function fillTextField(automationId, value, label) {
     if (!value) { log(`  ⏭️  ${label || automationId}: vide → ignoré`); return false; }
@@ -186,7 +198,7 @@
 
       const opt = opts.find(o => new RegExp(searchText, 'i').test(o.textContent || ''));
       if (opt) {
-        await clickEl(opt);
+        await trustedClickEl(opt);
         await sleep(300);
         log(`  ✓ ${label}: "${opt.textContent.trim()}"`);
         return true;
@@ -220,7 +232,7 @@
         .filter(o => o.offsetWidth > 0);
       const opt = opts.find(o => new RegExp(targetText, 'i').test(o.textContent || ''));
       if (opt) {
-        await clickEl(opt);
+        await trustedClickEl(opt);
         await sleep(300);
         log(`  ✓ ${label}: "${opt.textContent.trim()}"`);
         return true;
@@ -291,9 +303,17 @@
       b.offsetWidth > 0 &&
       /enregistrer\s+et\s+continuer|save\s+and\s+continue/i.test((b.innerText || '').trim())
     ) || document.querySelector('[data-automation-id="pageFooterNextButton"]');
-    if (btn) { await clickEl(btn); await sleep(3000); return true; }
-    log('⚠️ Bouton "Enregistrer et continuer" introuvable');
-    return false;
+    if (!btn) { log('⚠️ Bouton "Enregistrer et continuer" introuvable'); return false; }
+    await trustedClickEl(btn);
+    await sleep(3000);
+
+    // Détecter les erreurs "liée à la page" (conflits Workday données existantes)
+    const pageErrors = [...document.querySelectorAll('[data-automation-id*="validationError"], [class*="error"]')]
+      .filter(el => el.offsetWidth > 0 && /liée à la page|page-level/i.test(el.textContent || ''));
+    if (pageErrors.length > 0) {
+      log(`  ⚠️ ${pageErrors.length} erreur(s) liée(s) à la page (données existantes) — ignorées`);
+    }
+    return true;
   }
 
   // ─── Connexion ───────────────────────────────────────────────────────────────
@@ -542,8 +562,10 @@
     }
 
     // ── Prénom / Nom ──────────────────────────────────────────────────────────
-    await fillTextField('formField-legalName--firstName', p.first_name || p.firstName, 'Prénom');
-    await fillTextField('formField-legalName--lastName',  p.last_name  || p.lastName,  'Nom');
+    const firstName = p.first_name || p.firstName || p.prenom || p.given_name || p.forename || '';
+    const lastName  = p.last_name  || p.lastName  || p.nom   || p.family_name || p.surname  || '';
+    await fillTextField('formField-legalName--firstName', firstName, 'Prénom');
+    await fillTextField('formField-legalName--lastName',  lastName,  'Nom');
 
     // ── Adresse ───────────────────────────────────────────────────────────────
     await fillTextField('formField-addressLine1', p.address,                  'Adresse');
