@@ -382,10 +382,13 @@
     reactSet(pwdEl, authPassword);
     await sleep(300);
 
-    // Soumettre — après transition, un seul bouton "Ouvrir une session" reste visible
-    const submitBtn = [...document.querySelectorAll('button')].find(b =>
-      b.offsetWidth > 0 && /ouvrir une session|sign in/i.test(b.textContent || '')
-    );
+    // Soumettre — cibler signInSubmitButton, pas utilityButtonSignIn (haut de page)
+    const submitBtn = document.querySelector('[data-automation-id="signInSubmitButton"]')
+      || [...document.querySelectorAll('button')].find(b =>
+           b.offsetWidth > 0 &&
+           /ouvrir une session|sign in/i.test(b.textContent || '') &&
+           b.getAttribute('data-automation-id') !== 'utilityButtonSignIn'
+         );
     if (submitBtn) {
       await clickEl(submitBtn);
     } else {
