@@ -70,8 +70,6 @@
 (function () {
   'use strict';
 
-  console.log('[Workday — Morgan Stanley] VERSION_CHECK: 1.2.286-local');
-
   if (!/ms\.wd5\.myworkdayjobs\.com/i.test(location.hostname || '')) return;
   if (globalThis.__TALEOS_MS_FILLER_RUNNING__) return;
   globalThis.__TALEOS_MS_FILLER_RUNNING__ = true;
@@ -385,23 +383,35 @@
       await sleep(2000);
     }
 
-    // Cliquer "Ouvrir une session" si nécessaire (page 3-choix ou page "Créer un compte")
-    // Essayer d'abord data-automation-id="signInLink", puis texte, puis utility button en fallback
-    const signInLink = document.querySelector('[data-automation-id="signInLink"]')
-      || Array.from(document.querySelectorAll('a,button')).find(el =>
-           el.offsetWidth > 0 && /ouvrir une session|sign in/i.test(el.textContent || '')
-         );
-    if (signInLink) {
-      log(`  🖱️ Clic signInLink: "${(signInLink.innerText || '').trim().slice(0, 40)}"[${signInLink.getAttribute('data-automation-id') || ''}]`);
-      await clickEl(signInLink);
-      // Attendre que le champ email du formulaire sign-in soit visible (jusqu'à 8s)
-      let waited = 0;
-      while (waited < 8000) {
-        await sleep(300); waited += 300;
-        const em = document.querySelector('[data-automation-id="email"]');
-        if (em && em.offsetWidth > 0) break;
+    // Ne cliquer "Ouvrir une session" QUE si le champ email n'est pas déjà visible
+    // (utilityButtonSignIn est un toggle : cliquer quand form déjà ouvert = ferme la modal)
+    const emailCheckBeforeSignIn = document.querySelector('[data-automation-id="email"]');
+    const emailAlreadyVisible = !!(emailCheckBeforeSignIn && emailCheckBeforeSignIn.offsetWidth > 0);
+    if (!emailAlreadyVisible) {
+      // Préférer signInLink dédié, exclure utilityButtonSignIn (toggle header)
+      const signInLink = document.querySelector('[data-automation-id="signInLink"]')
+        || Array.from(document.querySelectorAll('a,button')).find(el =>
+             el.offsetWidth > 0 &&
+             el.getAttribute('data-automation-id') !== 'utilityButtonSignIn' &&
+             /ouvrir une session|sign in/i.test(el.textContent || '')
+           )
+        || Array.from(document.querySelectorAll('a,button')).find(el =>
+             el.offsetWidth > 0 && /ouvrir une session|sign in/i.test(el.textContent || '')
+           );
+      if (signInLink) {
+        log(`  🖱️ Clic signInLink: "${(signInLink.innerText || '').trim().slice(0, 40)}"[${signInLink.getAttribute('data-automation-id') || ''}]`);
+        await clickEl(signInLink);
+        // Attendre que le champ email du formulaire sign-in soit visible (jusqu'à 8s)
+        let waited = 0;
+        while (waited < 8000) {
+          await sleep(300); waited += 300;
+          const em = document.querySelector('[data-automation-id="email"]');
+          if (em && em.offsetWidth > 0) break;
+        }
+        await sleep(300);
       }
-      await sleep(300);
+    } else {
+      log('  ℹ️ Champ email déjà visible — pas de clic signInLink');
     }
 
     // Après transition : chercher les champs email et mot de passe
@@ -470,8 +480,29 @@
   async function handleStartPage() {
     // Déjà sur /applyManually → rien à faire
     if (location.href.includes('applyManually')) return;
+
+    // Sur la page du poste (avant le flow candidature), cliquer "Postuler" d'abord
+    let preWait = 0;
+    while (preWait < 8000) {
+      if (location.href.includes('applyManually')) return;
+      const applyBtn = Array.from(document.querySelectorAll('button, a')).find(el =>
+        el.offsetWidth > 0 &&
+        /^postuler$|^apply$|^apply now$|^postuler maintenant$/i.test((el.innerText || '').trim()) &&
+        !/manuellement|manually/i.test(el.innerText || '')
+      );
+      if (applyBtn) {
+        log(`🖱️ Clic "Postuler" (page offre)...`);
+        await trustedClickEl(applyBtn);
+        await sleep(2000);
+        break;
+      }
+      await sleep(500); preWait += 500;
+    }
+
+    // Maintenant chercher "Postuler manuellement" (page 3-choix)
     let waited = 0;
     while (waited < 8000) {
+      if (location.href.includes('applyManually')) return;
       const manualBtn = Array.from(document.querySelectorAll('button, a')).find(el =>
         el.offsetWidth > 0 && /postuler manuellement|apply manually/i.test(el.innerText || '')
       );
