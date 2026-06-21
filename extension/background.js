@@ -5179,6 +5179,31 @@ async function trackError(errorType, errorMessage, site, jobId, offerUrl) {
   });
 }
 
+// Trusted click via chrome.debugger (génère isTrusted:true côté page)
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'trusted_click') {
+    const tabId = sender.tab?.id || msg.tabId;
+    if (!tabId) { sendResponse({ ok: false, error: 'no tabId' }); return; }
+    const { x, y } = msg;
+    chrome.debugger.attach({ tabId }, '1.3', () => {
+      if (chrome.runtime.lastError) {
+        // Peut-être déjà attaché — tenter quand même
+      }
+      const clickEvent = (type, cb) => chrome.debugger.sendCommand(
+        { tabId }, 'Input.dispatchMouseEvent',
+        { type, x, y, button: 'left', clickCount: 1, modifiers: 0 },
+        cb
+      );
+      clickEvent('mousePressed', () => {
+        clickEvent('mouseReleased', () => {
+          chrome.debugger.detach({ tabId }, () => sendResponse({ ok: true }));
+        });
+      });
+    });
+    return true;
+  }
+});
+
 // Exposition des fonctions GA4 pour les content scripts
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'track_event') {

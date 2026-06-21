@@ -298,15 +298,22 @@
 
   // ─── Connexion ───────────────────────────────────────────────────────────────
   function isLoggedIn() {
-    // /applyManually = page de login (Créer un compte / Ouvrir une session) → jamais connecté
-    if (location.href.includes('applyManually')) return false;
+    // Si password visible → page de login
+    const pwdVisible = [...document.querySelectorAll('input[type="password"]')]
+      .some(i => i.offsetWidth > 0);
+    if (pwdVisible) return false;
+    // Barre de progression = formulaire de candidature affiché
+    if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
+    // Champs spécifiques post-login
+    if (document.querySelector('[data-automation-id="formField-legalName--firstName"]') ||
+        document.querySelector('[data-automation-id="formField-source"]') ||
+        document.querySelector('[data-automation-id="formField-school"]')) return true;
     // Page "Start Your Application" (3 choix) → pas connecté
     const isStartPage = Array.from(document.querySelectorAll('button,a')).some(el =>
       el.offsetWidth > 0 && /apply manually|postuler manuellement/i.test(el.innerText || '')
     );
     if (isStartPage) return false;
-    // Connecté si formulaire de candidature visible
-    if (document.querySelector('[data-automation-id="progressBarActiveStep"]')) return true;
+    // Autres formFields
     if (document.querySelector('[data-automation-id*="formField"]')) return true;
     return false;
   }
@@ -382,7 +389,7 @@
     reactSet(pwdEl, authPassword);
     await sleep(300);
 
-    // Soumettre — cibler signInSubmitButton, pas utilityButtonSignIn (haut de page)
+    // Soumettre via chrome.debugger (trusted click isTrusted:true)
     const submitBtn = document.querySelector('[data-automation-id="signInSubmitButton"]')
       || [...document.querySelectorAll('button')].find(b =>
            b.offsetWidth > 0 &&
@@ -390,7 +397,13 @@
            b.getAttribute('data-automation-id') !== 'utilityButtonSignIn'
          );
     if (submitBtn) {
-      await clickEl(submitBtn);
+      submitBtn.scrollIntoView({ block: 'center' });
+      await sleep(300);
+      const rect = submitBtn.getBoundingClientRect();
+      const x = Math.round(rect.left + rect.width / 2);
+      const y = Math.round(rect.top + rect.height / 2);
+      await chrome.runtime.sendMessage({ action: 'trusted_click', x, y }).catch(() => {});
+      await sleep(300);
     } else {
       pwdEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
     }

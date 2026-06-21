@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Taleos",
-  "version": "1.2.279",
-  "version_name": "1.2.279",
+  "version": "1.2.280",
+  "version_name": "1.2.280",
   "description": "Automatisation de candidatures bancaires - Taleos",
   "permissions": [
     "activeTab",
@@ -12,7 +12,8 @@
     "tabs",
     "cookies",
     "webRequest",
-    "identity"
+    "identity",
+    "debugger"
   ],
   "oauth2": {
     "client_id": "974062127016-qtdcv4551h0f0n4i52cmsponkstm5mhg.apps.googleusercontent.com",
