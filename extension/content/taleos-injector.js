@@ -974,4 +974,11 @@
     });
   });
 
+  // Relay de rechargement autonome : window.postMessage → background.reload_extension
+  window.addEventListener('message', function (e) {
+    if (e.data && e.data.taleos_action === 'reload_extension') {
+      chrome.runtime.sendMessage({ action: 'reload_extension' }).catch(() => {});
+    }
+  });
+
 })();

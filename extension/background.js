@@ -5206,6 +5206,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Exposition des fonctions GA4 pour les content scripts
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'reload_extension') {
+    console.log('[Taleos] Rechargement extension demandé');
+    sendResponse({ ok: true });
+    setTimeout(() => chrome.runtime.reload(), 100);
+    return true;
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'track_event') {
     sendGA4Event(msg.eventName, msg.params, msg.userId).then(() => {
       sendResponse({ ok: true });
