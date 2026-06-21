@@ -319,17 +319,17 @@
   }
 
   async function handleSignIn(authEmail, authPassword) {
+    // Attendre que la page soit prête : soit déjà connecté, soit formulaire login visible
+    let waitInit = 0;
+    while (waitInit < 10000) {
+      if (isLoggedIn()) { log('  ✓ Déjà connecté'); return true; }
+      const emailEl = document.querySelector('[data-automation-id="email"]');
+      if (emailEl && emailEl.offsetWidth > 0) break;
+      await sleep(300); waitInit += 300;
+    }
     if (isLoggedIn()) { log('  ✓ Déjà connecté'); return true; }
 
     log('🔐 Connexion à Morgan Stanley Workday...');
-
-    // Attendre que le formulaire soit rendu (React peut tarder)
-    let waitRender = 0;
-    while (waitRender < 8000) {
-      const anyEmail = document.querySelector('[data-automation-id="email"]');
-      if (anyEmail && anyEmail.offsetWidth > 0) break;
-      await sleep(300); waitRender += 300;
-    }
 
     // Si on est sur la page "Commencer sa candidature" (3 choix), cliquer
     // "Utiliser ma dernière candidature" pour accéder au vrai formulaire de login.
