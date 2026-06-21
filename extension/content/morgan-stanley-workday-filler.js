@@ -490,8 +490,10 @@
         // Taper pour rechercher → niveau 1 "Site de carrière"
         const sourceInput = sourceContainer.querySelector('input:not([type="hidden"])');
         if (sourceInput) {
+          sourceInput.focus();
+          await sleep(200);
           reactSet(sourceInput, 'Site de carrière');
-          await sleep(500);
+          await sleep(800);
           // Chercher l'option niveau 1 parent (pas celle avec "de Morgan Stanley")
           const opts = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
             .filter(o => o.offsetWidth > 0);
@@ -499,8 +501,8 @@
             /site de carri[eè]re(?!\s+de)/i.test(o.textContent || '')
           );
           if (parentOpt) {
-            await clickEl(parentOpt);
-            await sleep(500);
+            await trustedClickEl(parentOpt);
+            await sleep(800);
             // Niveau 2 : sélectionner l'option exacte
             const opts2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
               .filter(o => o.offsetWidth > 0);
@@ -508,16 +510,17 @@
               new RegExp(msSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(o.textContent || '')
             ) || opts2.find(o => /morgan stanley/i.test(o.textContent || ''));
             if (targetOpt) {
-              await clickEl(targetOpt);
+              await trustedClickEl(targetOpt);
               log(`  ✓ Source: "${targetOpt.textContent.trim()}"`);
             } else {
               log(`  ⚠️ Source: option niveau 2 introuvable → essai direct`);
-              // Essai direct avec le texte complet
+              sourceInput.focus();
+              await sleep(200);
               reactSet(sourceInput, msSource);
-              await sleep(500);
+              await sleep(800);
               const directOpt = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
                 .find(o => o.offsetWidth > 0 && /morgan stanley/i.test(o.textContent || ''));
-              if (directOpt) { await clickEl(directOpt); log(`  ✓ Source (direct): "${directOpt.textContent.trim()}"`); }
+              if (directOpt) { await trustedClickEl(directOpt); log(`  ✓ Source (direct): "${directOpt.textContent.trim()}"`); }
             }
           } else {
             log(`  ⚠️ Source: option niveau 1 introuvable`);
@@ -562,8 +565,8 @@
     }
 
     // ── Prénom / Nom ──────────────────────────────────────────────────────────
-    const firstName = p.first_name || p.firstName || p.prenom || p.given_name || p.forename || '';
-    const lastName  = p.last_name  || p.lastName  || p.nom   || p.family_name || p.surname  || '';
+    const firstName = p.firstname || p.first_name || p.firstName || p.prenom || p.given_name || p.forename || '';
+    const lastName  = p.lastname  || p.last_name  || p.lastName  || p.nom   || p.family_name || p.surname  || '';
     await fillTextField('formField-legalName--firstName', firstName, 'Prénom');
     await fillTextField('formField-legalName--lastName',  lastName,  'Nom');
 
