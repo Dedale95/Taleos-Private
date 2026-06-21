@@ -342,13 +342,20 @@
   async function handleSignIn(authEmail, authPassword) {
     // Attendre que la page soit prête : soit déjà connecté, soit formulaire login visible
     let waitInit = 0;
-    while (waitInit < 10000) {
+    while (waitInit < 12000) {
       if (isLoggedIn()) { log('  ✓ Déjà connecté'); return true; }
       const emailEl = document.querySelector('[data-automation-id="email"]');
       if (emailEl && emailEl.offsetWidth > 0) break;
       await sleep(300); waitInit += 300;
     }
     if (isLoggedIn()) { log('  ✓ Déjà connecté'); return true; }
+
+    // Log diagnostique : boutons visibles sur la page
+    const visibleBtns = Array.from(document.querySelectorAll('button,a'))
+      .filter(el => el.offsetWidth > 0 && (el.innerText || '').trim())
+      .map(el => `"${(el.innerText || '').trim().slice(0, 40)}"[${el.getAttribute('data-automation-id') || el.tagName}]`)
+      .slice(0, 15);
+    log(`  🔍 Page state: step="${currentStep()}", buttons=[${visibleBtns.join(', ')}]`);
 
     log('🔐 Connexion à Morgan Stanley Workday...');
 
@@ -363,33 +370,36 @@
       await sleep(2000);
     }
 
-    // La page de login a deux états :
-    // a) Formulaire "Créer un compte" avec lien "Ouvrir une session" en bas
-    // b) Formulaire "Ouvrir une session" directement
-    // Cliquer "Ouvrir une session" si on est sur la page de création (data-automation-id="signInLink")
+    // Cliquer "Ouvrir une session" si nécessaire (page 3-choix ou page "Créer un compte")
+    // Essayer d'abord data-automation-id="signInLink", puis texte, puis utility button en fallback
     const signInLink = document.querySelector('[data-automation-id="signInLink"]')
       || Array.from(document.querySelectorAll('a,button')).find(el =>
            el.offsetWidth > 0 && /ouvrir une session|sign in/i.test(el.textContent || '')
-           && el.getAttribute('data-automation-id') !== 'utilityButtonSignIn'
          );
     if (signInLink) {
+      log(`  🖱️ Clic signInLink: "${(signInLink.innerText || '').trim().slice(0, 40)}"[${signInLink.getAttribute('data-automation-id') || ''}]`);
       await clickEl(signInLink);
-      // Attendre que la transition soit complète : "Créer un compte" disparu (verifyPassword absent)
+      // Attendre que le champ email du formulaire sign-in soit visible (jusqu'à 8s)
       let waited = 0;
-      while (waited < 6000) {
+      while (waited < 8000) {
         await sleep(300); waited += 300;
-        const vp = document.querySelector('[data-automation-id="verifyPassword"]');
-        if (!vp || vp.offsetWidth === 0) break;
+        const em = document.querySelector('[data-automation-id="email"]');
+        if (em && em.offsetWidth > 0) break;
       }
-      await sleep(500);
+      await sleep(300);
     }
 
-    // Après transition : il ne reste que le formulaire "Ouvrir une session"
-    const emailEl = document.querySelector('[data-automation-id="email"]');
+    // Après transition : chercher les champs email et mot de passe
+    let emailEl = document.querySelector('[data-automation-id="email"]');
+    // Fallback : input type=email ou input nommé "email" visible
+    if (!emailEl || emailEl.offsetWidth === 0) {
+      emailEl = [...document.querySelectorAll('input[type="email"], input[name="email"], input[autocomplete="username email"]')]
+        .find(i => i.offsetWidth > 0) || null;
+    }
     const pwdEl = [...document.querySelectorAll('input[type="password"]')]
       .find(i => i.offsetWidth > 0 && i.getAttribute('data-automation-id') !== 'verifyPassword');
 
-    log(`  🎯 Champs login : email=${emailEl?.id}, pwd=${pwdEl?.id}`);
+    log(`  🎯 Champs login : email=${emailEl ? (emailEl.getAttribute('data-automation-id') || emailEl.id || emailEl.name || 'found') : 'null'}, pwd=${pwdEl ? 'found' : 'null'}`);
 
     if (!emailEl || !pwdEl) { log('❌ Formulaire de connexion introuvable'); return false; }
     if (!authEmail || !authPassword) {
@@ -1116,6 +1126,8 @@
     const authEmail   = pending.email    || p.email;
     const authPassword = pending.password;
     const jobLocation = pending.location || pending.jobLocation || '';
+
+    log(`  ℹ️ Pending: email="${authEmail || ''}", hasPassword=${!!authPassword}, keys=${Object.keys(pending).join(',')}`);
 
     setBanner('⏳ Taleos — Morgan Stanley en cours...');
 
