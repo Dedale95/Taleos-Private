@@ -1232,17 +1232,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'reinject_ms_filler') {
     const tabId = msg.tabId || sender.tab?.id;
     if (tabId) {
-      // 1. Reset le guard pour autoriser la réinjection
+      // Reset guard + inject en une seule func pour éviter la race condition entre les deux executeScript
       chrome.scripting.executeScript({
         target: { tabId },
         func: () => { globalThis.__TALEOS_MS_FILLER_RUNNING__ = false; },
         world: 'ISOLATED'
-      }).then(() => chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['content/morgan-stanley-workday-filler.js'],
-        world: 'ISOLATED'
-      })).then(() => sendResponse({ ok: true }))
-        .catch(e => sendResponse({ ok: false, error: String(e) }));
+      }).then(() => new Promise(r => setTimeout(r, 200))) // petite pause pour que la reset se propage
+        .then(() => chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content/morgan-stanley-workday-filler.js'],
+          world: 'ISOLATED'
+        })).then(() => sendResponse({ ok: true }))
+          .catch(e => sendResponse({ ok: false, error: String(e) }));
     } else {
       sendResponse({ ok: false, error: 'no tabId' });
     }
@@ -5225,14 +5226,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Exposition des fonctions GA4 pour les content scripts
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === 'reload_extension') {
-    console.log('[Taleos] Rechargement extension demandé');
-    sendResponse({ ok: true });
-    chrome.runtime.reload(); // direct, sans setTimeout
-    return true;
-  }
-});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'track_event') {

@@ -383,11 +383,10 @@
       await sleep(2000);
     }
 
-    // Ne cliquer "Ouvrir une session" QUE si le champ email n'est pas déjà visible
-    // (utilityButtonSignIn est un toggle : cliquer quand form déjà ouvert = ferme la modal)
-    const emailCheckBeforeSignIn = document.querySelector('[data-automation-id="email"]');
-    const emailAlreadyVisible = !!(emailCheckBeforeSignIn && emailCheckBeforeSignIn.offsetWidth > 0);
-    if (!emailAlreadyVisible) {
+    // Cliquer "Ouvrir une session" seulement si le formulaire Sign In (signInSubmitButton) n'est pas déjà visible
+    // (le champ email existe dans les DEUX formulaires Créer compte ET Ouvrir session)
+    const signInSubmitAlreadyVisible = !!(document.querySelector('[data-automation-id="signInSubmitButton"]')?.offsetWidth);
+    if (!signInSubmitAlreadyVisible) {
       // Préférer signInLink dédié, exclure utilityButtonSignIn (toggle header)
       const signInLink = document.querySelector('[data-automation-id="signInLink"]')
         || Array.from(document.querySelectorAll('a,button')).find(el =>
@@ -411,7 +410,7 @@
         await sleep(300);
       }
     } else {
-      log('  ℹ️ Champ email déjà visible — pas de clic signInLink');
+      log('  ℹ️ Formulaire Sign In déjà visible — pas de clic signInLink');
     }
 
     // Après transition : chercher les champs email et mot de passe
@@ -538,52 +537,60 @@
     const msSource = p.ms_source || 'Site de carrière de Morgan Stanley';
     const sourceContainer = document.querySelector('[data-automation-id="formField-source"]');
     if (sourceContainer) {
-      const alreadySet = /site de carri[eè]re de morgan stanley|morgan stanley careers/i.test(
+      const alreadySet = /site de carri[eè]re de morgan stanley|morgan stanley careers|career site|1 item selected/i.test(
         sourceContainer.innerText || ''
       );
       if (alreadySet) {
         log('  ✓ Source: déjà remplie → skip');
       } else {
-        // Taper pour rechercher → niveau 1 "Site de carrière"
         const sourceInput = sourceContainer.querySelector('input:not([type="hidden"])');
         if (sourceInput) {
-          // Ouvrir le dropdown avec un vrai clic CDP (isTrusted: true)
           await trustedClickEl(sourceInput);
-          await sleep(500);
-          reactSet(sourceInput, 'Site de carrière');
-          await sleep(1000);
-          // Chercher l'option niveau 1 parent (pas celle avec "de Morgan Stanley")
-          let opts = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
-            .filter(o => o.offsetWidth > 0);
-          log(`  ℹ️ Source: ${opts.length} option(s) visibles après saisie L1`);
+          await sleep(800);
+          // Filtrer par position Y pour exclure les options parasites d'autres dropdowns
+          const getSourceOpts = () => Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
+            .filter(o => { const r = o.getBoundingClientRect(); return r.width > 0 && r.y < 1000; });
+          let opts = getSourceOpts();
+          // Si le dropdown ne s'est pas ouvert (0 options), essayer de typer "Career"
+          if (opts.length === 0) {
+            reactSet(sourceInput, 'Career');
+            await sleep(1000);
+            opts = getSourceOpts();
+            if (opts.length === 0) {
+              reactSet(sourceInput, 'Site de carrière');
+              await sleep(1000);
+              opts = getSourceOpts();
+            }
+          }
+          log(`  ℹ️ Source: ${opts.length} option(s) visibles (après saisie L1)`);
+          // Parent option : "Site de carrière" ou "Career Site"
           const parentOpt = opts.find(o =>
-            /site de carri[eè]re(?!\s+de)/i.test(o.textContent || '')
+            /site de carri[eè]re(?!\s+de)|^career site$/i.test(o.textContent?.trim() || '')
           );
           if (parentOpt) {
             await trustedClickEl(parentOpt);
             await sleep(800);
-            // Niveau 2 : sélectionner l'option exacte
             const opts2 = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
               .filter(o => o.offsetWidth > 0);
-            log(`  ℹ️ Source: ${opts2.length} option(s) visibles après L1`);
+            log(`  ℹ️ Source: ${opts2.length} option(s) niveau 2`);
             const targetOpt = opts2.find(o =>
               new RegExp(msSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(o.textContent || '')
-            ) || opts2.find(o => /morgan stanley/i.test(o.textContent || ''));
+            ) || opts2.find(o => /morgan stanley|career site/i.test(o.textContent || ''));
             if (targetOpt) {
               await trustedClickEl(targetOpt);
               log(`  ✓ Source: "${targetOpt.textContent.trim()}"`);
             } else {
-              log(`  ⚠️ Source: option niveau 2 introuvable → essai direct`);
-              await trustedClickEl(sourceInput);
-              await sleep(300);
-              reactSet(sourceInput, msSource);
-              await sleep(1000);
-              const directOpt = Array.from(document.querySelectorAll('[data-automation-id="promptOption"]'))
-                .find(o => o.offsetWidth > 0 && /morgan stanley/i.test(o.textContent || ''));
-              if (directOpt) { await trustedClickEl(directOpt); log(`  ✓ Source (direct): "${directOpt.textContent.trim()}"`); }
+              log(`  ⚠️ Source: option niveau 2 introuvable`);
             }
           } else {
-            log(`  ⚠️ Source: option niveau 1 introuvable (opts: ${opts.map(o=>o.textContent.trim().slice(0,30)).join(' | ')})`);
+            // Pas de niveau 2 — sélection directe "Career Site"
+            const directOpt = opts.find(o => /career site|site de carri[eè]re/i.test(o.textContent || ''));
+            if (directOpt) {
+              await trustedClickEl(directOpt);
+              log(`  ✓ Source (direct): "${directOpt.textContent.trim()}"`);
+            } else {
+              log(`  ⚠️ Source: option introuvable (opts: ${opts.map(o=>o.textContent.trim().slice(0,30)).join(' | ')})`);
+            }
           }
         }
       }
@@ -662,12 +669,15 @@
     }
 
     // ── Type de téléphone → Mobile / Cellulaire ────────────────────────────────
+    // phoneType est un select-button (id=phoneNumber--phoneType), pas un combobox
     const phoneTypeContainer = document.querySelector('[data-automation-id="formField-phoneType"]');
     if (phoneTypeContainer) {
       const alreadyMobile = /mobile|cellulaire/i.test(phoneTypeContainer.innerText || '');
       if (!alreadyMobile) {
-        await fillCombobox('formField-phoneType', 'Mobile', 'Type téléphone') ||
-        await fillCombobox('formField-phoneType', 'Cellulaire', 'Type téléphone');
+        const phoneTypeBtn = phoneTypeContainer.querySelector('button[id*="phoneType"]') || phoneTypeContainer.querySelector('button');
+        await fillSelectButton(phoneTypeBtn, 'Mobile', 'Type téléphone') ||
+        await fillSelectButton(phoneTypeBtn, 'Cellulaire', 'Type téléphone') ||
+        await fillSelectButton(phoneTypeBtn, 'Cell', 'Type téléphone');
       } else {
         log('  ✓ Type téléphone: déjà Mobile → skip');
       }
@@ -819,6 +829,80 @@
     }
   }
 
+  // Mapping niveaux Firebase → textes Workday (ordre décroissant de précision)
+  const LANGUAGE_LEVEL_MAP = [
+    { fr: /langue maternelle|native|natif/i,       en: ['Native', 'Native Proficiency', 'Langue maternelle'] },
+    { fr: /bilingue|bilingual/i,                    en: ['Bilingual', 'Full Professional Proficiency', 'Professional Working Proficiency', 'Bilingue'] },
+    { fr: /courant|fluent|opérationnel|operational/i, en: ['Full Professional Proficiency', 'Professional Working Proficiency', 'Fluent', 'Courant'] },
+    { fr: /intermédiaire|intermediate/i,            en: ['Limited Working Proficiency', 'Intermediate', 'Intermédiaire'] },
+    { fr: /débutant|beginner|basic|notions/i,       en: ['Elementary Proficiency', 'Basic', 'Débutant', 'Notions'] },
+  ];
+
+  async function fillLanguages(p) {
+    const langs = p.languages;
+    if (!Array.isArray(langs) || langs.length === 0) return;
+
+    // Chercher section Langues — peut ne pas exister sur cette offre
+    const allH = Array.from(document.querySelectorAll('h3,h4,[data-automation-id*="sectionTitle"]'));
+    const langSection = allH.find(h => /langue|language/i.test(h.textContent || ''));
+    if (!langSection) { log('  ℹ️ Langues: section non trouvée sur cette offre → skip'); return; }
+
+    log(`  🌐 Langues: ${langs.length} langue(s) à ajouter`);
+
+    for (const entry of langs) {
+      const langName  = entry.language || '';
+      const langLevel = entry.level    || '';
+
+      // Chercher si la langue est déjà ajoutée
+      const alreadyAdded = Array.from(document.querySelectorAll('[data-automation-id*="language"]'))
+        .some(el => new RegExp(langName, 'i').test(el.textContent || ''));
+      if (alreadyAdded) { log(`  ✓ Langue "${langName}": déjà présente → skip`); continue; }
+
+      // Cliquer "Ajouter" de la section Langues
+      const addBtns = Array.from(document.querySelectorAll('button')).filter(b => b.textContent.trim() === 'Ajouter');
+      let langAddBtn = null;
+      const sectionRect = langSection.getBoundingClientRect();
+      for (const btn of addBtns) {
+        if (btn.getBoundingClientRect().top >= sectionRect.top) { langAddBtn = btn; break; }
+      }
+      if (!langAddBtn) { log(`  ⚠️ Langues: bouton "Ajouter" introuvable`); break; }
+      await clickEl(langAddBtn);
+      await sleep(1200);
+
+      // Remplir le champ langue (combobox)
+      const langInput = document.querySelector('[data-automation-id="formField-language"] input:not([type="hidden"])')
+        || document.querySelector('[data-automation-id*="language"] input:not([type="hidden"])');
+      if (langInput) {
+        reactSet(langInput, langName);
+        await sleep(800);
+        const opt = Array.from(document.querySelectorAll('[role="option"]'))
+          .find(o => o.offsetWidth > 0 && new RegExp(langName, 'i').test(o.textContent || ''));
+        if (opt) { await clickEl(opt); await sleep(400); }
+        else { log(`  ⚠️ Langue "${langName}": option introuvable`); }
+      }
+
+      // Remplir le niveau
+      const levelBtn = document.querySelector('[data-automation-id="formField-languageProficiency"] button[id]')
+        || document.querySelector('[data-automation-id*="languageProficiency"] button[id]')
+        || document.querySelector('[data-automation-id*="proficiency"] button[id]');
+      if (levelBtn) {
+        const mapping = LANGUAGE_LEVEL_MAP.find(m => m.fr.test(langLevel));
+        const candidates = mapping ? mapping.en : [langLevel];
+        let filled = false;
+        for (const candidate of candidates) {
+          const ok = await fillSelectButton(levelBtn, candidate, `Niveau ${langName}`);
+          if (ok) { filled = true; break; }
+        }
+        if (!filled) log(`  ⚠️ Langue "${langName}": niveau "${langLevel}" introuvable`);
+      }
+
+      // Sauvegarder cette langue
+      const saveBtn = Array.from(document.querySelectorAll('button'))
+        .find(b => /enregistrer|save/i.test(b.textContent || ''));
+      if (saveBtn) { await trustedClickEl(saveBtn); await sleep(1500); }
+    }
+  }
+
   async function fillMonExperience(p) {
     log('📝 Étape 2 — Mon expérience');
     setBanner('📝 Mon expérience en cours...');
@@ -915,7 +999,10 @@
     // Financial Markets est à l'index ~1173 sur ~2800 entrées (hors des 500 premières visibles).
     // Technique : ouvrir dropdown → cliquer "Tout" → scroller à l'index → cliquer l'option.
     const fosContainer = document.querySelector('[data-automation-id="formField-fieldOfStudy"]');
-    const fosValue = p.field_of_study || p.education_field_of_study || p.ms_field_of_study;
+    // Aliases Firebase → texte exact dans Workday
+    const FOS_ALIASES = { 'market finance': 'Financial Markets', 'finance de marché': 'Financial Markets', 'finance': 'Finance' };
+    const fosRaw = p.field_of_study || p.education_field_of_study || p.ms_field_of_study;
+    const fosValue = fosRaw ? (FOS_ALIASES[(fosRaw || '').toLowerCase()] || fosRaw) : null;
     if (fosContainer && fosValue) {
       const alreadySet = !!fosContainer.querySelector('[data-automation-id="selectedItem"]');
       if (!alreadySet) {
@@ -975,6 +1062,9 @@
         log(`  ✓ Habiletés: "${p.skills || p.ms_skills}"`);
       }
     }
+
+    // ── Langues ────────────────────────────────────────────────────────────────
+    await fillLanguages(p);
 
     // ── CV upload ──────────────────────────────────────────────────────────────
     await uploadCV(p);
@@ -1045,6 +1135,42 @@
   // Type = select-button (button[id], pas button[aria-haspopup])
   // Options = "Yes" / "No" (EN, même en fr-CA)
   // ═══════════════════════════════════════════════════════════════════════════
+  // Résout le droit au travail et le besoin de sponsoring visa selon le pays du poste.
+  // Logique : chercher dans jp_morgan_work_authorizations une entrée correspondant au pays du poste.
+  // Si aucune correspondance → l'utilisateur n'a pas ce droit → "No" + sponsorship "Yes".
+  function resolveWorkAuthorization(p, jobLocation) {
+    const loc = (jobLocation || '').toLowerCase();
+    const auths = p.jp_morgan_work_authorizations || [];
+
+    // Détecter si le poste est en zone EU/EEA (France, Allemagne, UK*, etc.)
+    const isEU = /france|allemagne|germany|espagne|spain|italie|italy|luxembourg|belgique|belgium|pays-bas|netherlands|suisse|switzerland|portugal|irlande|ireland|suède|sweden|danemark|denmark|autriche|austria|finlande|finland|pologne|poland|hongrie|hungary|rép.*tchèque|czech|roumanie|romania|bulgarie|bulgaria|grèce|greece|slovaquie|slovakia|slovénie|slovenia|croatie|croatia|estonie|estonia|lettonie|latvia|lituanie|lithuania|malte|malta|chypre|cyprus|europe|ue$|eea|eu$/i.test(loc);
+    const isHK = /hong.?kong|hk$/i.test(loc);
+    const isSG = /singapore|singapour/i.test(loc);
+    const isJP = /japan|japon|tokyo/i.test(loc);
+    const isUS = /united states|états.unis|etats.unis|\bus\b|new york|san francisco|chicago/i.test(loc);
+
+    // Chercher une entrée correspondante dans le profil
+    for (const entry of auths) {
+      const entryCountry = (entry.country || '').toLowerCase();
+      const matches =
+        (isEU && /union europ|europe|ue|eea/i.test(entryCountry)) ||
+        (isHK  && /hong.?kong|hk/i.test(entryCountry)) ||
+        (isSG  && /singapore|singapour/i.test(entryCountry)) ||
+        (isJP  && /japan|japon/i.test(entryCountry)) ||
+        (isUS  && /united states|états.unis|us/i.test(entryCountry));
+      if (matches) {
+        const authorized  = /yes|oui/i.test(entry.work_authorized || '')  ? 'Yes' : 'No';
+        const sponsorship = /yes|oui/i.test(entry.sponsorship_required || '') ? 'Yes' : 'No';
+        log(`  ℹ️ Work auth: pays="${jobLocation}" → entrée="${entry.country}" → authorized=${authorized}, sponsorship=${sponsorship}`);
+        return { authorized, sponsorship };
+      }
+    }
+
+    // Aucune entrée correspondante → pas de droit au travail dans ce pays → besoin de sponsoring
+    log(`  ℹ️ Work auth: pays="${jobLocation}" non trouvé dans le profil → authorized=No, sponsorship=Yes`);
+    return { authorized: 'No', sponsorship: 'Yes' };
+  }
+
   async function fillApplicationQuestions(p, jobLocation) {
     log('📝 Étape 3 — Questions liées à la candidature');
     setBanner('📝 Questions candidature en cours...');
@@ -1090,17 +1216,17 @@
       if (/consent.*sms|whatsapp|talent acquisition.*sms|follow.*communication.*sms/i.test(lower)) {
         answer = p.ms_sms_consent || 'Yes';
       }
-      // Droit au travail → Yes
+      // Droit au travail — dépend du pays du poste
       else if (/légalement autorisé|legally authorized|right to work|autorisé.*travailler/i.test(lower)) {
-        answer = 'Yes';
+        answer = resolveWorkAuthorization(p, jobLocation).authorized;
       }
-      // Sponsorship visa actuel → No
+      // Sponsorship visa actuel
       else if (/actuellement.*besoin.*sponsor|currently.*need.*sponsor/i.test(lower)) {
-        answer = 'No';
+        answer = resolveWorkAuthorization(p, jobLocation).sponsorship;
       }
-      // Sponsorship visa futur → No
+      // Sponsorship visa futur
       else if (/avenir.*parrainage|future.*sponsor|besoin.*futur/i.test(lower)) {
-        answer = 'No';
+        answer = resolveWorkAuthorization(p, jobLocation).sponsorship;
       }
       // Employé gouvernement / régulateur / fonctionnaire / restricted
       else if (/employé.*gouvernement|government.*official|fonctionnaire|régulateur financier|financial regulator/i.test(lower)) {
