@@ -15,6 +15,12 @@ permissions:
   issues: write    # issue d'alerte si le pipeline échoue (job scraper-failure-alert)
   actions: write   # déclencher workflow_dispatch sur publish-public-site depuis consolidate
 
+# Une exécution manuelle ne doit jamais concurrencer le run planifié : les deux
+# modifient les mêmes exports JSON et pourraient se disputer le push final.
+concurrency:
+  group: update-job-offers
+  cancel-in-progress: false
+
 on:
   schedule:
     # 6h00 Paris = 5h00 UTC (hiver) / 4h00 UTC (été). On utilise 5h00 UTC.
@@ -417,10 +423,16 @@ jobs:
       - name: Vérifier les changements
         id: changes
         run: |
-          # Fichiers par source (scraped_jobs_*.json) + live slim + summary
-          # NB: scraped_jobs.json (sans underscore) est exclu — trop volumineux et redondant avec scraped_jobs_live.json
-          if git diff --quiet -- HTML/scraped_jobs_*.json scraped_jobs_*.json HTML/scraped_jobs_summary.json scraped_jobs_summary.json 2>/dev/null && \
-             ! git ls-files --others --exclude-standard -- "HTML/scraped_jobs_*.json" "scraped_jobs_*.json" | grep -q .; then
+          # Fichiers par source + live slim + summary.
+          # Le fichier d'archive scraped_jobs_full.json est volontairement ignoré :
+          # son historique est très volumineux et il n'est pas consommé par le site.
+          if git diff --quiet -- \
+             ':(glob)HTML/scraped_jobs_*.json' ':(exclude)HTML/scraped_jobs_full.json' \
+             ':(glob)scraped_jobs_*.json' \
+             HTML/scraped_jobs_summary.json scraped_jobs_summary.json && \
+             ! git ls-files --others --exclude-standard -- \
+               ':(glob)HTML/scraped_jobs_*.json' ':(exclude)HTML/scraped_jobs_full.json' \
+               ':(glob)scraped_jobs_*.json' | grep -q .; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -431,10 +443,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Fichiers par source (un par banque), live slim, summary
-          # scraped_jobs.json (sans underscore) volontairement exclus (trop grands, redondants)
-          # -f nécessaire pour les fichiers dans .gitignore (live.json, full.json)
-          git add -f HTML/scraped_jobs_*.json scraped_jobs_*.json \
+          # Fichiers par source (un par banque), live slim, summary.
+          # Ne jamais réintroduire l'archive HTML/scraped_jobs_full.json : elle est
+          # trop lourde pour les commits quotidiens et le site ne l'utilise pas.
+          git add -f \
+                     ':(glob)HTML/scraped_jobs_*.json' ':(exclude)HTML/scraped_jobs_full.json' \
+                     ':(glob)scraped_jobs_*.json' \
                      HTML/scraped_jobs_summary.json scraped_jobs_summary.json
           git commit -m "chore: mise à jour quotidienne des offres (pipeline parallèle)"
           # -X theirs : en cas de conflit sur les JSONs de données (summary, live…),
